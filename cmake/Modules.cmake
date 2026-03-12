@@ -1,27 +1,46 @@
-function(zep_configure_target target)
-    zep_set_compiler_warnings(${target})
-    zep_set_sanitizers(${target})
+function(zep_configure_target TARGET)
+    zep_set_flags(${TARGET})
+    zep_set_sanitizers(${TARGET})
 endfunction()
 
-function(zep_add_module target)
+function(zep_add_module TARGET)
     cmake_parse_arguments(ARG "" "" "DEPENDS" ${ARGN})
 
-    file(GLOB_RECURSE _module_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cppm")
-    file(GLOB_RECURSE _sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+    file(GLOB_RECURSE MODULE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cppm")
+    file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
-    add_library(${target} STATIC)
+    add_library(${TARGET} STATIC)
 
-    if(_module_sources)
-        target_sources(${target} PUBLIC FILE_SET CXX_MODULES FILES ${_module_sources})
+    if(MODULE_SOURCES)
+        target_sources(${TARGET} PUBLIC FILE_SET CXX_MODULES FILES ${MODULE_SOURCES})
     endif()
 
-    if(_sources)
-        target_sources(${target} PRIVATE ${_sources})
+    if(SOURCES)
+        target_sources(${TARGET} PRIVATE ${SOURCES})
     endif()
 
     if(ARG_DEPENDS)
-        target_link_libraries(${target} PUBLIC ${ARG_DEPENDS})
+        target_link_libraries(${TARGET} PUBLIC ${ARG_DEPENDS})
     endif()
 
-    zep_configure_target(${target})
+    zep_configure_target(${TARGET})
+endfunction()
+
+function(zep_add_executable TARGET)
+    cmake_parse_arguments(ARG "" "" "DEPENDS" ${ARGN})
+
+    file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+    file(GLOB_RECURSE MODULE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cppm")
+
+    add_executable(${TARGET} ${SOURCES})
+
+    if(MODULE_SOURCES)
+        target_sources(${TARGET} PUBLIC FILE_SET CXX_MODULES FILES ${MODULE_SOURCES})
+    endif()
+
+    if(ARG_DEPENDS)
+        target_link_libraries(${TARGET} PRIVATE ${ARG_DEPENDS})
+    endif()
+
+    zep_configure_target(${TARGET})
 endfunction()

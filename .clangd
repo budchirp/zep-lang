@@ -1,14 +1,2 @@
 CompileFlags:
   CompilationDatabase: cmake-build-debug
-
-Diagnostics:
-  UnusedIncludes: Strict
-  MissingIncludes: None
-
-InlayHints:
-  Enabled: true
-  Designators: true
-  DeducedTypes: true
-
-Hover:
-  ShowAKA: true

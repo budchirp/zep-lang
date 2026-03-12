@@ -7,7 +7,7 @@ project(zep
 )
 
 include(cmake/Standards.cmake)
-include(cmake/CompilerWarnings.cmake)
+include(cmake/Flags.cmake)
 include(cmake/Sanitizers.cmake)
 include(cmake/Modules.cmake)
 
@@ -18,3 +18,4 @@ add_subdirectory(lowerer)
 add_subdirectory(codegen)
 add_subdirectory(compiler)
 add_subdirectory(cli)
+

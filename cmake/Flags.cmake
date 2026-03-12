@@ -1,10 +1,12 @@
-function(zep_set_compiler_warnings target)
-    target_compile_options(${target} PRIVATE
+function(zep_set_flags TARGET)
+    target_compile_options(${TARGET} PRIVATE
         -Wall
         -Wextra
         -Wpedantic
         -Wconversion
         -Wshadow
+        -Wdouble-promotion
+        -Wcast-qual
         -Wnon-virtual-dtor
         -Wold-style-cast
         -Wcast-align
@@ -13,16 +15,12 @@ function(zep_set_compiler_warnings target)
         -Wformat=2
         -Wimplicit-fallthrough
         -Wunused
-    )
-
-    target_compile_options(${target} PRIVATE
+        -Wvla
         $<$<CONFIG:Debug>:-g3 -ggdb -O0 -fno-omit-frame-pointer -DZEP_DEBUG>
+        $<$<CONFIG:Release>:-O3 -DNDEBUG -flto -march=native -ffunction-sections -fdata-sections>
     )
 
-    target_compile_options(${target} PRIVATE
-        $<$<CONFIG:Release>:-O3 -DNDEBUG -flto -march=native>
-    )
-    target_link_options(${target} PRIVATE
-        $<$<CONFIG:Release>:-flto -s>
+    target_link_options(${TARGET} PRIVATE
+        $<$<CONFIG:Release>:-flto -s -Wl,--gc-sections>
     )
 endfunction()
