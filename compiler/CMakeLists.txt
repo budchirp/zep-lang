@@ -1,0 +1,1 @@
+zep_add_module(zep_compiler DEPENDS zep_common zep_frontend zep_sema zep_lowerer zep_codegen)
