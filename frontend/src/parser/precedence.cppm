@@ -6,7 +6,7 @@ export module zep.frontend.parser.precedence;
 
 import zep.frontend.token.type;
 
-export enum class Precedence : int {
+export enum class Precedence : std::uint8_t {
     None = 0,
     Assignment = 1,
     Or = 2,

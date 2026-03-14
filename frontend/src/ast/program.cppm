@@ -6,6 +6,7 @@ module;
 
 export module zep.frontend.ast.program;
 
+import zep.common.logger;
 import zep.frontend.ast;
 
 export class Program {
@@ -16,12 +17,21 @@ export class Program {
         : statements(std::move(statements)) {}
 
     void dump() const {
-        std::cout << "Program {\n";
-        std::cout << "  statements: [\n";
-        for (const auto& statement : statements) {
-            statement->dump(2);
+        constexpr int depth = 0;
+        print_indent(depth);
+
+        std::cout << "Program(statements: [";
+        if (statements.empty()) {
+            std::cout << "])\n";
+        } else {
+            std::cout << "\n";
+            for (std::size_t i = 0; i < statements.size(); ++i) {
+                statements[i]->dump(depth + 1, true, false);
+                std::cout << (i + 1 < statements.size() ? ",\n" : "\n");
+            }
+
+            print_indent(depth);
+            std::cout << "])\n";
         }
-        std::cout << "  ]\n";
-        std::cout << "}\n";
     }
 };

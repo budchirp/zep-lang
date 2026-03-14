@@ -18,11 +18,12 @@ export class Lexer {
   private:
     std::string_view input;
 
+    Position position = Position(1, 0);
+
     std::size_t byte_position = 0;
     std::size_t read_position = 0;
 
     char ch = '\0';
-    Position position = Position(1, 0);
 
     std::list<std::string> owned_strings;
 

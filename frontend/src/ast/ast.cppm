@@ -14,13 +14,13 @@ import zep.sema.type;
 
 export enum class Visibility : std::uint8_t { Public, Private };
 
-export enum class StorageKind : std::uint8_t { Const, Var, VarMut };
-
-std::string visibility_string(Visibility visibility) {
+static std::string visibility_string(Visibility visibility) {
     return visibility == Visibility::Public ? "public" : "private";
 }
 
-std::string storage_kind_string(StorageKind kind) {
+export enum class StorageKind : std::uint8_t { Const, Var, VarMut };
+
+static std::string storage_kind_string(StorageKind kind) {
     switch (kind) {
     case StorageKind::Const:
         return "const";
@@ -48,7 +48,7 @@ export class Node {
     Node(Node&&) = default;
     Node& operator=(Node&&) = default;
 
-    virtual void dump(int depth, bool with_indent = true) const = 0;
+    virtual void dump(int depth, bool with_indent = true, bool trailing_newline = true) const = 0;
 
     Position get_position() const { return position; }
 };
@@ -82,11 +82,22 @@ export class TypeExpression : public Node {
     TypeExpression(Position position, std::shared_ptr<Type> type)
         : Node(position), type(std::move(type)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "TypeExpression " << (type ? type->to_string() : "null") << "\n";
+
+        std::cout << "TypeExpression(type: ";
+        if (type) {
+            type->dump(depth, false, false);
+        } else {
+            std::cout << "null";
+        }
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -107,19 +118,30 @@ export class GenericParameter : public Node {
                      std::unique_ptr<TypeExpression> constraint)
         : Node(position), name(std::move(name)), constraint(std::move(constraint)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
+
+        std::cout << "GenericParameter(\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
+        print_indent(depth + 1);
+        std::cout << "constraint: ";
         if (constraint) {
-            std::cout << "GenericParameter " << name << " {\n";
-            print_indent(depth + 1);
-            std::cout << "constraint: ";
-            constraint->dump(depth + 1, false);
-            print_indent(depth);
-            std::cout << "}\n";
+            constraint->dump(depth + 1, false, false);
         } else {
-            std::cout << "GenericParameter " << name << "\n";
+            std::cout << "null";
+        }
+        std::cout << "\n";
+
+        print_indent(depth);
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
         }
     }
 
@@ -140,19 +162,30 @@ export class GenericArgument : public Node {
     GenericArgument(Position position, std::string name, std::unique_ptr<TypeExpression> type)
         : Node(position), name(std::move(name)), type(std::move(type)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
+
+        std::cout << "GenericArgument(\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
+        print_indent(depth + 1);
+        std::cout << "type: ";
         if (type) {
-            std::cout << "GenericArgument " << name << " {\n";
-            print_indent(depth + 1);
-            std::cout << "type: ";
-            type->dump(depth + 1, false);
-            print_indent(depth);
-            std::cout << "}\n";
+            type->dump(depth + 1, false, false);
         } else {
-            std::cout << "GenericArgument " << name << "\n";
+            std::cout << "null";
+        }
+        std::cout << "\n";
+
+        print_indent(depth);
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
         }
     }
 
@@ -173,16 +206,34 @@ export class Parameter : public Node {
               std::unique_ptr<TypeExpression> type)
         : Node(position), is_variadic(is_variadic), name(std::move(name)), type(std::move(type)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "Parameter " << (is_variadic ? "..." : "") << name << " {\n";
+
+        std::cout << "Parameter(\n";
+
+        print_indent(depth + 1);
+        std::cout << "is_variadic: " << (is_variadic ? "true" : "false") << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
         print_indent(depth + 1);
         std::cout << "type: ";
-        type->dump(depth + 1, false);
+        if (type) {
+            type->dump(depth + 1, false, false);
+        } else {
+            std::cout << "null";
+        }
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "}\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -199,16 +250,27 @@ export class Argument : public Node {
     Argument(Position position, std::string name, std::unique_ptr<Expression> value)
         : Node(position), name(std::move(name)), value(std::move(value)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "Argument" << (name.empty() ? "" : " " + name) << " {\n";
+
+        std::cout << "Argument(\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
         print_indent(depth + 1);
         std::cout << "value: ";
-        value->dump(depth + 1, false);
+        value->dump(depth + 1, false, false);
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "}\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -233,36 +295,61 @@ export class FunctionPrototype : public Node {
         : Node(position), name(std::move(name)), generic_parameters(std::move(generic_parameters)),
           parameters(std::move(parameters)), return_type(std::move(return_type)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "FunctionPrototype " << name << " {\n";
-        if (!generic_parameters.empty()) {
-            print_indent(depth + 1);
-            std::cout << "generic_parameters: [\n";
-            for (const auto& generic_parameter : generic_parameters) {
-                generic_parameter->dump(depth + 2);
+
+        std::cout << "FunctionPrototype(\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
+        print_indent(depth + 1);
+        std::cout << "generic_parameters: [";
+        if (generic_parameters.empty()) {
+            std::cout << "],\n";
+        } else {
+            std::cout << "\n";
+            for (std::size_t i = 0; i < generic_parameters.size(); ++i) {
+                generic_parameters[i]->dump(depth + 2, true, false);
+                std::cout << (i + 1 < generic_parameters.size() ? ",\n" : "\n");
             }
+
             print_indent(depth + 1);
-            std::cout << "]\n";
+            std::cout << "],\n";
         }
-        if (!parameters.empty()) {
-            print_indent(depth + 1);
-            std::cout << "parameters: [\n";
-            for (const auto& parameter : parameters) {
-                parameter->dump(depth + 2);
+
+        print_indent(depth + 1);
+        std::cout << "parameters: [";
+        if (parameters.empty()) {
+            std::cout << "],\n";
+        } else {
+            std::cout << "\n";
+            for (std::size_t i = 0; i < parameters.size(); ++i) {
+                parameters[i]->dump(depth + 2, true, false);
+                std::cout << (i + 1 < parameters.size() ? ",\n" : "\n");
             }
+
             print_indent(depth + 1);
-            std::cout << "]\n";
+            std::cout << "],\n";
         }
+
+        print_indent(depth + 1);
+        std::cout << "return_type: ";
         if (return_type) {
-            print_indent(depth + 1);
-            std::cout << "return_type: ";
-            return_type->dump(depth + 1, false);
+            return_type->dump(depth + 1, false, false);
+        } else {
+            std::cout << "null";
         }
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "}\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -282,16 +369,34 @@ export class StructField : public Node {
                 std::unique_ptr<TypeExpression> type)
         : Node(position), visibility(visibility), name(std::move(name)), type(std::move(type)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "StructField " << visibility_string(visibility) << " " << name << " {\n";
+
+        std::cout << "StructField(\n";
+
+        print_indent(depth + 1);
+        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
         print_indent(depth + 1);
         std::cout << "type: ";
-        type->dump(depth + 1, false);
+        if (type) {
+            type->dump(depth + 1, false, false);
+        } else {
+            std::cout << "null";
+        }
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "}\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -308,16 +413,27 @@ export class StructLiteralField : public Node {
     StructLiteralField(Position position, std::string name, std::unique_ptr<Expression> value)
         : Node(position), name(std::move(name)), value(std::move(value)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "StructLiteralField " << name << " {\n";
+
+        std::cout << "StructLiteralField(\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
         print_indent(depth + 1);
         std::cout << "value: ";
-        value->dump(depth + 1, false);
+        value->dump(depth + 1, false, false);
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "}\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -333,11 +449,16 @@ export class NumberLiteral : public Expression {
     NumberLiteral(Position position, std::string value)
         : Expression(position), value(std::move(value)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "NumberLiteral " << value << "\n";
+
+        std::cout << "NumberLiteral(value: \"" << value << "\")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -353,11 +474,16 @@ export class FloatLiteral : public Expression {
     FloatLiteral(Position position, std::string value)
         : Expression(position), value(std::move(value)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "FloatLiteral " << value << "\n";
+
+        std::cout << "FloatLiteral(value: \"" << value << "\")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -373,11 +499,16 @@ export class StringLiteral : public Expression {
     StringLiteral(Position position, std::string value)
         : Expression(position), value(std::move(value)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "StringLiteral \"" << value << "\"\n";
+
+        std::cout << "StringLiteral(value: \"" << value << "\")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -392,11 +523,16 @@ export class BooleanLiteral : public Expression {
 
     BooleanLiteral(Position position, bool value) : Expression(position), value(value) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "BooleanLiteral " << (value ? "true" : "false") << "\n";
+
+        std::cout << "BooleanLiteral(value: " << (value ? "true" : "false") << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -412,11 +548,16 @@ export class IdentifierExpression : public Expression {
     IdentifierExpression(Position position, std::string name)
         : Expression(position), name(std::move(name)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "IdentifierExpression " << name << "\n";
+
+        std::cout << "IdentifierExpression(name: \"" << name << "\")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -445,14 +586,7 @@ export class BinaryExpression : public Expression {
         Is
     };
 
-    std::unique_ptr<Expression> left;
-    BinaryOperator op;
-    std::unique_ptr<Expression> right;
-
-    BinaryExpression(Position position, std::unique_ptr<Expression> left, BinaryOperator op,
-                     std::unique_ptr<Expression> right)
-        : Expression(position), left(std::move(left)), op(op), right(std::move(right)) {}
-
+  private:
     static std::string operator_string(BinaryOperator op) {
         switch (op) {
         case BinaryOperator::Plus:
@@ -489,19 +623,41 @@ export class BinaryExpression : public Expression {
         return "?";
     }
 
-    void dump(int depth, bool with_indent = true) const override {
+  public:
+    std::unique_ptr<Expression> left;
+    BinaryOperator op;
+    std::unique_ptr<Expression> right;
+
+    BinaryExpression(Position position, std::unique_ptr<Expression> left, BinaryOperator op,
+                     std::unique_ptr<Expression> right)
+        : Expression(position), left(std::move(left)), op(op), right(std::move(right)) {}
+
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "BinaryExpression " << operator_string(op) << " {\n";
+
+        std::cout << "BinaryExpression(\n";
+
         print_indent(depth + 1);
         std::cout << "left: ";
-        left->dump(depth + 1, false);
+        left->dump(depth + 1, false, false);
+        std::cout << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "op: " << operator_string(op) << ",\n";
+
         print_indent(depth + 1);
         std::cout << "right: ";
-        right->dump(depth + 1, false);
+        right->dump(depth + 1, false, false);
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "}\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -520,12 +676,7 @@ export class UnaryExpression : public Expression {
         AddressOf,
     };
 
-    UnaryOperator op;
-    std::unique_ptr<Expression> operand;
-
-    UnaryExpression(Position position, UnaryOperator op, std::unique_ptr<Expression> operand)
-        : Expression(position), op(op), operand(std::move(operand)) {}
-
+  private:
     static std::string operator_string(UnaryOperator op) {
         switch (op) {
         case UnaryOperator::Plus:
@@ -542,16 +693,34 @@ export class UnaryExpression : public Expression {
         return "?";
     }
 
-    void dump(int depth, bool with_indent = true) const override {
+  public:
+    UnaryOperator op;
+    std::unique_ptr<Expression> operand;
+
+    UnaryExpression(Position position, UnaryOperator op, std::unique_ptr<Expression> operand)
+        : Expression(position), op(op), operand(std::move(operand)) {}
+
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "UnaryExpression " << operator_string(op) << " {\n";
+
+        std::cout << "UnaryExpression(\n";
+
+        print_indent(depth + 1);
+        std::cout << "op: " << operator_string(op) << ",\n";
+
         print_indent(depth + 1);
         std::cout << "operand: ";
-        operand->dump(depth + 1, false);
+        operand->dump(depth + 1, false, false);
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "}\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -574,34 +743,54 @@ export class CallExpression : public Expression {
         : Expression(position), callee(std::move(callee)),
           generic_arguments(std::move(generic_arguments)), arguments(std::move(arguments)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "CallExpression {\n";
+
+        std::cout << "CallExpression(\n";
+
         print_indent(depth + 1);
         std::cout << "callee: ";
-        callee->dump(depth + 1, false);
-        if (!generic_arguments.empty()) {
-            print_indent(depth + 1);
-            std::cout << "generic_arguments: [\n";
-            for (const auto& generic_argument : generic_arguments) {
-                generic_argument->dump(depth + 2);
+        callee->dump(depth + 1, false, false);
+        std::cout << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "generic_arguments: [";
+        if (generic_arguments.empty()) {
+            std::cout << "],\n";
+        } else {
+            std::cout << "\n";
+            for (std::size_t i = 0; i < generic_arguments.size(); ++i) {
+                generic_arguments[i]->dump(depth + 2, true, false);
+                std::cout << (i + 1 < generic_arguments.size() ? ",\n" : "\n");
             }
+
+            print_indent(depth + 1);
+            std::cout << "],\n";
+        }
+
+        print_indent(depth + 1);
+        std::cout << "arguments: [";
+        if (arguments.empty()) {
+            std::cout << "]\n";
+        } else {
+            std::cout << "\n";
+            for (std::size_t i = 0; i < arguments.size(); ++i) {
+                arguments[i]->dump(depth + 2, true, false);
+                std::cout << (i + 1 < arguments.size() ? ",\n" : "\n");
+            }
+
             print_indent(depth + 1);
             std::cout << "]\n";
         }
-        if (!arguments.empty()) {
-            print_indent(depth + 1);
-            std::cout << "arguments: [\n";
-            for (const auto& argument : arguments) {
-                argument->dump(depth + 2);
-            }
-            print_indent(depth + 1);
-            std::cout << "]\n";
-        }
+
         print_indent(depth);
-        std::cout << "}\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -619,19 +808,29 @@ export class IndexExpression : public Expression {
                     std::unique_ptr<Expression> index)
         : Expression(position), value(std::move(value)), index(std::move(index)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "IndexExpression {\n";
+
+        std::cout << "IndexExpression(\n";
+
         print_indent(depth + 1);
         std::cout << "value: ";
-        value->dump(depth + 1, false);
+        value->dump(depth + 1, false, false);
+        std::cout << ",\n";
+
         print_indent(depth + 1);
         std::cout << "index: ";
-        index->dump(depth + 1, false);
+        index->dump(depth + 1, false, false);
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "}\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -648,16 +847,27 @@ export class MemberExpression : public Expression {
     MemberExpression(Position position, std::unique_ptr<Expression> value, std::string member)
         : Expression(position), value(std::move(value)), member(std::move(member)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "MemberExpression ." << member << " {\n";
+
+        std::cout << "MemberExpression(\n";
+
         print_indent(depth + 1);
         std::cout << "value: ";
-        value->dump(depth + 1, false);
+        value->dump(depth + 1, false, false);
+        std::cout << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "member: \"" << member << "\"\n";
+
         print_indent(depth);
-        std::cout << "}\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -675,19 +885,29 @@ export class AssignExpression : public Expression {
                      std::unique_ptr<Expression> value)
         : Expression(position), target(std::move(target)), value(std::move(value)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "AssignExpression {\n";
+
+        std::cout << "AssignExpression(\n";
+
         print_indent(depth + 1);
         std::cout << "target: ";
-        target->dump(depth + 1, false);
+        target->dump(depth + 1, false, false);
+        std::cout << ",\n";
+
         print_indent(depth + 1);
         std::cout << "value: ";
-        value->dump(depth + 1, false);
+        value->dump(depth + 1, false, false);
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "}\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -698,34 +918,66 @@ export class AssignExpression : public Expression {
 
 export class StructLiteralExpression : public Expression {
   public:
-    std::unique_ptr<TypeExpression> type_name;
+    std::unique_ptr<IdentifierExpression> name;
+
+    std::vector<std::unique_ptr<GenericArgument>> generic_arguments;
+
     std::vector<std::unique_ptr<StructLiteralField>> fields;
 
-    StructLiteralExpression(Position position, std::unique_ptr<TypeExpression> type_name,
+    StructLiteralExpression(Position position, std::unique_ptr<IdentifierExpression> name,
+                            std::vector<std::unique_ptr<GenericArgument>> generic_arguments,
                             std::vector<std::unique_ptr<StructLiteralField>> fields)
-        : Expression(position), type_name(std::move(type_name)), fields(std::move(fields)) {}
+        : Expression(position), name(std::move(name)),
+          generic_arguments(std::move(generic_arguments)), fields(std::move(fields)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "StructLiteralExpression {\n";
-        if (type_name) {
-            print_indent(depth + 1);
-            std::cout << "type_name: ";
-            type_name->dump(depth + 1, false);
-        }
-        if (!fields.empty()) {
-            print_indent(depth + 1);
-            std::cout << "fields: [\n";
-            for (const auto& field : fields) {
-                field->dump(depth + 2);
+
+        std::cout << "StructLiteralExpression(\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: ";
+        name->dump(depth + 1, false, false);
+        std::cout << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "generic_arguments: [";
+        if (generic_arguments.empty()) {
+            std::cout << "],\n";
+        } else {
+            std::cout << "\n";
+            for (std::size_t i = 0; i < generic_arguments.size(); ++i) {
+                generic_arguments[i]->dump(depth + 2, true, false);
+                std::cout << (i + 1 < generic_arguments.size() ? ",\n" : "\n");
             }
+
+            print_indent(depth + 1);
+            std::cout << "],\n";
+        }
+
+        print_indent(depth + 1);
+        std::cout << "fields: [";
+        if (fields.empty()) {
+            std::cout << "]\n";
+        } else {
+            std::cout << "\n";
+            for (std::size_t i = 0; i < fields.size(); ++i) {
+                fields[i]->dump(depth + 2, true, false);
+                std::cout << (i + 1 < fields.size() ? ",\n" : "\n");
+            }
+
             print_indent(depth + 1);
             std::cout << "]\n";
         }
+
         print_indent(depth);
-        std::cout << "}\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -741,20 +993,28 @@ export class BlockStatement : public Statement {
     BlockStatement(Position position, std::vector<std::unique_ptr<Statement>> statements)
         : Statement(position), statements(std::move(statements)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "BlockStatement {\n";
-        print_indent(depth + 1);
-        std::cout << "statements: [\n";
-        for (const auto& statement : statements) {
-            statement->dump(depth + 2);
+
+        std::cout << "BlockStatement(statements: [";
+        if (statements.empty()) {
+            std::cout << "])";
+        } else {
+            std::cout << "\n";
+            for (std::size_t i = 0; i < statements.size(); ++i) {
+                statements[i]->dump(depth + 1, true, false);
+                std::cout << (i + 1 < statements.size() ? ",\n" : "\n");
+            }
+
+            print_indent(depth);
+            std::cout << "])";
         }
-        print_indent(depth + 1);
-        std::cout << "]\n";
-        print_indent(depth);
-        std::cout << "}\n";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -770,16 +1030,18 @@ export class ExpressionStatement : public Statement {
     explicit ExpressionStatement(std::unique_ptr<Expression> expression)
         : Statement(expression->get_position()), expression(std::move(expression)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "ExpressionStatement {\n";
-        print_indent(depth + 1);
-        std::cout << "expression: ";
-        expression->dump(depth + 1, false);
-        print_indent(depth);
-        std::cout << "}\n";
+
+        std::cout << "ExpressionStatement(expression: ";
+        expression->dump(depth, false, false);
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -788,35 +1050,49 @@ export class ExpressionStatement : public Statement {
     }
 };
 
-export class IfStatement : public Statement {
+export class IfExpression : public Expression {
   public:
     std::unique_ptr<Expression> condition;
     std::unique_ptr<Statement> then_branch;
     std::unique_ptr<Statement> else_branch;
 
-    IfStatement(Position position, std::unique_ptr<Expression> condition,
-                std::unique_ptr<Statement> then_branch, std::unique_ptr<Statement> else_branch)
-        : Statement(position), condition(std::move(condition)), then_branch(std::move(then_branch)),
-          else_branch(std::move(else_branch)) {}
+    IfExpression(Position position, std::unique_ptr<Expression> condition,
+                 std::unique_ptr<Statement> then_branch, std::unique_ptr<Statement> else_branch)
+        : Expression(position), condition(std::move(condition)),
+          then_branch(std::move(then_branch)), else_branch(std::move(else_branch)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "IfStatement {\n";
+
+        std::cout << "IfStatement(\n";
+
         print_indent(depth + 1);
         std::cout << "condition: ";
-        condition->dump(depth + 1, false);
+        condition->dump(depth + 1, false, false);
+        std::cout << ",\n";
+
         print_indent(depth + 1);
-        std::cout << "then: ";
-        then_branch->dump(depth + 1, false);
+        std::cout << "then_branch: ";
+        then_branch->dump(depth + 1, false, false);
+        std::cout << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "else_branch: ";
         if (else_branch) {
-            print_indent(depth + 1);
-            std::cout << "else: ";
-            else_branch->dump(depth + 1, false);
+            else_branch->dump(depth + 1, false, false);
+        } else {
+            std::cout << "null";
         }
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "}\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -832,19 +1108,21 @@ export class ReturnStatement : public Statement {
     ReturnStatement(Position position, std::unique_ptr<Expression> value)
         : Statement(position), value(std::move(value)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
+
+        std::cout << "ReturnStatement(value: ";
         if (value) {
-            std::cout << "ReturnStatement {\n";
-            print_indent(depth + 1);
-            std::cout << "value: ";
-            value->dump(depth + 1, false);
-            print_indent(depth);
-            std::cout << "}\n";
+            value->dump(depth, false, false);
         } else {
-            std::cout << "ReturnStatement\n";
+            std::cout << "null";
+        }
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
         }
     }
 
@@ -870,31 +1148,55 @@ export class StructDeclaration : public Statement {
         : Statement(position), visibility(visibility), name(std::move(name)),
           generic_parameters(std::move(generic_parameters)), fields(std::move(fields)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "StructDeclaration " << visibility_string(visibility) << " " << name << " {\n";
-        if (!generic_parameters.empty()) {
-            print_indent(depth + 1);
-            std::cout << "generic_parameters: [\n";
-            for (const auto& generic_parameter : generic_parameters) {
-                generic_parameter->dump(depth + 2);
+
+        std::cout << "StructDeclaration(\n";
+
+        print_indent(depth + 1);
+        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
+        print_indent(depth + 1);
+        std::cout << "generic_parameters: [";
+        if (generic_parameters.empty()) {
+            std::cout << "],\n";
+        } else {
+            std::cout << "\n";
+            for (std::size_t i = 0; i < generic_parameters.size(); ++i) {
+                generic_parameters[i]->dump(depth + 2, true, false);
+                std::cout << (i + 1 < generic_parameters.size() ? ",\n" : "\n");
             }
+
+            print_indent(depth + 1);
+            std::cout << "],\n";
+        }
+
+        print_indent(depth + 1);
+        std::cout << "fields: [";
+        if (fields.empty()) {
+            std::cout << "]\n";
+        } else {
+            std::cout << "\n";
+            for (std::size_t i = 0; i < fields.size(); ++i) {
+                fields[i]->dump(depth + 2, true, false);
+                std::cout << (i + 1 < fields.size() ? ",\n" : "\n");
+            }
+
             print_indent(depth + 1);
             std::cout << "]\n";
         }
-        if (!fields.empty()) {
-            print_indent(depth + 1);
-            std::cout << "fields: [\n";
-            for (const auto& field : fields) {
-                field->dump(depth + 2);
-            }
-            print_indent(depth + 1);
-            std::cout << "]\n";
-        }
+
         print_indent(depth);
-        std::cout << "}\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -918,29 +1220,46 @@ export class VarDeclaration : public Statement {
         : Statement(position), visibility(visibility), storage_kind(storage_kind),
           name(std::move(name)), type(std::move(type)), initializer(std::move(initializer)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "VarDeclaration " << visibility_string(visibility) << " "
-                  << storage_kind_string(storage_kind) << " " << name;
-        if (!type && !initializer) {
-            std::cout << "\n";
-            return;
-        }
-        std::cout << " {\n";
+
+        std::cout << "VarDeclaration(\n";
+
+        print_indent(depth + 1);
+        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "storage_kind: " << storage_kind_string(storage_kind) << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
+        print_indent(depth + 1);
+        std::cout << "type: ";
         if (type) {
-            print_indent(depth + 1);
-            std::cout << "type: ";
-            type->dump(depth + 1, false);
+            type->dump(depth + 1, false, false);
+        } else {
+            std::cout << "null";
         }
+        std::cout << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "initializer: ";
         if (initializer) {
-            print_indent(depth + 1);
-            std::cout << "initializer: ";
-            initializer->dump(depth + 1, false);
+            initializer->dump(depth + 1, false, false);
+        } else {
+            std::cout << "null";
         }
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "}\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -962,19 +1281,32 @@ export class FunctionDeclaration : public Statement {
         : Statement(position), visibility(visibility), prototype(std::move(prototype)),
           body(std::move(body)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "FunctionDeclaration " << visibility_string(visibility) << " {\n";
+
+        std::cout << "FunctionDeclaration(\n";
+
+        print_indent(depth + 1);
+        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+
         print_indent(depth + 1);
         std::cout << "prototype: ";
-        prototype->dump(depth + 1, false);
+        prototype->dump(depth + 1, false, false);
+        std::cout << ",\n";
+
         print_indent(depth + 1);
         std::cout << "body: ";
-        body->dump(depth + 1, false);
+        body->dump(depth + 1, false, false);
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "}\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -993,16 +1325,27 @@ export class ExternFunctionDeclaration : public Statement {
                               std::unique_ptr<FunctionPrototype> prototype)
         : Statement(position), visibility(visibility), prototype(std::move(prototype)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "ExternFunctionDeclaration " << visibility_string(visibility) << " {\n";
+
+        std::cout << "ExternFunctionDeclaration(\n";
+
+        print_indent(depth + 1);
+        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+
         print_indent(depth + 1);
         std::cout << "prototype: ";
-        prototype->dump(depth + 1, false);
+        prototype->dump(depth + 1, false, false);
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "}\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -1023,17 +1366,30 @@ export class ExternVarDeclaration : public Statement {
         : Statement(position), visibility(visibility), name(std::move(name)),
           type(std::move(type)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "ExternVarDeclaration " << visibility_string(visibility) << " " << name
-                  << " {\n";
+
+        std::cout << "ExternVarDeclaration(\n";
+
+        print_indent(depth + 1);
+        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
         print_indent(depth + 1);
         std::cout << "type: ";
-        type->dump(depth + 1, false);
+        type->dump(depth + 1, false, false);
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "}\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -1044,16 +1400,33 @@ export class ExternVarDeclaration : public Statement {
 
 export class ImportStatement : public Statement {
   public:
-    std::string path;
+    std::vector<std::unique_ptr<IdentifierExpression>> path;
 
-    ImportStatement(Position position, std::string path)
+    ImportStatement(Position position, std::vector<std::unique_ptr<IdentifierExpression>> path)
         : Statement(position), path(std::move(path)) {}
 
-    void dump(int depth, bool with_indent = true) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "ImportStatement " << path << "\n";
+
+        std::cout << "ImportStatement(path: [";
+        if (path.empty()) {
+            std::cout << "])";
+        } else {
+            std::cout << "\n";
+            for (std::size_t i = 0; i < path.size(); ++i) {
+                path[i]->dump(depth + 1, true, false);
+                std::cout << (i + 1 < path.size() ? ",\n" : "\n");
+            }
+
+            print_indent(depth);
+            std::cout << "])";
+        }
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -1091,7 +1464,7 @@ class Visitor {
 
     virtual T visit(BlockStatement& node) = 0;
     virtual T visit(ExpressionStatement& node) = 0;
-    virtual T visit(IfStatement& node) = 0;
+    virtual T visit(IfExpression& node) = 0;
     virtual T visit(ReturnStatement& node) = 0;
     virtual T visit(StructDeclaration& node) = 0;
     virtual T visit(VarDeclaration& node) = 0;

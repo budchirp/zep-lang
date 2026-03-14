@@ -4,7 +4,7 @@ function(zep_set_flags TARGET)
         -Wextra
         -Wpedantic
         -Wconversion
-        -Wshadow
+        -Wno-shadow
         -Wdouble-promotion
         -Wcast-qual
         -Wnon-virtual-dtor

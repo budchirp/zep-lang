@@ -17,6 +17,7 @@
 - DO NOT use shortcut names (e.g., `ty` for type, `ctx` for context)
 - ALWAYS use classes (never structs); use explicit constructors to ensure all members are initialized
 - ALWAYS ASK QUESTIONS. Do not change code for unrelated issues; ask and I will guide you.
+- Use modern C++ features. (e.g., std::print)
 
 ## Project Structure
 
