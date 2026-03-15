@@ -11,46 +11,80 @@ export module zep.frontend.ast;
 import zep.common.position;
 import zep.common.logger;
 import zep.sema.type;
-
-export enum class Visibility : std::uint8_t { Public, Private };
-
-static std::string visibility_string(Visibility visibility) {
-    return visibility == Visibility::Public ? "public" : "private";
-}
-
-export enum class StorageKind : std::uint8_t { Const, Var, VarMut };
-
-static std::string storage_kind_string(StorageKind kind) {
-    switch (kind) {
-    case StorageKind::Const:
-        return "const";
-    case StorageKind::Var:
-        return "var";
-    case StorageKind::VarMut:
-        return "var mut";
-    }
-    return "unknown";
-}
+export import zep.sema.kinds;
 
 export template <typename T>
 class Visitor;
 
 export class Node {
-  private:
-    Position position;
-
   public:
-    explicit Node(Position position) : position(position) {}
-    virtual ~Node() = default;
+    enum class Kind : std::uint8_t {
+        TypeExpression,
+        GenericParameter,
+        GenericArgument,
+        Parameter,
+        Argument,
+        FunctionPrototype,
+        StructField,
+        StructLiteralField,
+
+        NumberLiteral,
+        FloatLiteral,
+        StringLiteral,
+        BooleanLiteral,
+        IdentifierExpression,
+        BinaryExpression,
+        UnaryExpression,
+        CallExpression,
+        IndexExpression,
+        MemberExpression,
+        AssignExpression,
+        StructLiteralExpression,
+        IfExpression,
+
+        BlockStatement,
+        ExpressionStatement,
+        ReturnStatement,
+        StructDeclaration,
+        VarDeclaration,
+        FunctionDeclaration,
+        ExternFunctionDeclaration,
+        ExternVarDeclaration,
+        ImportStatement,
+    };
+
+  private:
+  protected:
+    explicit Node(Kind kind, Position position) : kind(kind), position(position) {}
 
     Node(const Node&) = delete;
     Node& operator=(const Node&) = delete;
     Node(Node&&) = default;
     Node& operator=(Node&&) = default;
 
+  public:
+    Kind kind;
+    Position position;
+
+    virtual ~Node() = default;
+
     virtual void dump(int depth, bool with_indent = true, bool trailing_newline = true) const = 0;
 
-    Position get_position() const { return position; }
+    template <typename T>
+    T* as() {
+        if (kind == T::static_kind) {
+            return static_cast<T*>(this);
+        }
+        return nullptr;
+    }
+
+    template <typename T>
+    const T* as() const {
+        if (kind == T::static_kind) {
+            return static_cast<const T*>(this);
+        }
+        return nullptr;
+    }
 };
 
 export class Expression : public Node {
@@ -77,10 +111,12 @@ export class Statement : public Node {
 
 export class TypeExpression : public Node {
   public:
+    static constexpr Kind static_kind = Kind::TypeExpression;
+
     std::shared_ptr<Type> type;
 
     TypeExpression(Position position, std::shared_ptr<Type> type)
-        : Node(position), type(std::move(type)) {}
+        : Node(static_kind, position), type(std::move(type)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -111,12 +147,14 @@ export class TypeExpression : public Node {
 
 export class GenericParameter : public Node {
   public:
+    static constexpr Kind static_kind = Kind::GenericParameter;
+
     std::string name;
     std::unique_ptr<TypeExpression> constraint;
 
     GenericParameter(Position position, std::string name,
                      std::unique_ptr<TypeExpression> constraint)
-        : Node(position), name(std::move(name)), constraint(std::move(constraint)) {}
+        : Node(static_kind, position), name(std::move(name)), constraint(std::move(constraint)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -156,11 +194,13 @@ export class GenericParameter : public Node {
 
 export class GenericArgument : public Node {
   public:
+    static constexpr Kind static_kind = Kind::GenericArgument;
+
     std::string name;
     std::unique_ptr<TypeExpression> type;
 
     GenericArgument(Position position, std::string name, std::unique_ptr<TypeExpression> type)
-        : Node(position), name(std::move(name)), type(std::move(type)) {}
+        : Node(static_kind, position), name(std::move(name)), type(std::move(type)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -197,6 +237,8 @@ export class GenericArgument : public Node {
 
 export class Parameter : public Node {
   public:
+    static constexpr Kind static_kind = Kind::Parameter;
+
     bool is_variadic;
 
     std::string name;
@@ -204,7 +246,8 @@ export class Parameter : public Node {
 
     Parameter(Position position, bool is_variadic, std::string name,
               std::unique_ptr<TypeExpression> type)
-        : Node(position), is_variadic(is_variadic), name(std::move(name)), type(std::move(type)) {}
+        : Node(static_kind, position), is_variadic(is_variadic), name(std::move(name)),
+          type(std::move(type)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -244,11 +287,13 @@ export class Parameter : public Node {
 
 export class Argument : public Node {
   public:
+    static constexpr Kind static_kind = Kind::Argument;
+
     std::string name;
     std::unique_ptr<Expression> value;
 
     Argument(Position position, std::string name, std::unique_ptr<Expression> value)
-        : Node(position), name(std::move(name)), value(std::move(value)) {}
+        : Node(static_kind, position), name(std::move(name)), value(std::move(value)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -281,6 +326,8 @@ export class Argument : public Node {
 
 export class FunctionPrototype : public Node {
   public:
+    static constexpr Kind static_kind = Kind::FunctionPrototype;
+
     std::string name;
 
     std::vector<std::unique_ptr<GenericParameter>> generic_parameters;
@@ -292,8 +339,9 @@ export class FunctionPrototype : public Node {
                       std::vector<std::unique_ptr<GenericParameter>> generic_parameters,
                       std::vector<std::unique_ptr<Parameter>> parameters,
                       std::unique_ptr<TypeExpression> return_type)
-        : Node(position), name(std::move(name)), generic_parameters(std::move(generic_parameters)),
-          parameters(std::move(parameters)), return_type(std::move(return_type)) {}
+        : Node(static_kind, position), name(std::move(name)),
+          generic_parameters(std::move(generic_parameters)), parameters(std::move(parameters)),
+          return_type(std::move(return_type)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -360,6 +408,8 @@ export class FunctionPrototype : public Node {
 
 export class StructField : public Node {
   public:
+    static constexpr Kind static_kind = Kind::StructField;
+
     Visibility visibility;
 
     std::string name;
@@ -367,7 +417,8 @@ export class StructField : public Node {
 
     StructField(Position position, Visibility visibility, std::string name,
                 std::unique_ptr<TypeExpression> type)
-        : Node(position), visibility(visibility), name(std::move(name)), type(std::move(type)) {}
+        : Node(static_kind, position), visibility(visibility), name(std::move(name)),
+          type(std::move(type)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -407,11 +458,13 @@ export class StructField : public Node {
 
 export class StructLiteralField : public Node {
   public:
+    static constexpr Kind static_kind = Kind::StructLiteralField;
+
     std::string name;
     std::unique_ptr<Expression> value;
 
     StructLiteralField(Position position, std::string name, std::unique_ptr<Expression> value)
-        : Node(position), name(std::move(name)), value(std::move(value)) {}
+        : Node(static_kind, position), name(std::move(name)), value(std::move(value)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -444,10 +497,12 @@ export class StructLiteralField : public Node {
 
 export class NumberLiteral : public Expression {
   public:
+    static constexpr Kind static_kind = Kind::NumberLiteral;
+
     std::string value;
 
     NumberLiteral(Position position, std::string value)
-        : Expression(position), value(std::move(value)) {}
+        : Expression(static_kind, position), value(std::move(value)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -469,10 +524,12 @@ export class NumberLiteral : public Expression {
 
 export class FloatLiteral : public Expression {
   public:
+    static constexpr Kind static_kind = Kind::FloatLiteral;
+
     std::string value;
 
     FloatLiteral(Position position, std::string value)
-        : Expression(position), value(std::move(value)) {}
+        : Expression(static_kind, position), value(std::move(value)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -494,10 +551,12 @@ export class FloatLiteral : public Expression {
 
 export class StringLiteral : public Expression {
   public:
+    static constexpr Kind static_kind = Kind::StringLiteral;
+
     std::string value;
 
     StringLiteral(Position position, std::string value)
-        : Expression(position), value(std::move(value)) {}
+        : Expression(static_kind, position), value(std::move(value)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -519,9 +578,12 @@ export class StringLiteral : public Expression {
 
 export class BooleanLiteral : public Expression {
   public:
+    static constexpr Kind static_kind = Kind::BooleanLiteral;
+
     bool value;
 
-    BooleanLiteral(Position position, bool value) : Expression(position), value(value) {}
+    BooleanLiteral(Position position, bool value)
+        : Expression(static_kind, position), value(value) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -543,10 +605,12 @@ export class BooleanLiteral : public Expression {
 
 export class IdentifierExpression : public Expression {
   public:
+    static constexpr Kind static_kind = Kind::IdentifierExpression;
+
     std::string name;
 
     IdentifierExpression(Position position, std::string name)
-        : Expression(position), name(std::move(name)) {}
+        : Expression(static_kind, position), name(std::move(name)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -568,6 +632,8 @@ export class IdentifierExpression : public Expression {
 
 export class BinaryExpression : public Expression {
   public:
+    static constexpr Kind static_kind = Kind::BinaryExpression;
+
     enum class BinaryOperator : std::uint8_t {
         Plus,
         Minus,
@@ -630,7 +696,8 @@ export class BinaryExpression : public Expression {
 
     BinaryExpression(Position position, std::unique_ptr<Expression> left, BinaryOperator op,
                      std::unique_ptr<Expression> right)
-        : Expression(position), left(std::move(left)), op(op), right(std::move(right)) {}
+        : Expression(static_kind, position), left(std::move(left)), op(op),
+          right(std::move(right)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -668,6 +735,8 @@ export class BinaryExpression : public Expression {
 
 export class UnaryExpression : public Expression {
   public:
+    static constexpr Kind static_kind = Kind::UnaryExpression;
+
     enum class UnaryOperator : std::uint8_t {
         Plus,
         Minus,
@@ -698,7 +767,7 @@ export class UnaryExpression : public Expression {
     std::unique_ptr<Expression> operand;
 
     UnaryExpression(Position position, UnaryOperator op, std::unique_ptr<Expression> operand)
-        : Expression(position), op(op), operand(std::move(operand)) {}
+        : Expression(static_kind, position), op(op), operand(std::move(operand)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -731,6 +800,8 @@ export class UnaryExpression : public Expression {
 
 export class CallExpression : public Expression {
   public:
+    static constexpr Kind static_kind = Kind::CallExpression;
+
     std::unique_ptr<Expression> callee;
 
     std::vector<std::unique_ptr<GenericArgument>> generic_arguments;
@@ -740,7 +811,7 @@ export class CallExpression : public Expression {
     CallExpression(Position position, std::unique_ptr<Expression> callee,
                    std::vector<std::unique_ptr<GenericArgument>> generic_arguments,
                    std::vector<std::unique_ptr<Argument>> arguments)
-        : Expression(position), callee(std::move(callee)),
+        : Expression(static_kind, position), callee(std::move(callee)),
           generic_arguments(std::move(generic_arguments)), arguments(std::move(arguments)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
@@ -801,12 +872,14 @@ export class CallExpression : public Expression {
 
 export class IndexExpression : public Expression {
   public:
+    static constexpr Kind static_kind = Kind::IndexExpression;
+
     std::unique_ptr<Expression> value;
     std::unique_ptr<Expression> index;
 
     IndexExpression(Position position, std::unique_ptr<Expression> value,
                     std::unique_ptr<Expression> index)
-        : Expression(position), value(std::move(value)), index(std::move(index)) {}
+        : Expression(static_kind, position), value(std::move(value)), index(std::move(index)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -841,11 +914,13 @@ export class IndexExpression : public Expression {
 
 export class MemberExpression : public Expression {
   public:
+    static constexpr Kind static_kind = Kind::MemberExpression;
+
     std::unique_ptr<Expression> value;
     std::string member;
 
     MemberExpression(Position position, std::unique_ptr<Expression> value, std::string member)
-        : Expression(position), value(std::move(value)), member(std::move(member)) {}
+        : Expression(static_kind, position), value(std::move(value)), member(std::move(member)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -878,12 +953,14 @@ export class MemberExpression : public Expression {
 
 export class AssignExpression : public Expression {
   public:
+    static constexpr Kind static_kind = Kind::AssignExpression;
+
     std::unique_ptr<Expression> target;
     std::unique_ptr<Expression> value;
 
     AssignExpression(Position position, std::unique_ptr<Expression> target,
                      std::unique_ptr<Expression> value)
-        : Expression(position), target(std::move(target)), value(std::move(value)) {}
+        : Expression(static_kind, position), target(std::move(target)), value(std::move(value)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -918,6 +995,8 @@ export class AssignExpression : public Expression {
 
 export class StructLiteralExpression : public Expression {
   public:
+    static constexpr Kind static_kind = Kind::StructLiteralExpression;
+
     std::unique_ptr<IdentifierExpression> name;
 
     std::vector<std::unique_ptr<GenericArgument>> generic_arguments;
@@ -927,7 +1006,7 @@ export class StructLiteralExpression : public Expression {
     StructLiteralExpression(Position position, std::unique_ptr<IdentifierExpression> name,
                             std::vector<std::unique_ptr<GenericArgument>> generic_arguments,
                             std::vector<std::unique_ptr<StructLiteralField>> fields)
-        : Expression(position), name(std::move(name)),
+        : Expression(static_kind, position), name(std::move(name)),
           generic_arguments(std::move(generic_arguments)), fields(std::move(fields)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
@@ -988,10 +1067,12 @@ export class StructLiteralExpression : public Expression {
 
 export class BlockStatement : public Statement {
   public:
+    static constexpr Kind static_kind = Kind::BlockStatement;
+
     std::vector<std::unique_ptr<Statement>> statements;
 
     BlockStatement(Position position, std::vector<std::unique_ptr<Statement>> statements)
-        : Statement(position), statements(std::move(statements)) {}
+        : Statement(static_kind, position), statements(std::move(statements)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -1025,10 +1106,12 @@ export class BlockStatement : public Statement {
 
 export class ExpressionStatement : public Statement {
   public:
+    static constexpr Kind static_kind = Kind::ExpressionStatement;
+
     std::unique_ptr<Expression> expression;
 
     explicit ExpressionStatement(std::unique_ptr<Expression> expression)
-        : Statement(expression->get_position()), expression(std::move(expression)) {}
+        : Statement(static_kind, expression->position), expression(std::move(expression)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -1052,13 +1135,15 @@ export class ExpressionStatement : public Statement {
 
 export class IfExpression : public Expression {
   public:
+    static constexpr Kind static_kind = Kind::IfExpression;
+
     std::unique_ptr<Expression> condition;
     std::unique_ptr<Statement> then_branch;
     std::unique_ptr<Statement> else_branch;
 
     IfExpression(Position position, std::unique_ptr<Expression> condition,
                  std::unique_ptr<Statement> then_branch, std::unique_ptr<Statement> else_branch)
-        : Expression(position), condition(std::move(condition)),
+        : Expression(static_kind, position), condition(std::move(condition)),
           then_branch(std::move(then_branch)), else_branch(std::move(else_branch)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
@@ -1103,10 +1188,12 @@ export class IfExpression : public Expression {
 
 export class ReturnStatement : public Statement {
   public:
+    static constexpr Kind static_kind = Kind::ReturnStatement;
+
     std::unique_ptr<Expression> value;
 
     ReturnStatement(Position position, std::unique_ptr<Expression> value)
-        : Statement(position), value(std::move(value)) {}
+        : Statement(static_kind, position), value(std::move(value)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -1134,6 +1221,8 @@ export class ReturnStatement : public Statement {
 
 export class StructDeclaration : public Statement {
   public:
+    static constexpr Kind static_kind = Kind::StructDeclaration;
+
     Visibility visibility;
 
     std::string name;
@@ -1145,7 +1234,7 @@ export class StructDeclaration : public Statement {
     StructDeclaration(Position position, Visibility visibility, std::string name,
                       std::vector<std::unique_ptr<GenericParameter>> generic_parameters,
                       std::vector<std::unique_ptr<StructField>> fields)
-        : Statement(position), visibility(visibility), name(std::move(name)),
+        : Statement(static_kind, position), visibility(visibility), name(std::move(name)),
           generic_parameters(std::move(generic_parameters)), fields(std::move(fields)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
@@ -1207,6 +1296,8 @@ export class StructDeclaration : public Statement {
 
 export class VarDeclaration : public Statement {
   public:
+    static constexpr Kind static_kind = Kind::VarDeclaration;
+
     Visibility visibility;
     StorageKind storage_kind;
 
@@ -1217,7 +1308,7 @@ export class VarDeclaration : public Statement {
     VarDeclaration(Position position, Visibility visibility, StorageKind storage_kind,
                    std::string name, std::unique_ptr<TypeExpression> type,
                    std::unique_ptr<Expression> initializer)
-        : Statement(position), visibility(visibility), storage_kind(storage_kind),
+        : Statement(static_kind, position), visibility(visibility), storage_kind(storage_kind),
           name(std::move(name)), type(std::move(type)), initializer(std::move(initializer)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
@@ -1270,6 +1361,8 @@ export class VarDeclaration : public Statement {
 
 export class FunctionDeclaration : public Statement {
   public:
+    static constexpr Kind static_kind = Kind::FunctionDeclaration;
+
     Visibility visibility;
 
     std::unique_ptr<FunctionPrototype> prototype;
@@ -1278,7 +1371,7 @@ export class FunctionDeclaration : public Statement {
     FunctionDeclaration(Position position, Visibility visibility,
                         std::unique_ptr<FunctionPrototype> prototype,
                         std::unique_ptr<BlockStatement> body)
-        : Statement(position), visibility(visibility), prototype(std::move(prototype)),
+        : Statement(static_kind, position), visibility(visibility), prototype(std::move(prototype)),
           body(std::move(body)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
@@ -1317,13 +1410,16 @@ export class FunctionDeclaration : public Statement {
 
 export class ExternFunctionDeclaration : public Statement {
   public:
+    static constexpr Kind static_kind = Kind::ExternFunctionDeclaration;
+
     Visibility visibility;
 
     std::unique_ptr<FunctionPrototype> prototype;
 
     ExternFunctionDeclaration(Position position, Visibility visibility,
                               std::unique_ptr<FunctionPrototype> prototype)
-        : Statement(position), visibility(visibility), prototype(std::move(prototype)) {}
+        : Statement(static_kind, position), visibility(visibility),
+          prototype(std::move(prototype)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -1356,6 +1452,8 @@ export class ExternFunctionDeclaration : public Statement {
 
 export class ExternVarDeclaration : public Statement {
   public:
+    static constexpr Kind static_kind = Kind::ExternVarDeclaration;
+
     Visibility visibility;
 
     std::string name;
@@ -1363,7 +1461,7 @@ export class ExternVarDeclaration : public Statement {
 
     ExternVarDeclaration(Position position, Visibility visibility, std::string name,
                          std::unique_ptr<TypeExpression> type)
-        : Statement(position), visibility(visibility), name(std::move(name)),
+        : Statement(static_kind, position), visibility(visibility), name(std::move(name)),
           type(std::move(type)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
@@ -1400,10 +1498,12 @@ export class ExternVarDeclaration : public Statement {
 
 export class ImportStatement : public Statement {
   public:
+    static constexpr Kind static_kind = Kind::ImportStatement;
+
     std::vector<std::unique_ptr<IdentifierExpression>> path;
 
     ImportStatement(Position position, std::vector<std::unique_ptr<IdentifierExpression>> path)
-        : Statement(position), path(std::move(path)) {}
+        : Statement(static_kind, position), path(std::move(path)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {

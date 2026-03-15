@@ -3,8 +3,8 @@ extern fn printf(fmt: string, ...args: string[]): void
 private extern fn malloc(size: i64): *void
 extern fn free(ptr: *void): void
 
-private fn allocate<T>(value: T): *T {
-    var ptr = malloc(123 as i64) as *T;
+private fn allocate<T>(value: T): *mut T {
+    var ptr = malloc(123 as i64) as *mut T;
     *ptr = value
 
     return ptr
@@ -51,7 +51,7 @@ fn main(): i32 {
 
     printf("`add`: %d\n", result.value as string)
 
-    printf("`vector`: %d, %d, %d\n", vector.x, vector.y, vector.z)
+    printf("`vector`: %d, %d, %d\n", vector.x as string, vector.y as string, vector.z as string)
 
     free(vector_ptr)
 

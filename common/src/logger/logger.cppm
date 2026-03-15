@@ -2,7 +2,7 @@ module;
 
 #include <cstdlib>
 #include <iostream>
-#include <optional>
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -20,7 +20,7 @@ export void print_indent(int depth) {
 
 export class Logger {
   private:
-    std::optional<Source> source;
+    const Source* source = nullptr;
 
     void print_prefix(std::string_view color, std::string_view level) const {
         std::cerr << color << colors::bold << level << colors::reset;
@@ -32,11 +32,12 @@ export class Logger {
     }
 
     void print_source_line(Position position) const {
-        if (!source.has_value()) {
+        if (source == nullptr) {
             return;
         }
 
-        auto content = source->content;
+        const auto& content = source->content;
+
         std::size_t current_line = 1;
         std::size_t line_start = 0;
 
@@ -74,7 +75,7 @@ export class Logger {
   public:
     Logger() = default;
 
-    explicit Logger(Source source) : source(std::move(source)) {}
+    explicit Logger(const Source& source) : source(&source) {}
 
     void log(std::string_view message) const {
         std::cerr << colors::bold_blue << "info: " << colors::reset << colors::bold_white << message
@@ -112,5 +113,19 @@ export class Logger {
         std::cerr << colors::bold_white << message << colors::reset << "\n";
         print_source_line(position);
         std::exit(1);
+    }
+
+    void report_error(Position position, std::string_view message) const {
+        print_location(position);
+        print_prefix(colors::bold_red, "error: ");
+        std::cerr << colors::bold_white << message << colors::reset << "\n";
+        print_source_line(position);
+    }
+
+    void report_warning(Position position, std::string_view message) const {
+        print_location(position);
+        print_prefix(colors::bold_yellow, "warning: ");
+        std::cerr << colors::bold_white << message << colors::reset << "\n";
+        print_source_line(position);
     }
 };

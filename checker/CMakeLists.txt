@@ -1,0 +1,1 @@
+zep_add_module(zep_checker DEPENDS zep_common zep_frontend zep_sema)

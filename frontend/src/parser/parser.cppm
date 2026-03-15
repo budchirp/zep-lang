@@ -4,6 +4,7 @@ module;
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 export module zep.frontend.parser;
@@ -21,7 +22,8 @@ import zep.sema.type;
 export class Parser {
   private:
     Lexer lexer;
-    Logger logger;
+
+    const Logger& logger;
 
     Token current_token;
     Token peek_token;
@@ -349,6 +351,16 @@ export class Parser {
 
         advance();
 
+        if (op == BinaryExpression::BinaryOperator::As ||
+            op == BinaryExpression::BinaryOperator::Is) {
+            auto type_expression = parse_type_expression();
+            auto right = std::make_unique<IdentifierExpression>(
+                position, type_expression->get_type()->to_string());
+            right->set_type(type_expression->get_type());
+            return std::make_unique<BinaryExpression>(position, std::move(left), op,
+                                                      std::move(right));
+        }
+
         auto right = parse_expression(precedence);
         return std::make_unique<BinaryExpression>(position, std::move(left), op, std::move(right));
     }
@@ -480,16 +492,22 @@ export class Parser {
         if (check(TokenType::Asterisk)) {
             advance();
 
+            bool is_mutable = false;
+            if (check(TokenType::Mut)) {
+                is_mutable = true;
+                advance();
+            }
+
             auto element = parse_type_expression();
 
-            auto type = std::make_shared<PointerType>(element->get_type());
+            auto type = std::make_shared<PointerType>(element->get_type(), is_mutable);
             return std::make_unique<TypeExpression>(position, std::move(type));
         }
 
         auto name = std::string(expect(TokenType::Identifier).value);
         auto type = resolve_type(name);
 
-        if (check(TokenType::LessThan) && type->kind == TypeKind::Named) {
+        if (check(TokenType::LessThan) && type->kind == Type::Kind::Named) {
             auto generic_arguments = parse_generic_arguments();
 
             std::vector<std::shared_ptr<GenericArgumentType>> generic_argument_types;
@@ -543,7 +561,7 @@ export class Parser {
     std::unique_ptr<StructLiteralExpression>
     parse_struct_literal(std::unique_ptr<IdentifierExpression> name,
                          std::vector<std::unique_ptr<GenericArgument>> generic_arguments = {}) {
-        auto position = name->get_position();
+        auto position = name->position;
 
         expect(TokenType::LeftBrace);
 
@@ -785,9 +803,9 @@ export class Parser {
     }
 
   public:
-    Parser(Lexer lexer, Logger logger)
-        : lexer(std::move(lexer)), logger(std::move(logger)),
-          current_token(this->lexer.next_token()), peek_token(this->lexer.next_token()) {}
+    Parser(Lexer lexer, const Logger& logger)
+        : lexer(std::move(lexer)), logger(logger), current_token(this->lexer.next_token()),
+          peek_token(this->lexer.next_token()) {}
 
     Program parse() {
         std::vector<std::unique_ptr<Statement>> statements;

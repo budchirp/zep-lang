@@ -11,48 +11,67 @@ export module zep.sema.type;
 
 import zep.common.logger;
 
-export enum class TypeKind : std::uint8_t {
-    Any,
-    Unknown,
-    Void,
-    String,
-    Boolean,
-    Integer,
-    Float,
-    Named,
-    Array,
-    Pointer,
-    Struct,
-    StructLiteral,
-    Function
-};
-
 export class Type {
   public:
-    TypeKind kind;
+    enum class Kind : std::uint8_t {
+        Any,
+        Unknown,
+        Void,
+        String,
+        Boolean,
+        Integer,
+        Float,
+        Named,
+        Array,
+        Pointer,
+        Struct,
+        Function
+    };
 
-    explicit Type(TypeKind kind) : kind(kind) {}
-    virtual ~Type() = default;
+  protected:
+    explicit Type(Kind kind) : kind(kind) {}
 
     Type(const Type&) = delete;
     Type& operator=(const Type&) = delete;
     Type(Type&&) = default;
     Type& operator=(Type&&) = default;
 
+  public:
+    Kind kind;
+
+    virtual ~Type() = default;
+
     virtual void dump(int depth, bool with_indent = true, bool trailing_newline = true) const = 0;
     virtual std::string to_string() const = 0;
 
     bool is_numeric() const {
-        return kind == TypeKind::Integer || kind == TypeKind::Float || kind == TypeKind::Unknown ||
-               kind == TypeKind::Named;
+        return kind == Kind::Integer || kind == Kind::Float || kind == Kind::Unknown;
     }
 
     bool operator==(const Type& other) const { return kind == other.kind; }
+
+    template <typename T>
+    T* as() {
+        if (kind == T::static_kind) {
+            return static_cast<T*>(this);
+        }
+        return nullptr;
+    }
+
+    template <typename T>
+    const T* as() const {
+        if (kind == T::static_kind) {
+            return static_cast<const T*>(this);
+        }
+        return nullptr;
+    }
 };
 
 export class AnyType : public Type {
   public:
-    AnyType() : Type(TypeKind::Any) {}
+    static constexpr Kind static_kind = Kind::Any;
+
+    AnyType() : Type(static_kind) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -70,7 +89,9 @@ export class AnyType : public Type {
 
 export class UnknownType : public Type {
   public:
-    UnknownType() : Type(TypeKind::Unknown) {}
+    static constexpr Kind static_kind = Kind::Unknown;
+
+    UnknownType() : Type(static_kind) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -88,7 +109,9 @@ export class UnknownType : public Type {
 
 export class VoidType : public Type {
   public:
-    VoidType() : Type(TypeKind::Void) {}
+    static constexpr Kind static_kind = Kind::Void;
+
+    VoidType() : Type(static_kind) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -106,7 +129,9 @@ export class VoidType : public Type {
 
 export class StringType : public Type {
   public:
-    StringType() : Type(TypeKind::String) {}
+    static constexpr Kind static_kind = Kind::String;
+
+    StringType() : Type(static_kind) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -124,7 +149,9 @@ export class StringType : public Type {
 
 export class BooleanType : public Type {
   public:
-    BooleanType() : Type(TypeKind::Boolean) {}
+    static constexpr Kind static_kind = Kind::Boolean;
+
+    BooleanType() : Type(static_kind) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -142,11 +169,13 @@ export class BooleanType : public Type {
 
 export class IntegerType : public Type {
   public:
+    static constexpr Kind static_kind = Kind::Integer;
+
     bool is_unsigned;
     std::uint8_t size;
 
     IntegerType(bool is_unsigned = false, std::uint8_t size = 32)
-        : Type(TypeKind::Integer), is_unsigned(is_unsigned), size(size) {}
+        : Type(static_kind), is_unsigned(is_unsigned), size(size) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -175,9 +204,11 @@ export class IntegerType : public Type {
 
 export class FloatType : public Type {
   public:
+    static constexpr Kind static_kind = Kind::Float;
+
     std::uint8_t size;
 
-    explicit FloatType(std::uint8_t size = 64) : Type(TypeKind::Float), size(size) {}
+    explicit FloatType(std::uint8_t size = 64) : Type(static_kind), size(size) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -353,12 +384,14 @@ export class StructFieldType {
 
 export class NamedType : public Type {
   public:
+    static constexpr Kind static_kind = Kind::Named;
+
     std::string name;
     std::vector<std::shared_ptr<GenericArgumentType>> generic_arguments;
 
     NamedType(std::string name,
               std::vector<std::shared_ptr<GenericArgumentType>> generic_arguments = {})
-        : Type(TypeKind::Named), name(std::move(name)),
+        : Type(static_kind), name(std::move(name)),
           generic_arguments(std::move(generic_arguments)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
@@ -397,11 +430,13 @@ export class NamedType : public Type {
 
 export class ArrayType : public Type {
   public:
+    static constexpr Kind static_kind = Kind::Array;
+
     std::shared_ptr<Type> element;
     std::optional<std::uint8_t> size;
 
     ArrayType(std::shared_ptr<Type> element, std::optional<std::uint8_t> size = std::nullopt)
-        : Type(TypeKind::Array), element(std::move(element)), size(size) {}
+        : Type(static_kind), element(std::move(element)), size(size) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -432,29 +467,45 @@ export class ArrayType : public Type {
 
 export class PointerType : public Type {
   public:
+    static constexpr Kind static_kind = Kind::Pointer;
+
+    bool is_mutable;
     std::shared_ptr<Type> element;
 
-    explicit PointerType(std::shared_ptr<Type> element)
-        : Type(TypeKind::Pointer), element(std::move(element)) {}
+    explicit PointerType(std::shared_ptr<Type> element, bool is_mutable = false)
+        : Type(static_kind), is_mutable(is_mutable), element(std::move(element)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             print_indent(depth);
         }
 
-        std::cout << "PointerType(element: ";
-        element->dump(depth, false, false);
+        std::cout << "PointerType(\n";
+
+        print_indent(depth + 1);
+        std::cout << "is_mutable: " << (is_mutable ? "true" : "false") << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "element: ";
+        element->dump(depth + 1, false, false);
+        std::cout << "\n";
+
+        print_indent(depth);
         std::cout << ")";
 
         if (trailing_newline) {
             std::cout << "\n";
         }
     }
-    std::string to_string() const override { return "*" + element->to_string(); }
+    std::string to_string() const override {
+        return is_mutable ? "*mut " + element->to_string() : "*" + element->to_string();
+    }
 };
 
 export class StructType : public Type {
   public:
+    static constexpr Kind static_kind = Kind::Struct;
+
     std::string name;
 
     std::vector<GenericParameterType> generic_parameters;
@@ -462,7 +513,7 @@ export class StructType : public Type {
 
     StructType(std::string name, std::vector<GenericParameterType> generic_parameters,
                std::vector<StructFieldType> fields)
-        : Type(TypeKind::Struct), name(std::move(name)),
+        : Type(static_kind), name(std::move(name)),
           generic_parameters(std::move(generic_parameters)), fields(std::move(fields)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
@@ -515,55 +566,10 @@ export class StructType : public Type {
     std::string to_string() const override { return name; }
 };
 
-export class StructLiteralType : public Type {
-  public:
-    std::shared_ptr<StructType> struct_type;
-    std::vector<GenericArgumentType> generic_arguments;
-
-    StructLiteralType(std::shared_ptr<StructType> struct_type,
-                      std::vector<GenericArgumentType> generic_arguments = {})
-        : Type(TypeKind::StructLiteral), struct_type(std::move(struct_type)),
-          generic_arguments(std::move(generic_arguments)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            print_indent(depth);
-        }
-
-        std::cout << "StructLiteralType(\n";
-
-        print_indent(depth + 1);
-        std::cout << "struct_type: ";
-        struct_type->dump(depth + 1, false, false);
-        std::cout << ",\n";
-
-        print_indent(depth + 1);
-        std::cout << "generic_arguments: [";
-        if (generic_arguments.empty()) {
-            std::cout << "]\n";
-        } else {
-            std::cout << "\n";
-            for (std::size_t i = 0; i < generic_arguments.size(); ++i) {
-                generic_arguments[i].dump(depth + 2, true, false);
-                std::cout << (i + 1 < generic_arguments.size() ? ",\n" : "\n");
-            }
-
-            print_indent(depth + 1);
-            std::cout << "]\n";
-        }
-
-        print_indent(depth);
-        std::cout << ")";
-
-        if (trailing_newline) {
-            std::cout << "\n";
-        }
-    }
-    std::string to_string() const override { return struct_type->to_string(); }
-};
-
 export class FunctionType : public Type {
   public:
+    static constexpr Kind static_kind = Kind::Function;
+
     std::shared_ptr<Type> return_type;
 
     std::vector<ParameterType> parameters;
@@ -573,9 +579,8 @@ export class FunctionType : public Type {
 
     FunctionType(std::shared_ptr<Type> return_type, std::vector<ParameterType> parameters,
                  std::vector<GenericParameterType> generic_parameters = {}, bool variadic = false)
-        : Type(TypeKind::Function), return_type(std::move(return_type)),
-          parameters(std::move(parameters)), generic_parameters(std::move(generic_parameters)),
-          variadic(variadic) {}
+        : Type(static_kind), return_type(std::move(return_type)), parameters(std::move(parameters)),
+          generic_parameters(std::move(generic_parameters)), variadic(variadic) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {

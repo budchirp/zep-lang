@@ -135,7 +135,7 @@ export class Lexer {
     }
 
   public:
-    explicit Lexer(const Source& source) : input(source.content) { read_char(); }
+    explicit Lexer(std::string_view input) : input(input) { read_char(); }
 
     Token next_token() {
         skip_whitespace();
