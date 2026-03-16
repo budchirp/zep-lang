@@ -4,7 +4,7 @@ module;
 #include <string>
 #include <vector>
 
-export module zep.lowerer.name_mangler;
+export module zep.lowerer.mangler;
 
 import zep.sema.type;
 

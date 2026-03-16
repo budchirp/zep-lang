@@ -4,7 +4,7 @@ module;
 #include <string>
 #include <vector>
 
-export module zep.checker.diagnostic;
+export module zep.common.logger.diagnostic;
 
 import zep.common.position;
 import zep.common.logger;

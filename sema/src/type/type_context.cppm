@@ -7,7 +7,7 @@ module;
 #include <utility>
 #include <vector>
 
-export module zep.checker.type_context;
+export module zep.sema.type.type_context;
 
 import zep.sema.type;
 import zep.sema.env;

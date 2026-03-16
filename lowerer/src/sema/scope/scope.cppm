@@ -6,11 +6,11 @@ module;
 #include <unordered_map>
 #include <vector>
 
-export module zep.lowerer.scope;
+export module zep.lowerer.sema.scope;
 
 import zep.common.logger;
-import zep.lowerer.symbols;
-import zep.lowerer.types;
+import zep.lowerer.sema.scope.symbol;
+import zep.lowerer.sema.types;
 
 export class LoweredScope {
   private:
@@ -145,8 +145,8 @@ export class LoweredScope {
 
         for (const auto& [type_name, sym] : types) {
             print_indent(depth + 1);
-            std::cout << type_name << ": " << (sym->type != nullptr ? sym->type->to_string() : "null")
-                      << "\n";
+            std::cout << type_name << ": "
+                      << (sym->type != nullptr ? sym->type->to_string() : "null") << "\n";
         }
         for (const auto& [var_name, sym] : vars) {
             sym->dump(depth + 1);

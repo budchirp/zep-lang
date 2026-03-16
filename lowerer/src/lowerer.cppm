@@ -7,16 +7,16 @@ module;
 
 export module zep.lowerer;
 
-import zep.checker.context;
-import zep.checker.type_context;
+import zep.sema.context;
+import zep.sema.type.type_context;
 import zep.frontend.ast;
 import zep.frontend.ast.program;
 import zep.sema.type;
 import zep.sema.kinds;
-import zep.lowerer.nodes;
-import zep.lowerer.types;
-import zep.lowerer.env;
-import zep.lowerer.name_mangler;
+import zep.lowerer.ir;
+import zep.lowerer.sema.types;
+import zep.lowerer.sema.env;
+import zep.lowerer.mangler;
 import zep.lowerer.monomorphizer;
 
 export class Lowerer {

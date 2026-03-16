@@ -1,11 +1,11 @@
 module;
 
-export module zep.checker.context;
+export module zep.sema.context;
 
 import zep.common.source;
 import zep.common.logger;
 import zep.sema.env;
-import zep.checker.diagnostic;
+import zep.common.logger.diagnostic;
 
 export class Context {
   public:

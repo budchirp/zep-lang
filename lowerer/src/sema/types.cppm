@@ -6,7 +6,7 @@ module;
 #include <string>
 #include <vector>
 
-export module zep.lowerer.types;
+export module zep.lowerer.sema.types;
 
 import zep.common.logger;
 
@@ -209,8 +209,8 @@ export class LoweredArrayType : public LoweredType {
     }
 
     std::string to_string() const override {
-        return (element != nullptr ? element->to_string() : "void") + "[" +
-               std::to_string(size) + "]";
+        return (element != nullptr ? element->to_string() : "void") + "[" + std::to_string(size) +
+               "]";
     }
 };
 
@@ -237,8 +237,7 @@ export class LoweredStructType : public LoweredType {
         if (with_indent) {
             print_indent(depth);
         }
-        std::cout << "LoweredStructType(name: \"" << name << "\", fields: " << fields.size()
-                  << ")";
+        std::cout << "LoweredStructType(name: \"" << name << "\", fields: " << fields.size() << ")";
         if (trailing_newline) {
             std::cout << "\n";
         }
@@ -279,7 +278,6 @@ export class LoweredFunctionType : public LoweredType {
     }
 
     std::string to_string() const override {
-        return "function( -> " +
-               (return_type != nullptr ? return_type->to_string() : "void") + ")";
+        return "function( -> " + (return_type != nullptr ? return_type->to_string() : "void") + ")";
     }
 };

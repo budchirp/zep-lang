@@ -6,14 +6,14 @@ module;
 #include <string>
 #include <vector>
 
-export module zep.lowerer.nodes;
+export module zep.lowerer.ir;
 
 import zep.common.position;
 import zep.common.logger;
 import zep.sema.kinds;
-export import zep.lowerer.types;
-export import zep.lowerer.symbols;
-export import zep.lowerer.scope;
+export import zep.lowerer.sema.types;
+export import zep.lowerer.sema.scope.symbol;
+export import zep.lowerer.sema.scope;
 
 export enum class LoweredNodeKind : std::uint8_t {
     NumberLiteral,

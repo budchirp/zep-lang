@@ -4,17 +4,11 @@ module;
 #include <memory>
 #include <string>
 
-export module zep.lowerer.symbols;
+export module zep.lowerer.sema.scope.symbol;
 
 import zep.common.logger;
-import zep.lowerer.types;
+import zep.lowerer.sema.types;
 import zep.sema.kinds;
-
-export enum class Linkage : std::uint8_t { External, Internal };
-
-export std::string linkage_string(Linkage linkage) {
-    return linkage == Linkage::External ? "external" : "internal";
-}
 
 export class LoweredParameter {
   public:
@@ -26,8 +20,8 @@ export class LoweredParameter {
 
     void dump(int depth) const {
         print_indent(depth);
-        std::cout << "Parameter(name=\"" << name << "\", type="
-                  << (type != nullptr ? type->to_string() : "null") << ")\n";
+        std::cout << "Parameter(name=\"" << name
+                  << "\", type=" << (type != nullptr ? type->to_string() : "null") << ")\n";
     }
 };
 

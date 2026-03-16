@@ -4,10 +4,10 @@ module;
 #include <memory>
 #include <string>
 
-export module zep.lowerer.env;
+export module zep.lowerer.sema.env;
 
 import zep.common.logger;
-export import zep.lowerer.scope;
+export import zep.lowerer.sema.scope;
 
 export class LoweredEnv {
   public:

@@ -11,7 +11,7 @@ import zep.common.logger;
 import zep.frontend.lexer;
 import zep.frontend.parser;
 import zep.checker.type_checker;
-import zep.checker.context;
+import zep.sema.context;
 import zep.lowerer;
 
 export class Compiler {

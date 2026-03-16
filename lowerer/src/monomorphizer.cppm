@@ -11,7 +11,7 @@ export module zep.lowerer.monomorphizer;
 import zep.sema.type;
 import zep.frontend.ast;
 import zep.frontend.ast.program;
-import zep.lowerer.name_mangler;
+import zep.lowerer.mangler;
 
 export class Monomorphizer {
   public:
@@ -19,8 +19,10 @@ export class Monomorphizer {
         enum class Kind { Function, Struct };
 
         Kind kind;
+
         std::string original_name;
         std::string mangled_name;
+
         std::vector<std::shared_ptr<Type>> type_arguments;
     };
 
@@ -53,14 +55,11 @@ export class Monomorphizer {
     }
 
     std::string request_function_specialization(
-        const std::string& name,
-        const std::vector<std::shared_ptr<Type>>& type_arguments,
+        const std::string& name, const std::vector<std::shared_ptr<Type>>& type_arguments,
         const std::vector<std::shared_ptr<Type>>& resolved_parameter_types,
-        const std::shared_ptr<Type>& resolved_return_type,
-        bool is_variadic) {
-        auto mangled_name = NameMangler::mangle_function(name, type_arguments,
-                                                         resolved_parameter_types,
-                                                         resolved_return_type, is_variadic);
+        const std::shared_ptr<Type>& resolved_return_type, bool is_variadic) {
+        auto mangled_name = NameMangler::mangle_function(
+            name, type_arguments, resolved_parameter_types, resolved_return_type, is_variadic);
 
         if (emitted_functions.find(mangled_name) == emitted_functions.end()) {
             emitted_functions.insert(mangled_name);
@@ -71,9 +70,9 @@ export class Monomorphizer {
         return mangled_name;
     }
 
-    std::string request_struct_specialization(
-        const std::string& name,
-        const std::vector<std::shared_ptr<Type>>& type_arguments) {
+    std::string
+    request_struct_specialization(const std::string& name,
+                                  const std::vector<std::shared_ptr<Type>>& type_arguments) {
         auto mangled_name = NameMangler::mangle_struct(name, type_arguments);
 
         if (emitted_structs.find(mangled_name) == emitted_structs.end()) {
