@@ -48,6 +48,8 @@ export class Type {
         return kind == Kind::Integer || kind == Kind::Float || kind == Kind::Unknown;
     }
 
+    static bool compatible(const std::shared_ptr<Type>& left, const std::shared_ptr<Type>& right);
+
     bool operator==(const Type& other) const { return kind == other.kind; }
 
     template <typename T>
@@ -642,3 +644,103 @@ export class FunctionType : public Type {
         return "function( -> " + return_type->to_string() + ")";
     }
 };
+
+inline bool Type::compatible(const std::shared_ptr<Type>& left,
+                             const std::shared_ptr<Type>& right) {
+    if (!left || !right) {
+        return true;
+    }
+
+    if (left->kind == Kind::Any || right->kind == Kind::Any) {
+        return true;
+    }
+
+    if (left->kind == Kind::Unknown || right->kind == Kind::Unknown) {
+        return true;
+    }
+
+    if (left->kind != right->kind) {
+        return false;
+    }
+
+    switch (left->kind) {
+    case Kind::Integer: {
+        auto* left_integer = left->as<IntegerType>();
+        auto* right_integer = right->as<IntegerType>();
+        return left_integer->is_unsigned == right_integer->is_unsigned &&
+               left_integer->size == right_integer->size;
+    }
+
+    case Kind::Float: {
+        auto* left_float = left->as<FloatType>();
+        auto* right_float = right->as<FloatType>();
+        return left_float->size == right_float->size;
+    }
+
+    case Kind::Pointer: {
+        auto* left_pointer = left->as<PointerType>();
+        auto* right_pointer = right->as<PointerType>();
+
+        if (left_pointer->element->kind == Kind::Void ||
+            right_pointer->element->kind == Kind::Void) {
+            return true;
+        }
+
+        if (left_pointer->is_mutable != right_pointer->is_mutable) {
+            return false;
+        }
+
+        return compatible(left_pointer->element, right_pointer->element);
+    }
+
+    case Kind::Array: {
+        auto* left_array = left->as<ArrayType>();
+        auto* right_array = right->as<ArrayType>();
+        if (left_array->size != right_array->size) {
+            return false;
+        }
+        return compatible(left_array->element, right_array->element);
+    }
+
+    case Kind::Struct: {
+        auto* left_struct = left->as<StructType>();
+        auto* right_struct = right->as<StructType>();
+        if (left_struct->name != right_struct->name) {
+            return false;
+        }
+        if (left_struct->fields.size() != right_struct->fields.size()) {
+            return false;
+        }
+        for (std::size_t i = 0; i < left_struct->fields.size(); ++i) {
+            if (left_struct->fields[i].name != right_struct->fields[i].name) {
+                return false;
+            }
+            if (!compatible(left_struct->fields[i].type, right_struct->fields[i].type)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    case Kind::Function: {
+        auto* left_function = left->as<FunctionType>();
+        auto* right_function = right->as<FunctionType>();
+        if (!compatible(left_function->return_type, right_function->return_type)) {
+            return false;
+        }
+        if (left_function->parameters.size() != right_function->parameters.size()) {
+            return false;
+        }
+        for (std::size_t i = 0; i < left_function->parameters.size(); ++i) {
+            if (!compatible(left_function->parameters[i].type,
+                            right_function->parameters[i].type)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    default:
+        return true;
+    }
+}

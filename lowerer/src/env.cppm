@@ -4,25 +4,19 @@ module;
 #include <memory>
 #include <string>
 
-export module zep.sema.env;
+export module zep.lowerer.env;
 
 import zep.common.logger;
-export import zep.sema.scope;
-import zep.sema.builtins;
+export import zep.lowerer.scope;
 
-export class Env {
-  private:
-    Builtins builtins;
-
+export class LoweredEnv {
   public:
-    std::unique_ptr<Scope> global_scope;
-    Scope* current_scope;
+    std::unique_ptr<LoweredScope> global_scope;
+    LoweredScope* current_scope;
 
-    explicit Env()
-        : global_scope(std::make_unique<Scope>("global", nullptr)),
-          current_scope(global_scope.get()) {
-        builtins.register_into(*global_scope);
-    }
+    explicit LoweredEnv()
+        : global_scope(std::make_unique<LoweredScope>("global", nullptr)),
+          current_scope(global_scope.get()) {}
 
     void push_scope(const std::string& scope_name) {
         current_scope = current_scope->add_child(scope_name);

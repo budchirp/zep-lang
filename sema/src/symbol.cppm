@@ -1,10 +1,12 @@
 module;
 
+#include <iostream>
 #include <memory>
 #include <string>
 
 export module zep.sema.symbol;
 
+import zep.common.logger;
 import zep.common.position;
 import zep.sema.kinds;
 import zep.sema.type;
@@ -24,7 +26,6 @@ export class Symbol {
           type(std::move(type)) {}
 
   private:
-
     Symbol(const Symbol&) = delete;
     Symbol& operator=(const Symbol&) = delete;
     Symbol(Symbol&&) = default;
@@ -36,12 +37,19 @@ export class Symbol {
     Position position;
 
     std::string name;
-    
+
     Visibility visibility;
-    
+
     std::shared_ptr<Type> type;
 
     virtual ~Symbol() = default;
+
+    virtual void dump(int depth) const {
+        print_indent(depth);
+        std::cout << "Symbol(kind: " << static_cast<int>(kind) << ", name: \"" << name
+                  << "\", visibility: " << visibility_string(visibility)
+                  << ", type: " << (type ? type->to_string() : "null") << ")\n";
+    }
 
     template <typename T>
     T* as() {
@@ -70,6 +78,14 @@ export class VarSymbol : public Symbol {
               std::shared_ptr<Type> type)
         : Symbol(static_kind, std::move(name), position, visibility, std::move(type)),
           storage_kind(storage_kind) {}
+
+    void dump(int depth) const override {
+        print_indent(depth);
+        std::cout << "VarSymbol(name: \"" << name
+                  << "\", visibility: " << visibility_string(visibility)
+                  << ", storage_kind: " << storage_kind_string(storage_kind)
+                  << ", type: " << (type ? type->to_string() : "null") << ")\n";
+    }
 };
 
 export class FunctionSymbol : public Symbol {
@@ -79,6 +95,13 @@ export class FunctionSymbol : public Symbol {
     FunctionSymbol(std::string name, Position position, Visibility visibility,
                    std::shared_ptr<Type> type)
         : Symbol(static_kind, std::move(name), position, visibility, std::move(type)) {}
+
+    void dump(int depth) const override {
+        print_indent(depth);
+        std::cout << "FunctionSymbol(name: \"" << name
+                  << "\", visibility: " << visibility_string(visibility)
+                  << ", type: " << (type ? type->to_string() : "null") << ")\n";
+    }
 };
 
 export class TypeSymbol : public Symbol {
@@ -88,4 +111,11 @@ export class TypeSymbol : public Symbol {
     TypeSymbol(std::string name, Position position, Visibility visibility,
                std::shared_ptr<Type> type)
         : Symbol(static_kind, std::move(name), position, visibility, std::move(type)) {}
+
+    void dump(int depth) const override {
+        print_indent(depth);
+        std::cout << "TypeSymbol(name: \"" << name
+                  << "\", visibility: " << visibility_string(visibility)
+                  << ", type: " << (type ? type->to_string() : "null") << ")\n";
+    }
 };

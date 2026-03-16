@@ -6,6 +6,7 @@ module;
 
 export module zep.sema.builtins;
 
+import zep.sema.scope;
 import zep.sema.type;
 
 export class Builtins {
@@ -38,4 +39,11 @@ export class Builtins {
         }
         return nullptr;
     }
+
+    void register_into(Scope& scope) const {
+        for (const auto& [name, type] : types) {
+            scope.define_type(name, type);
+        }
+    }
 };
+

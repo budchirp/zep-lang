@@ -12,6 +12,7 @@ import zep.frontend.lexer;
 import zep.frontend.parser;
 import zep.checker.type_checker;
 import zep.checker.context;
+import zep.lowerer;
 
 export class Compiler {
   public:
@@ -33,6 +34,10 @@ export class Compiler {
             std::exit(1);
         }
 
-        program.dump();
+        context.env.dump();
+
+        Lowerer lowerer(context);
+        auto lowered_program = lowerer.lower(program);
+        lowered_program.dump();
     }
 };
