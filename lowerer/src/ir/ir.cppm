@@ -857,7 +857,7 @@ export class LoweredProgram {
         print_indent(1);
         std::cout << "global_scope: ";
         if (global_scope != nullptr) {
-            global_scope->dump(1);
+            global_scope->dump(1, false, true);
         } else {
             std::cout << "null\n";
         }

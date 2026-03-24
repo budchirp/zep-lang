@@ -18,10 +18,34 @@ export class LoweredParameter {
     LoweredParameter(std::string name, std::shared_ptr<LoweredType> type)
         : name(std::move(name)), type(std::move(type)) {}
 
-    void dump(int depth) const {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const {
+        if (with_indent) {
+            print_indent(depth);
+        }
+
+        std::cout << "Parameter(\n";
+
+        print_indent(depth + 1);
+        std::cout << "is_variadic: false,\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
+        print_indent(depth + 1);
+        std::cout << "type: ";
+        if (type != nullptr) {
+            type->dump(depth + 1, false, false);
+        } else {
+            std::cout << "null";
+        }
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "Parameter(name=\"" << name
-                  << "\", type=" << (type != nullptr ? type->to_string() : "null") << ")\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 };
 
@@ -44,12 +68,52 @@ export class LoweredSymbol {
 
     virtual ~LoweredSymbol() = default;
 
-    virtual void dump(int depth) const {
+    virtual void dump(int depth, bool with_indent = true, bool trailing_newline = true) const {
+        if (with_indent) {
+            print_indent(depth);
+        }
+
+        std::cout << "Symbol(\n";
+
+        print_indent(depth + 1);
+        std::cout << "kind: ";
+        switch (kind) {
+        case Kind::Var:
+            std::cout << "var";
+            break;
+        case Kind::Function:
+            std::cout << "function";
+            break;
+        case Kind::Type:
+            std::cout << "type";
+            break;
+        }
+        std::cout << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
+        print_indent(depth + 1);
+        std::cout << "linkage: " << linkage_string(linkage) << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "type: ";
+        if (type != nullptr) {
+            type->dump(depth + 1, false, false);
+        } else {
+            std::cout << "null";
+        }
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "Symbol(kind=" << static_cast<int>(kind) << ", name=\"" << name
-                  << "\", linkage=" << linkage_string(linkage)
-                  << ", visibility=" << visibility_string(visibility)
-                  << ", type=" << (type != nullptr ? type->to_string() : "null") << ")\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -77,11 +141,37 @@ export class LoweredTypeSymbol : public LoweredSymbol {
                       std::shared_ptr<LoweredType> type)
         : LoweredSymbol(static_kind, std::move(name), linkage, visibility, std::move(type)) {}
 
-    void dump(int depth) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
+        if (with_indent) {
+            print_indent(depth);
+        }
+
+        std::cout << "TypeSymbol(\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
+        print_indent(depth + 1);
+        std::cout << "linkage: " << linkage_string(linkage) << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "type: ";
+        if (type != nullptr) {
+            type->dump(depth + 1, false, false);
+        } else {
+            std::cout << "null";
+        }
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "TypeSymbol(name=\"" << name << "\", linkage=" << linkage_string(linkage)
-                  << ", visibility=" << visibility_string(visibility)
-                  << ", type=" << (type != nullptr ? type->to_string() : "null") << ")\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 };
 
@@ -93,11 +183,37 @@ export class LoweredFunctionSymbol : public LoweredSymbol {
                           std::shared_ptr<LoweredType> type)
         : LoweredSymbol(static_kind, std::move(name), linkage, visibility, std::move(type)) {}
 
-    void dump(int depth) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
+        if (with_indent) {
+            print_indent(depth);
+        }
+
+        std::cout << "FunctionSymbol(\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
+        print_indent(depth + 1);
+        std::cout << "linkage: " << linkage_string(linkage) << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "type: ";
+        if (type != nullptr) {
+            type->dump(depth + 1, false, false);
+        } else {
+            std::cout << "null";
+        }
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "FunctionSymbol(name=\"" << name << "\", linkage=" << linkage_string(linkage)
-                  << ", visibility=" << visibility_string(visibility)
-                  << ", type=" << (type != nullptr ? type->to_string() : "null") << ")\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 };
 
@@ -109,10 +225,36 @@ export class LoweredVarSymbol : public LoweredSymbol {
                      std::shared_ptr<LoweredType> type)
         : LoweredSymbol(static_kind, std::move(name), linkage, visibility, std::move(type)) {}
 
-    void dump(int depth) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
+        if (with_indent) {
+            print_indent(depth);
+        }
+
+        std::cout << "VarSymbol(\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
+        print_indent(depth + 1);
+        std::cout << "linkage: " << linkage_string(linkage) << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "type: ";
+        if (type != nullptr) {
+            type->dump(depth + 1, false, false);
+        } else {
+            std::cout << "null";
+        }
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "VarSymbol(name=\"" << name << "\", linkage=" << linkage_string(linkage)
-                  << ", visibility=" << visibility_string(visibility)
-                  << ", type=" << (type != nullptr ? type->to_string() : "null") << ")\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 };

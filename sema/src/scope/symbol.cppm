@@ -44,11 +44,49 @@ export class Symbol {
 
     virtual ~Symbol() = default;
 
-    virtual void dump(int depth) const {
+    virtual void dump(int depth, bool with_indent = true, bool trailing_newline = true) const {
+        if (with_indent) {
+            print_indent(depth);
+        }
+
+        std::cout << "Symbol(\n";
+
+        print_indent(depth + 1);
+        std::cout << "kind: ";
+        switch (kind) {
+        case Kind::Var:
+            std::cout << "var";
+            break;
+        case Kind::Function:
+            std::cout << "function";
+            break;
+        case Kind::Type:
+            std::cout << "type";
+            break;
+        }
+        std::cout << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
+        print_indent(depth + 1);
+        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "type: ";
+        if (type != nullptr) {
+            type->dump(depth + 1, false, false);
+        } else {
+            std::cout << "null";
+        }
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "Symbol(kind: " << static_cast<int>(kind) << ", name: \"" << name
-                  << "\", visibility: " << visibility_string(visibility)
-                  << ", type: " << (type ? type->to_string() : "null") << ")\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 
     template <typename T>
@@ -79,12 +117,37 @@ export class VarSymbol : public Symbol {
         : Symbol(static_kind, std::move(name), position, visibility, std::move(type)),
           storage_kind(storage_kind) {}
 
-    void dump(int depth) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
+        if (with_indent) {
+            print_indent(depth);
+        }
+
+        std::cout << "VarSymbol(\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
+        print_indent(depth + 1);
+        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "storage_kind: " << storage_kind_string(storage_kind) << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "type: ";
+        if (type != nullptr) {
+            type->dump(depth + 1, false, false);
+        } else {
+            std::cout << "null";
+        }
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "VarSymbol(name: \"" << name
-                  << "\", visibility: " << visibility_string(visibility)
-                  << ", storage_kind: " << storage_kind_string(storage_kind)
-                  << ", type: " << (type ? type->to_string() : "null") << ")\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 };
 
@@ -96,11 +159,34 @@ export class FunctionSymbol : public Symbol {
                    std::shared_ptr<Type> type)
         : Symbol(static_kind, std::move(name), position, visibility, std::move(type)) {}
 
-    void dump(int depth) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
+        if (with_indent) {
+            print_indent(depth);
+        }
+
+        std::cout << "FunctionSymbol(\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
+        print_indent(depth + 1);
+        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "type: ";
+        if (type != nullptr) {
+            type->dump(depth + 1, false, false);
+        } else {
+            std::cout << "null";
+        }
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "FunctionSymbol(name: \"" << name
-                  << "\", visibility: " << visibility_string(visibility)
-                  << ", type: " << (type ? type->to_string() : "null") << ")\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 };
 
@@ -112,10 +198,33 @@ export class TypeSymbol : public Symbol {
                std::shared_ptr<Type> type)
         : Symbol(static_kind, std::move(name), position, visibility, std::move(type)) {}
 
-    void dump(int depth) const override {
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
+        if (with_indent) {
+            print_indent(depth);
+        }
+
+        std::cout << "TypeSymbol(\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
+        print_indent(depth + 1);
+        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+
+        print_indent(depth + 1);
+        std::cout << "type: ";
+        if (type != nullptr) {
+            type->dump(depth + 1, false, false);
+        } else {
+            std::cout << "null";
+        }
+        std::cout << "\n";
+
         print_indent(depth);
-        std::cout << "TypeSymbol(name: \"" << name
-                  << "\", visibility: " << visibility_string(visibility)
-                  << ", type: " << (type ? type->to_string() : "null") << ")\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 };

@@ -37,7 +37,11 @@ export class Env {
     void dump(int depth = 0) const {
         print_indent(depth);
         std::cout << "Env(\n";
-        global_scope->dump(depth + 1);
+
+        print_indent(depth + 1);
+        std::cout << "global_scope: ";
+        global_scope->dump(depth + 1, false, true);
+
         print_indent(depth);
         std::cout << ")\n";
     }

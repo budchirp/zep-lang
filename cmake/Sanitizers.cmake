@@ -6,12 +6,14 @@ option(ZEP_ENABLE_MSAN "Enable Memory Sanitizer (incompatible with ASan/TSan)" O
 function(zep_set_sanitizers TARGET)
     if(ZEP_ENABLE_ASAN)
         message(STATUS "Address Sanitizer enabled for ${TARGET}")
+
         target_compile_options(${TARGET} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
         target_link_options(${TARGET} PRIVATE -fsanitize=address)
     endif()
 
     if(ZEP_ENABLE_UBSAN)
         message(STATUS "Undefined Behavior Sanitizer enabled for ${TARGET}")
+        
         target_compile_options(${TARGET} PRIVATE -fsanitize=undefined)
         target_link_options(${TARGET} PRIVATE -fsanitize=undefined)
     endif()
@@ -20,7 +22,9 @@ function(zep_set_sanitizers TARGET)
         if(ZEP_ENABLE_ASAN)
             message(FATAL_ERROR "TSan and ASan cannot be used together")
         endif()
+        
         message(STATUS "Thread Sanitizer enabled for ${TARGET}")
+
         target_compile_options(${TARGET} PRIVATE -fsanitize=thread)
         target_link_options(${TARGET} PRIVATE -fsanitize=thread)
     endif()
@@ -29,7 +33,9 @@ function(zep_set_sanitizers TARGET)
         if(ZEP_ENABLE_ASAN OR ZEP_ENABLE_TSAN)
             message(FATAL_ERROR "MSan cannot be used together with ASan or TSan")
         endif()
+        
         message(STATUS "Memory Sanitizer enabled for ${TARGET}")
+        
         target_compile_options(${TARGET} PRIVATE -fsanitize=memory -fno-omit-frame-pointer)
         target_link_options(${TARGET} PRIVATE -fsanitize=memory)
     endif()

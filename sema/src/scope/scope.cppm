@@ -132,25 +132,87 @@ export class Scope {
         return child_ptr;
     }
 
-    void dump(int depth) const {
-        print_indent(depth);
-        std::cout << "Scope(\"" << name << "\"\n";
-        for (const auto& [type_name, type] : types) {
-            print_indent(depth + 1);
-            std::cout << type_name << ": " << (type ? type->to_string() : "null") << "\n";
+    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const {
+        if (with_indent) {
+            print_indent(depth);
         }
-        for (const auto& [var_name, var] : vars) {
-            var->dump(depth + 1);
-        }
-        for (const auto& [func_name, overloads] : functions) {
-            for (const auto& func : overloads) {
-                func->dump(depth + 1);
+
+        std::cout << "Scope(\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
+
+        print_indent(depth + 1);
+        std::cout << "types: [";
+        if (types.empty()) {
+            std::cout << "],\n";
+        } else {
+            std::cout << "\n";
+            std::size_t type_index = 0;
+            for (const auto& [type_name, type] : types) {
+                ParameterType binding(type_name, type);
+                binding.dump(depth + 2, true, false);
+                std::cout << (++type_index < types.size() ? ",\n" : "\n");
             }
+            print_indent(depth + 1);
+            std::cout << "],\n";
         }
-        for (const auto& child : children) {
-            child->dump(depth + 1);
+
+        print_indent(depth + 1);
+        std::cout << "vars: [";
+        if (vars.empty()) {
+            std::cout << "],\n";
+        } else {
+            std::cout << "\n";
+            std::size_t var_index = 0;
+            for (const auto& entry : vars) {
+                entry.second->dump(depth + 2, true, false);
+                std::cout << (++var_index < vars.size() ? ",\n" : "\n");
+            }
+            print_indent(depth + 1);
+            std::cout << "],\n";
         }
+
+        print_indent(depth + 1);
+        std::cout << "functions: [";
+        std::size_t function_total = 0;
+        for (const auto& entry : functions) {
+            function_total += entry.second.size();
+        }
+        if (function_total == 0) {
+            std::cout << "],\n";
+        } else {
+            std::cout << "\n";
+            std::size_t function_index = 0;
+            for (const auto& entry : functions) {
+                for (const auto& func : entry.second) {
+                    func->dump(depth + 2, true, false);
+                    std::cout << (++function_index < function_total ? ",\n" : "\n");
+                }
+            }
+            print_indent(depth + 1);
+            std::cout << "],\n";
+        }
+
+        print_indent(depth + 1);
+        std::cout << "children: [";
+        if (children.empty()) {
+            std::cout << "]\n";
+        } else {
+            std::cout << "\n";
+            for (std::size_t child_index = 0; child_index < children.size(); ++child_index) {
+                children[child_index]->dump(depth + 2, true, false);
+                std::cout << (child_index + 1 < children.size() ? ",\n" : "\n");
+            }
+            print_indent(depth + 1);
+            std::cout << "]\n";
+        }
+
         print_indent(depth);
-        std::cout << ")\n";
+        std::cout << ")";
+
+        if (trailing_newline) {
+            std::cout << "\n";
+        }
     }
 };
