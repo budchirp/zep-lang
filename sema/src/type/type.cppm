@@ -13,23 +13,26 @@ import zep.common.logger;
 
 export class Type {
   public:
-    enum class Kind : std::uint8_t {
-        Any,
-        Unknown,
-        Void,
-        String,
-        Boolean,
-        Integer,
-        Float,
-        Named,
-        Array,
-        Pointer,
-        Struct,
-        Function
+    class Kind {
+      public:
+        enum class Type : std::uint8_t {
+            Any,
+            Unknown,
+            Void,
+            String,
+            Boolean,
+            Integer,
+            Float,
+            Named,
+            Array,
+            Pointer,
+            Struct,
+            Function
+        };
     };
 
   protected:
-    explicit Type(Kind kind) : kind(kind) {}
+    explicit Type(Kind::Type kind) : kind(kind) {}
 
     Type(const Type&) = delete;
     Type& operator=(const Type&) = delete;
@@ -37,7 +40,7 @@ export class Type {
     Type& operator=(Type&&) = default;
 
   public:
-    Kind kind;
+    Kind::Type kind;
 
     virtual ~Type() = default;
 
@@ -45,7 +48,8 @@ export class Type {
     virtual std::string to_string() const = 0;
 
     bool is_numeric() const {
-        return kind == Kind::Integer || kind == Kind::Float || kind == Kind::Unknown;
+        return kind == Kind::Type::Integer || kind == Kind::Type::Float ||
+               kind == Kind::Type::Unknown;
     }
 
     static bool compatible(const std::shared_ptr<Type>& left, const std::shared_ptr<Type>& right);
@@ -71,7 +75,7 @@ export class Type {
 
 export class AnyType : public Type {
   public:
-    static constexpr Kind static_kind = Kind::Any;
+    static constexpr Kind::Type static_kind = Kind::Type::Any;
 
     AnyType() : Type(static_kind) {}
 
@@ -91,7 +95,7 @@ export class AnyType : public Type {
 
 export class UnknownType : public Type {
   public:
-    static constexpr Kind static_kind = Kind::Unknown;
+    static constexpr Kind::Type static_kind = Kind::Type::Unknown;
 
     UnknownType() : Type(static_kind) {}
 
@@ -111,7 +115,7 @@ export class UnknownType : public Type {
 
 export class VoidType : public Type {
   public:
-    static constexpr Kind static_kind = Kind::Void;
+    static constexpr Kind::Type static_kind = Kind::Type::Void;
 
     VoidType() : Type(static_kind) {}
 
@@ -131,7 +135,7 @@ export class VoidType : public Type {
 
 export class StringType : public Type {
   public:
-    static constexpr Kind static_kind = Kind::String;
+    static constexpr Kind::Type static_kind = Kind::Type::String;
 
     StringType() : Type(static_kind) {}
 
@@ -151,7 +155,7 @@ export class StringType : public Type {
 
 export class BooleanType : public Type {
   public:
-    static constexpr Kind static_kind = Kind::Boolean;
+    static constexpr Kind::Type static_kind = Kind::Type::Boolean;
 
     BooleanType() : Type(static_kind) {}
 
@@ -171,7 +175,7 @@ export class BooleanType : public Type {
 
 export class IntegerType : public Type {
   public:
-    static constexpr Kind static_kind = Kind::Integer;
+    static constexpr Kind::Type static_kind = Kind::Type::Integer;
 
     bool is_unsigned;
     std::uint8_t size;
@@ -206,7 +210,7 @@ export class IntegerType : public Type {
 
 export class FloatType : public Type {
   public:
-    static constexpr Kind static_kind = Kind::Float;
+    static constexpr Kind::Type static_kind = Kind::Type::Float;
 
     std::uint8_t size;
 
@@ -386,7 +390,7 @@ export class StructFieldType {
 
 export class NamedType : public Type {
   public:
-    static constexpr Kind static_kind = Kind::Named;
+    static constexpr Kind::Type static_kind = Kind::Type::Named;
 
     std::string name;
     std::vector<std::shared_ptr<GenericArgumentType>> generic_arguments;
@@ -432,7 +436,7 @@ export class NamedType : public Type {
 
 export class ArrayType : public Type {
   public:
-    static constexpr Kind static_kind = Kind::Array;
+    static constexpr Kind::Type static_kind = Kind::Type::Array;
 
     std::shared_ptr<Type> element;
     std::optional<std::uint8_t> size;
@@ -469,7 +473,7 @@ export class ArrayType : public Type {
 
 export class PointerType : public Type {
   public:
-    static constexpr Kind static_kind = Kind::Pointer;
+    static constexpr Kind::Type static_kind = Kind::Type::Pointer;
 
     bool is_mutable;
     std::shared_ptr<Type> element;
@@ -506,15 +510,16 @@ export class PointerType : public Type {
 
 export class StructType : public Type {
   public:
-    static constexpr Kind static_kind = Kind::Struct;
+    static constexpr Kind::Type static_kind = Kind::Type::Struct;
 
     std::string name;
 
-    std::vector<GenericParameterType> generic_parameters;
-    std::vector<StructFieldType> fields;
+    std::vector<std::shared_ptr<GenericParameterType>> generic_parameters;
+    std::vector<std::shared_ptr<StructFieldType>> fields;
 
-    StructType(std::string name, std::vector<GenericParameterType> generic_parameters,
-               std::vector<StructFieldType> fields)
+    StructType(std::string name,
+               std::vector<std::shared_ptr<GenericParameterType>> generic_parameters,
+               std::vector<std::shared_ptr<StructFieldType>> fields)
         : Type(static_kind), name(std::move(name)),
           generic_parameters(std::move(generic_parameters)), fields(std::move(fields)) {}
 
@@ -535,7 +540,7 @@ export class StructType : public Type {
         } else {
             std::cout << "\n";
             for (std::size_t i = 0; i < generic_parameters.size(); ++i) {
-                generic_parameters[i].dump(depth + 2, true, false);
+                generic_parameters[i]->dump(depth + 2, true, false);
                 std::cout << (i + 1 < generic_parameters.size() ? ",\n" : "\n");
             }
 
@@ -550,7 +555,7 @@ export class StructType : public Type {
         } else {
             std::cout << "\n";
             for (std::size_t i = 0; i < fields.size(); ++i) {
-                fields[i].dump(depth + 2, true, false);
+                fields[i]->dump(depth + 2, true, false);
                 std::cout << (i + 1 < fields.size() ? ",\n" : "\n");
             }
 
@@ -570,19 +575,24 @@ export class StructType : public Type {
 
 export class FunctionType : public Type {
   public:
-    static constexpr Kind static_kind = Kind::Function;
+    static constexpr Kind::Type static_kind = Kind::Type::Function;
+
+    std::string name;
 
     std::shared_ptr<Type> return_type;
 
-    std::vector<ParameterType> parameters;
-    std::vector<GenericParameterType> generic_parameters;
+    std::vector<std::shared_ptr<ParameterType>> parameters;
+    std::vector<std::shared_ptr<GenericParameterType>> generic_parameters;
 
     bool variadic;
 
-    FunctionType(std::shared_ptr<Type> return_type, std::vector<ParameterType> parameters,
-                 std::vector<GenericParameterType> generic_parameters = {}, bool variadic = false)
-        : Type(static_kind), return_type(std::move(return_type)), parameters(std::move(parameters)),
-          generic_parameters(std::move(generic_parameters)), variadic(variadic) {}
+    FunctionType(std::string name, std::shared_ptr<Type> return_type,
+                 std::vector<std::shared_ptr<ParameterType>> parameters,
+                 std::vector<std::shared_ptr<GenericParameterType>> generic_parameters = {},
+                 bool variadic = false)
+        : Type(static_kind), name(std::move(name)), return_type(std::move(return_type)),
+          parameters(std::move(parameters)), generic_parameters(std::move(generic_parameters)),
+          variadic(variadic) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -590,6 +600,9 @@ export class FunctionType : public Type {
         }
 
         std::cout << "FunctionType(\n";
+
+        print_indent(depth + 1);
+        std::cout << "name: \"" << name << "\",\n";
 
         print_indent(depth + 1);
         std::cout << "return_type: ";
@@ -607,7 +620,7 @@ export class FunctionType : public Type {
         } else {
             std::cout << "\n";
             for (std::size_t i = 0; i < parameters.size(); ++i) {
-                parameters[i].dump(depth + 2, true, false);
+                parameters[i]->dump(depth + 2, true, false);
                 std::cout << (i + 1 < parameters.size() ? ",\n" : "\n");
             }
 
@@ -622,7 +635,7 @@ export class FunctionType : public Type {
         } else {
             std::cout << "\n";
             for (std::size_t i = 0; i < generic_parameters.size(); ++i) {
-                generic_parameters[i].dump(depth + 2, true, false);
+                generic_parameters[i]->dump(depth + 2, true, false);
                 std::cout << (i + 1 < generic_parameters.size() ? ",\n" : "\n");
             }
 
@@ -651,11 +664,11 @@ inline bool Type::compatible(const std::shared_ptr<Type>& left,
         return true;
     }
 
-    if (left->kind == Kind::Any || right->kind == Kind::Any) {
+    if (left->kind == Kind::Type::Any || right->kind == Kind::Type::Any) {
         return true;
     }
 
-    if (left->kind == Kind::Unknown || right->kind == Kind::Unknown) {
+    if (left->kind == Kind::Type::Unknown || right->kind == Kind::Type::Unknown) {
         return true;
     }
 
@@ -664,25 +677,25 @@ inline bool Type::compatible(const std::shared_ptr<Type>& left,
     }
 
     switch (left->kind) {
-    case Kind::Integer: {
+    case Kind::Type::Integer: {
         auto* left_integer = left->as<IntegerType>();
         auto* right_integer = right->as<IntegerType>();
         return left_integer->is_unsigned == right_integer->is_unsigned &&
                left_integer->size == right_integer->size;
     }
 
-    case Kind::Float: {
+    case Kind::Type::Float: {
         auto* left_float = left->as<FloatType>();
         auto* right_float = right->as<FloatType>();
         return left_float->size == right_float->size;
     }
 
-    case Kind::Pointer: {
+    case Kind::Type::Pointer: {
         auto* left_pointer = left->as<PointerType>();
         auto* right_pointer = right->as<PointerType>();
 
-        if (left_pointer->element->kind == Kind::Void ||
-            right_pointer->element->kind == Kind::Void) {
+        if (left_pointer->element->kind == Kind::Type::Void ||
+            right_pointer->element->kind == Kind::Type::Void) {
             return true;
         }
 
@@ -693,7 +706,7 @@ inline bool Type::compatible(const std::shared_ptr<Type>& left,
         return compatible(left_pointer->element, right_pointer->element);
     }
 
-    case Kind::Array: {
+    case Kind::Type::Array: {
         auto* left_array = left->as<ArrayType>();
         auto* right_array = right->as<ArrayType>();
         if (left_array->size != right_array->size) {
@@ -702,7 +715,7 @@ inline bool Type::compatible(const std::shared_ptr<Type>& left,
         return compatible(left_array->element, right_array->element);
     }
 
-    case Kind::Struct: {
+    case Kind::Type::Struct: {
         auto* left_struct = left->as<StructType>();
         auto* right_struct = right->as<StructType>();
         if (left_struct->name != right_struct->name) {
@@ -712,17 +725,17 @@ inline bool Type::compatible(const std::shared_ptr<Type>& left,
             return false;
         }
         for (std::size_t i = 0; i < left_struct->fields.size(); ++i) {
-            if (left_struct->fields[i].name != right_struct->fields[i].name) {
+            if (left_struct->fields[i]->name != right_struct->fields[i]->name) {
                 return false;
             }
-            if (!compatible(left_struct->fields[i].type, right_struct->fields[i].type)) {
+            if (!compatible(left_struct->fields[i]->type, right_struct->fields[i]->type)) {
                 return false;
             }
         }
         return true;
     }
 
-    case Kind::Function: {
+    case Kind::Type::Function: {
         auto* left_function = left->as<FunctionType>();
         auto* right_function = right->as<FunctionType>();
         if (!compatible(left_function->return_type, right_function->return_type)) {
@@ -732,8 +745,8 @@ inline bool Type::compatible(const std::shared_ptr<Type>& left,
             return false;
         }
         for (std::size_t i = 0; i < left_function->parameters.size(); ++i) {
-            if (!compatible(left_function->parameters[i].type,
-                            right_function->parameters[i].type)) {
+            if (!compatible(left_function->parameters[i]->type,
+                            right_function->parameters[i]->type)) {
                 return false;
             }
         }

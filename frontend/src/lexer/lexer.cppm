@@ -9,7 +9,6 @@ module;
 export module zep.frontend.lexer;
 
 import zep.frontend.token;
-import zep.frontend.token.type;
 import zep.frontend.token.keywords;
 import zep.common.position;
 import zep.common.source;
@@ -60,30 +59,30 @@ export class Lexer {
 
     std::string_view read_identifier() {
         auto start = byte_position;
-        while (std::isalpha(static_cast<unsigned char>(ch)) ||
-               std::isdigit(static_cast<unsigned char>(ch)) || ch == '_') {
+        while ((std::isalpha(static_cast<unsigned char>(ch)) != 0) ||
+               (std::isdigit(static_cast<unsigned char>(ch)) != 0) || ch == '_') {
             read_char();
         }
 
         return input.substr(start, byte_position - start);
     }
 
-    TokenType read_number() {
+    Token::Type read_number() {
         auto is_float = false;
 
-        while (std::isdigit(static_cast<unsigned char>(ch))) {
+        while (std::isdigit(static_cast<unsigned char>(ch)) != 0) {
             read_char();
         }
 
-        if (ch == '.' && std::isdigit(static_cast<unsigned char>(peek_char()))) {
+        if (ch == '.' && (std::isdigit(static_cast<unsigned char>(peek_char())) != 0)) {
             is_float = true;
             read_char();
-            while (std::isdigit(static_cast<unsigned char>(ch))) {
+            while (std::isdigit(static_cast<unsigned char>(ch)) != 0) {
                 read_char();
             }
         }
 
-        return is_float ? TokenType::Float : TokenType::Number;
+        return is_float ? Token::Type::Float : Token::Type::Number;
     }
 
     std::string_view read_string() {
@@ -142,35 +141,35 @@ export class Lexer {
 
         auto token_position = position;
 
-        auto token_type = TokenType{};
+        Token::Type token_type{};
         std::string_view value;
 
         switch (ch) {
         case '=':
             if (peek_char() == '=') {
                 value = "==";
-                token_type = TokenType::Equals;
+                token_type = Token::Type::Equals;
                 read_char();
                 read_char();
             } else {
                 value = "=";
-                token_type = TokenType::Assign;
+                token_type = Token::Type::Assign;
                 read_char();
             }
             break;
         case '+':
             value = "+";
-            token_type = TokenType::Plus;
+            token_type = Token::Type::Plus;
             read_char();
             break;
         case '-':
             value = "-";
-            token_type = TokenType::Minus;
+            token_type = Token::Type::Minus;
             read_char();
             break;
         case '*':
             value = "*";
-            token_type = TokenType::Asterisk;
+            token_type = Token::Type::Asterisk;
             read_char();
             break;
         case '/':
@@ -179,158 +178,158 @@ export class Lexer {
                 return next_token();
             }
             value = "/";
-            token_type = TokenType::Divide;
+            token_type = Token::Type::Divide;
             read_char();
             break;
         case '%':
             value = "%";
-            token_type = TokenType::Modulo;
+            token_type = Token::Type::Modulo;
             read_char();
             break;
         case '<':
             if (peek_char() == '=') {
                 value = "<=";
-                token_type = TokenType::LessEqual;
+                token_type = Token::Type::LessEqual;
                 read_char();
                 read_char();
             } else {
                 value = "<";
-                token_type = TokenType::LessThan;
+                token_type = Token::Type::LessThan;
                 read_char();
             }
             break;
         case '>':
             if (peek_char() == '=') {
                 value = ">=";
-                token_type = TokenType::GreaterEqual;
+                token_type = Token::Type::GreaterEqual;
                 read_char();
                 read_char();
             } else {
                 value = ">";
-                token_type = TokenType::GreaterThan;
+                token_type = Token::Type::GreaterThan;
                 read_char();
             }
             break;
         case '!':
             if (peek_char() == '=') {
                 value = "!=";
-                token_type = TokenType::NotEquals;
+                token_type = Token::Type::NotEquals;
                 read_char();
                 read_char();
             } else {
                 value = "!";
-                token_type = TokenType::Not;
+                token_type = Token::Type::Not;
                 read_char();
             }
             break;
         case '&':
             if (peek_char() == '&') {
                 value = "&&";
-                token_type = TokenType::And;
+                token_type = Token::Type::And;
                 read_char();
                 read_char();
             } else {
                 value = "&";
-                token_type = TokenType::Ampersand;
+                token_type = Token::Type::Ampersand;
                 read_char();
             }
             break;
         case '|':
             if (peek_char() == '|') {
                 value = "||";
-                token_type = TokenType::Or;
+                token_type = Token::Type::Or;
                 read_char();
                 read_char();
             } else {
                 value = "|";
-                token_type = TokenType::Illegal;
+                token_type = Token::Type::Illegal;
                 read_char();
             }
             break;
         case '{':
             value = "{";
-            token_type = TokenType::LeftBrace;
+            token_type = Token::Type::LeftBrace;
             read_char();
             break;
         case '}':
             value = "}";
-            token_type = TokenType::RightBrace;
+            token_type = Token::Type::RightBrace;
             read_char();
             break;
         case '(':
             value = "(";
-            token_type = TokenType::LeftParen;
+            token_type = Token::Type::LeftParen;
             read_char();
             break;
         case ')':
             value = ")";
-            token_type = TokenType::RightParen;
+            token_type = Token::Type::RightParen;
             read_char();
             break;
         case '[':
             value = "[";
-            token_type = TokenType::LeftBracket;
+            token_type = Token::Type::LeftBracket;
             read_char();
             break;
         case ']':
             value = "]";
-            token_type = TokenType::RightBracket;
+            token_type = Token::Type::RightBracket;
             read_char();
             break;
         case '.':
             if (peek_char() == '.' && byte_position + 2 < input.size() &&
                 input[byte_position + 2] == '.') {
                 value = "...";
-                token_type = TokenType::Ellipsis;
+                token_type = Token::Type::Ellipsis;
                 read_char();
                 read_char();
                 read_char();
             } else {
                 value = ".";
-                token_type = TokenType::Dot;
+                token_type = Token::Type::Dot;
                 read_char();
             }
             break;
         case ':':
             value = ":";
-            token_type = TokenType::Colon;
+            token_type = Token::Type::Colon;
             read_char();
             break;
         case ',':
             value = ",";
-            token_type = TokenType::Comma;
+            token_type = Token::Type::Comma;
             read_char();
             break;
         case ';':
             value = ";";
-            token_type = TokenType::Semicolon;
+            token_type = Token::Type::Semicolon;
             read_char();
             break;
         case '"':
             value = read_string();
-            token_type = TokenType::String;
+            token_type = Token::Type::String;
             break;
         case '@':
             value = "@";
-            token_type = TokenType::At;
+            token_type = Token::Type::At;
             read_char();
             break;
         case '\0':
             value = "";
-            token_type = TokenType::Eof;
+            token_type = Token::Type::Eof;
             break;
         default:
-            if (std::isalpha(static_cast<unsigned char>(ch)) || ch == '_') {
+            if ((std::isalpha(static_cast<unsigned char>(ch)) != 0) || ch == '_') {
                 value = read_identifier();
                 auto it = keywords.find(value);
-                token_type = (it != keywords.end()) ? it->second : TokenType::Identifier;
-            } else if (std::isdigit(static_cast<unsigned char>(ch))) {
+                token_type = (it != keywords.end()) ? it->second : Token::Type::Identifier;
+            } else if (std::isdigit(static_cast<unsigned char>(ch)) != 0) {
                 auto start = byte_position;
                 token_type = read_number();
                 value = input.substr(start, byte_position - start);
             } else {
                 value = "";
-                token_type = TokenType::Illegal;
+                token_type = Token::Type::Illegal;
                 read_char();
             }
             break;

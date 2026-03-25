@@ -18,44 +18,46 @@ class Visitor;
 
 export class Node {
   public:
-    enum class Kind : std::uint8_t {
-        TypeExpression,
-        GenericParameter,
-        GenericArgument,
-        Parameter,
-        Argument,
-        FunctionPrototype,
-        StructField,
-        StructLiteralField,
+    class Kind {
+      public:
+        enum class Type : std::uint8_t {
+            TypeExpression,
+            GenericParameter,
+            GenericArgument,
+            Parameter,
+            Argument,
+            FunctionPrototype,
+            StructField,
+            StructLiteralField,
 
-        NumberLiteral,
-        FloatLiteral,
-        StringLiteral,
-        BooleanLiteral,
-        IdentifierExpression,
-        BinaryExpression,
-        UnaryExpression,
-        CallExpression,
-        IndexExpression,
-        MemberExpression,
-        AssignExpression,
-        StructLiteralExpression,
-        IfExpression,
+            NumberLiteral,
+            FloatLiteral,
+            StringLiteral,
+            BooleanLiteral,
+            IdentifierExpression,
+            BinaryExpression,
+            UnaryExpression,
+            CallExpression,
+            IndexExpression,
+            MemberExpression,
+            AssignExpression,
+            StructLiteralExpression,
+            IfExpression,
 
-        BlockStatement,
-        ExpressionStatement,
-        ReturnStatement,
-        StructDeclaration,
-        VarDeclaration,
-        FunctionDeclaration,
-        ExternFunctionDeclaration,
-        ExternVarDeclaration,
-        ImportStatement,
+            BlockStatement,
+            ExpressionStatement,
+            ReturnStatement,
+            StructDeclaration,
+            VarDeclaration,
+            FunctionDeclaration,
+            ExternFunctionDeclaration,
+            ExternVarDeclaration,
+            ImportStatement,
+        };
     };
 
-  private:
   protected:
-    explicit Node(Kind kind, Position position) : kind(kind), position(position) {}
+    explicit Node(Kind::Type kind, Position position) : kind(kind), position(position) {}
 
     Node(const Node&) = delete;
     Node& operator=(const Node&) = delete;
@@ -63,7 +65,7 @@ export class Node {
     Node& operator=(Node&&) = default;
 
   public:
-    Kind kind;
+    Kind::Type kind;
     Position position;
 
     virtual ~Node() = default;
@@ -75,6 +77,7 @@ export class Node {
         if (kind == T::static_kind) {
             return static_cast<T*>(this);
         }
+
         return nullptr;
     }
 
@@ -83,6 +86,7 @@ export class Node {
         if (kind == T::static_kind) {
             return static_cast<const T*>(this);
         }
+
         return nullptr;
     }
 };
@@ -111,7 +115,7 @@ export class Statement : public Node {
 
 export class TypeExpression : public Node {
   public:
-    static constexpr Kind static_kind = Kind::TypeExpression;
+    static constexpr Kind::Type static_kind = Kind::Type::TypeExpression;
 
     std::shared_ptr<Type> type;
 
@@ -147,7 +151,7 @@ export class TypeExpression : public Node {
 
 export class GenericParameter : public Node {
   public:
-    static constexpr Kind static_kind = Kind::GenericParameter;
+    static constexpr Kind::Type static_kind = Kind::Type::GenericParameter;
 
     std::string name;
     std::unique_ptr<TypeExpression> constraint;
@@ -194,7 +198,7 @@ export class GenericParameter : public Node {
 
 export class GenericArgument : public Node {
   public:
-    static constexpr Kind static_kind = Kind::GenericArgument;
+    static constexpr Kind::Type static_kind = Kind::Type::GenericArgument;
 
     std::string name;
     std::unique_ptr<TypeExpression> type;
@@ -237,7 +241,7 @@ export class GenericArgument : public Node {
 
 export class Parameter : public Node {
   public:
-    static constexpr Kind static_kind = Kind::Parameter;
+    static constexpr Kind::Type static_kind = Kind::Type::Parameter;
 
     bool is_variadic;
 
@@ -287,7 +291,7 @@ export class Parameter : public Node {
 
 export class Argument : public Node {
   public:
-    static constexpr Kind static_kind = Kind::Argument;
+    static constexpr Kind::Type static_kind = Kind::Type::Argument;
 
     std::string name;
     std::unique_ptr<Expression> value;
@@ -326,7 +330,7 @@ export class Argument : public Node {
 
 export class FunctionPrototype : public Node {
   public:
-    static constexpr Kind static_kind = Kind::FunctionPrototype;
+    static constexpr Kind::Type static_kind = Kind::Type::FunctionPrototype;
 
     std::string name;
 
@@ -408,14 +412,14 @@ export class FunctionPrototype : public Node {
 
 export class StructField : public Node {
   public:
-    static constexpr Kind static_kind = Kind::StructField;
+    static constexpr Kind::Type static_kind = Kind::Type::StructField;
 
-    Visibility visibility;
+    Visibility::Type visibility;
 
     std::string name;
     std::unique_ptr<TypeExpression> type;
 
-    StructField(Position position, Visibility visibility, std::string name,
+    StructField(Position position, Visibility::Type visibility, std::string name,
                 std::unique_ptr<TypeExpression> type)
         : Node(static_kind, position), visibility(visibility), name(std::move(name)),
           type(std::move(type)) {}
@@ -428,7 +432,7 @@ export class StructField : public Node {
         std::cout << "StructField(\n";
 
         print_indent(depth + 1);
-        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
 
         print_indent(depth + 1);
         std::cout << "name: \"" << name << "\",\n";
@@ -458,7 +462,7 @@ export class StructField : public Node {
 
 export class StructLiteralField : public Node {
   public:
-    static constexpr Kind static_kind = Kind::StructLiteralField;
+    static constexpr Kind::Type static_kind = Kind::Type::StructLiteralField;
 
     std::string name;
     std::unique_ptr<Expression> value;
@@ -497,7 +501,7 @@ export class StructLiteralField : public Node {
 
 export class NumberLiteral : public Expression {
   public:
-    static constexpr Kind static_kind = Kind::NumberLiteral;
+    static constexpr Kind::Type static_kind = Kind::Type::NumberLiteral;
 
     std::string value;
 
@@ -524,7 +528,7 @@ export class NumberLiteral : public Expression {
 
 export class FloatLiteral : public Expression {
   public:
-    static constexpr Kind static_kind = Kind::FloatLiteral;
+    static constexpr Kind::Type static_kind = Kind::Type::FloatLiteral;
 
     std::string value;
 
@@ -551,7 +555,7 @@ export class FloatLiteral : public Expression {
 
 export class StringLiteral : public Expression {
   public:
-    static constexpr Kind static_kind = Kind::StringLiteral;
+    static constexpr Kind::Type static_kind = Kind::Type::StringLiteral;
 
     std::string value;
 
@@ -578,7 +582,7 @@ export class StringLiteral : public Expression {
 
 export class BooleanLiteral : public Expression {
   public:
-    static constexpr Kind static_kind = Kind::BooleanLiteral;
+    static constexpr Kind::Type static_kind = Kind::Type::BooleanLiteral;
 
     bool value;
 
@@ -605,7 +609,7 @@ export class BooleanLiteral : public Expression {
 
 export class IdentifierExpression : public Expression {
   public:
-    static constexpr Kind static_kind = Kind::IdentifierExpression;
+    static constexpr Kind::Type static_kind = Kind::Type::IdentifierExpression;
 
     std::string name;
 
@@ -630,11 +634,9 @@ export class IdentifierExpression : public Expression {
     }
 };
 
-export class BinaryExpression : public Expression {
+export class BinaryOperator {
   public:
-    static constexpr Kind static_kind = Kind::BinaryExpression;
-
-    enum class BinaryOperator : std::uint8_t {
+    enum class Type : std::uint8_t {
         Plus,
         Minus,
         Asterisk,
@@ -651,39 +653,55 @@ export class BinaryExpression : public Expression {
         As,
         Is
     };
+};
+
+export class UnaryOperator {
+  public:
+    enum class Type : std::uint8_t {
+        Plus,
+        Minus,
+        Not,
+        Dereference,
+        AddressOf,
+    };
+};
+
+export class BinaryExpression : public Expression {
+  public:
+    static constexpr Kind::Type static_kind = Kind::Type::BinaryExpression;
 
   private:
-    static std::string operator_string(BinaryOperator op) {
+    static std::string operator_string(BinaryOperator::Type op) {
         switch (op) {
-        case BinaryOperator::Plus:
+        case BinaryOperator::Type::Plus:
             return "+";
-        case BinaryOperator::Minus:
+        case BinaryOperator::Type::Minus:
             return "-";
-        case BinaryOperator::Asterisk:
+        case BinaryOperator::Type::Asterisk:
             return "*";
-        case BinaryOperator::Divide:
+        case BinaryOperator::Type::Divide:
             return "/";
-        case BinaryOperator::Modulo:
+        case BinaryOperator::Type::Modulo:
             return "%";
-        case BinaryOperator::Equals:
+        case BinaryOperator::Type::Equals:
             return "==";
-        case BinaryOperator::NotEquals:
+        case BinaryOperator::Type::NotEquals:
             return "!=";
-        case BinaryOperator::LessThan:
+        case BinaryOperator::Type::LessThan:
             return "<";
-        case BinaryOperator::GreaterThan:
+        case BinaryOperator::Type::GreaterThan:
             return ">";
-        case BinaryOperator::LessEqual:
+        case BinaryOperator::Type::LessEqual:
             return "<=";
-        case BinaryOperator::GreaterEqual:
+        case BinaryOperator::Type::GreaterEqual:
             return ">=";
-        case BinaryOperator::And:
+        case BinaryOperator::Type::And:
             return "&&";
-        case BinaryOperator::Or:
+        case BinaryOperator::Type::Or:
             return "||";
-        case BinaryOperator::As:
+        case BinaryOperator::Type::As:
             return "as";
-        case BinaryOperator::Is:
+        case BinaryOperator::Type::Is:
             return "is";
         }
         return "?";
@@ -691,10 +709,10 @@ export class BinaryExpression : public Expression {
 
   public:
     std::unique_ptr<Expression> left;
-    BinaryOperator op;
+    BinaryOperator::Type op;
     std::unique_ptr<Expression> right;
 
-    BinaryExpression(Position position, std::unique_ptr<Expression> left, BinaryOperator op,
+    BinaryExpression(Position position, std::unique_ptr<Expression> left, BinaryOperator::Type op,
                      std::unique_ptr<Expression> right)
         : Expression(static_kind, position), left(std::move(left)), op(op),
           right(std::move(right)) {}
@@ -735,38 +753,30 @@ export class BinaryExpression : public Expression {
 
 export class UnaryExpression : public Expression {
   public:
-    static constexpr Kind static_kind = Kind::UnaryExpression;
-
-    enum class UnaryOperator : std::uint8_t {
-        Plus,
-        Minus,
-        Not,
-        Dereference,
-        AddressOf,
-    };
+    static constexpr Kind::Type static_kind = Kind::Type::UnaryExpression;
 
   private:
-    static std::string operator_string(UnaryOperator op) {
+    static std::string operator_string(UnaryOperator::Type op) {
         switch (op) {
-        case UnaryOperator::Plus:
+        case UnaryOperator::Type::Plus:
             return "+";
-        case UnaryOperator::Minus:
+        case UnaryOperator::Type::Minus:
             return "-";
-        case UnaryOperator::Not:
+        case UnaryOperator::Type::Not:
             return "!";
-        case UnaryOperator::Dereference:
+        case UnaryOperator::Type::Dereference:
             return "*";
-        case UnaryOperator::AddressOf:
+        case UnaryOperator::Type::AddressOf:
             return "&";
         }
         return "?";
     }
 
   public:
-    UnaryOperator op;
+    UnaryOperator::Type op;
     std::unique_ptr<Expression> operand;
 
-    UnaryExpression(Position position, UnaryOperator op, std::unique_ptr<Expression> operand)
+    UnaryExpression(Position position, UnaryOperator::Type op, std::unique_ptr<Expression> operand)
         : Expression(static_kind, position), op(op), operand(std::move(operand)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
@@ -800,7 +810,7 @@ export class UnaryExpression : public Expression {
 
 export class CallExpression : public Expression {
   public:
-    static constexpr Kind static_kind = Kind::CallExpression;
+    static constexpr Kind::Type static_kind = Kind::Type::CallExpression;
 
     std::unique_ptr<Expression> callee;
 
@@ -872,7 +882,7 @@ export class CallExpression : public Expression {
 
 export class IndexExpression : public Expression {
   public:
-    static constexpr Kind static_kind = Kind::IndexExpression;
+    static constexpr Kind::Type static_kind = Kind::Type::IndexExpression;
 
     std::unique_ptr<Expression> value;
     std::unique_ptr<Expression> index;
@@ -914,7 +924,7 @@ export class IndexExpression : public Expression {
 
 export class MemberExpression : public Expression {
   public:
-    static constexpr Kind static_kind = Kind::MemberExpression;
+    static constexpr Kind::Type static_kind = Kind::Type::MemberExpression;
 
     std::unique_ptr<Expression> value;
     std::string member;
@@ -953,7 +963,7 @@ export class MemberExpression : public Expression {
 
 export class AssignExpression : public Expression {
   public:
-    static constexpr Kind static_kind = Kind::AssignExpression;
+    static constexpr Kind::Type static_kind = Kind::Type::AssignExpression;
 
     std::unique_ptr<Expression> target;
     std::unique_ptr<Expression> value;
@@ -995,7 +1005,7 @@ export class AssignExpression : public Expression {
 
 export class StructLiteralExpression : public Expression {
   public:
-    static constexpr Kind static_kind = Kind::StructLiteralExpression;
+    static constexpr Kind::Type static_kind = Kind::Type::StructLiteralExpression;
 
     std::unique_ptr<IdentifierExpression> name;
 
@@ -1067,7 +1077,7 @@ export class StructLiteralExpression : public Expression {
 
 export class BlockStatement : public Statement {
   public:
-    static constexpr Kind static_kind = Kind::BlockStatement;
+    static constexpr Kind::Type static_kind = Kind::Type::BlockStatement;
 
     std::vector<std::unique_ptr<Statement>> statements;
 
@@ -1106,7 +1116,7 @@ export class BlockStatement : public Statement {
 
 export class ExpressionStatement : public Statement {
   public:
-    static constexpr Kind static_kind = Kind::ExpressionStatement;
+    static constexpr Kind::Type static_kind = Kind::Type::ExpressionStatement;
 
     std::unique_ptr<Expression> expression;
 
@@ -1135,7 +1145,7 @@ export class ExpressionStatement : public Statement {
 
 export class IfExpression : public Expression {
   public:
-    static constexpr Kind static_kind = Kind::IfExpression;
+    static constexpr Kind::Type static_kind = Kind::Type::IfExpression;
 
     std::unique_ptr<Expression> condition;
     std::unique_ptr<Statement> then_branch;
@@ -1188,7 +1198,7 @@ export class IfExpression : public Expression {
 
 export class ReturnStatement : public Statement {
   public:
-    static constexpr Kind static_kind = Kind::ReturnStatement;
+    static constexpr Kind::Type static_kind = Kind::Type::ReturnStatement;
 
     std::unique_ptr<Expression> value;
 
@@ -1221,9 +1231,9 @@ export class ReturnStatement : public Statement {
 
 export class StructDeclaration : public Statement {
   public:
-    static constexpr Kind static_kind = Kind::StructDeclaration;
+    static constexpr Kind::Type static_kind = Kind::Type::StructDeclaration;
 
-    Visibility visibility;
+    Visibility::Type visibility;
 
     std::string name;
 
@@ -1231,7 +1241,7 @@ export class StructDeclaration : public Statement {
 
     std::vector<std::unique_ptr<StructField>> fields;
 
-    StructDeclaration(Position position, Visibility visibility, std::string name,
+    StructDeclaration(Position position, Visibility::Type visibility, std::string name,
                       std::vector<std::unique_ptr<GenericParameter>> generic_parameters,
                       std::vector<std::unique_ptr<StructField>> fields)
         : Statement(static_kind, position), visibility(visibility), name(std::move(name)),
@@ -1245,7 +1255,7 @@ export class StructDeclaration : public Statement {
         std::cout << "StructDeclaration(\n";
 
         print_indent(depth + 1);
-        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
 
         print_indent(depth + 1);
         std::cout << "name: \"" << name << "\",\n";
@@ -1296,16 +1306,16 @@ export class StructDeclaration : public Statement {
 
 export class VarDeclaration : public Statement {
   public:
-    static constexpr Kind static_kind = Kind::VarDeclaration;
+    static constexpr Kind::Type static_kind = Kind::Type::VarDeclaration;
 
-    Visibility visibility;
-    StorageKind storage_kind;
+    Visibility::Type visibility;
+    StorageKind::Type storage_kind;
 
     std::string name;
     std::unique_ptr<TypeExpression> type;
     std::unique_ptr<Expression> initializer;
 
-    VarDeclaration(Position position, Visibility visibility, StorageKind storage_kind,
+    VarDeclaration(Position position, Visibility::Type visibility, StorageKind::Type storage_kind,
                    std::string name, std::unique_ptr<TypeExpression> type,
                    std::unique_ptr<Expression> initializer)
         : Statement(static_kind, position), visibility(visibility), storage_kind(storage_kind),
@@ -1319,10 +1329,10 @@ export class VarDeclaration : public Statement {
         std::cout << "VarDeclaration(\n";
 
         print_indent(depth + 1);
-        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
 
         print_indent(depth + 1);
-        std::cout << "storage_kind: " << storage_kind_string(storage_kind) << ",\n";
+        std::cout << "storage_kind: " << StorageKind::to_string(storage_kind) << ",\n";
 
         print_indent(depth + 1);
         std::cout << "name: \"" << name << "\",\n";
@@ -1361,14 +1371,14 @@ export class VarDeclaration : public Statement {
 
 export class FunctionDeclaration : public Statement {
   public:
-    static constexpr Kind static_kind = Kind::FunctionDeclaration;
+    static constexpr Kind::Type static_kind = Kind::Type::FunctionDeclaration;
 
-    Visibility visibility;
+    Visibility::Type visibility;
 
     std::unique_ptr<FunctionPrototype> prototype;
     std::unique_ptr<BlockStatement> body;
 
-    FunctionDeclaration(Position position, Visibility visibility,
+    FunctionDeclaration(Position position, Visibility::Type visibility,
                         std::unique_ptr<FunctionPrototype> prototype,
                         std::unique_ptr<BlockStatement> body)
         : Statement(static_kind, position), visibility(visibility), prototype(std::move(prototype)),
@@ -1382,7 +1392,7 @@ export class FunctionDeclaration : public Statement {
         std::cout << "FunctionDeclaration(\n";
 
         print_indent(depth + 1);
-        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
 
         print_indent(depth + 1);
         std::cout << "prototype: ";
@@ -1410,13 +1420,13 @@ export class FunctionDeclaration : public Statement {
 
 export class ExternFunctionDeclaration : public Statement {
   public:
-    static constexpr Kind static_kind = Kind::ExternFunctionDeclaration;
+    static constexpr Kind::Type static_kind = Kind::Type::ExternFunctionDeclaration;
 
-    Visibility visibility;
+    Visibility::Type visibility;
 
     std::unique_ptr<FunctionPrototype> prototype;
 
-    ExternFunctionDeclaration(Position position, Visibility visibility,
+    ExternFunctionDeclaration(Position position, Visibility::Type visibility,
                               std::unique_ptr<FunctionPrototype> prototype)
         : Statement(static_kind, position), visibility(visibility),
           prototype(std::move(prototype)) {}
@@ -1429,7 +1439,7 @@ export class ExternFunctionDeclaration : public Statement {
         std::cout << "ExternFunctionDeclaration(\n";
 
         print_indent(depth + 1);
-        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
 
         print_indent(depth + 1);
         std::cout << "prototype: ";
@@ -1452,14 +1462,14 @@ export class ExternFunctionDeclaration : public Statement {
 
 export class ExternVarDeclaration : public Statement {
   public:
-    static constexpr Kind static_kind = Kind::ExternVarDeclaration;
+    static constexpr Kind::Type static_kind = Kind::Type::ExternVarDeclaration;
 
-    Visibility visibility;
+    Visibility::Type visibility;
 
     std::string name;
     std::unique_ptr<TypeExpression> type;
 
-    ExternVarDeclaration(Position position, Visibility visibility, std::string name,
+    ExternVarDeclaration(Position position, Visibility::Type visibility, std::string name,
                          std::unique_ptr<TypeExpression> type)
         : Statement(static_kind, position), visibility(visibility), name(std::move(name)),
           type(std::move(type)) {}
@@ -1472,7 +1482,7 @@ export class ExternVarDeclaration : public Statement {
         std::cout << "ExternVarDeclaration(\n";
 
         print_indent(depth + 1);
-        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
 
         print_indent(depth + 1);
         std::cout << "name: \"" << name << "\",\n";
@@ -1498,7 +1508,7 @@ export class ExternVarDeclaration : public Statement {
 
 export class ImportStatement : public Statement {
   public:
-    static constexpr Kind static_kind = Kind::ImportStatement;
+    static constexpr Kind::Type static_kind = Kind::Type::ImportStatement;
 
     std::vector<std::unique_ptr<IdentifierExpression>> path;
 

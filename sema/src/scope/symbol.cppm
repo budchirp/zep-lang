@@ -13,14 +13,17 @@ import zep.sema.type;
 
 export class Symbol {
   public:
-    enum class Kind : std::uint8_t {
-        Var,
-        Function,
-        Type,
+    class Kind {
+      public:
+        enum class Type : std::uint8_t {
+            Var,
+            Function,
+            Type,
+        };
     };
 
   protected:
-    Symbol(Kind kind, std::string name, Position position, Visibility visibility,
+    Symbol(Kind::Type kind, std::string name, Position position, Visibility::Type visibility,
            std::shared_ptr<Type> type)
         : kind(kind), position(position), name(std::move(name)), visibility(visibility),
           type(std::move(type)) {}
@@ -32,13 +35,13 @@ export class Symbol {
     Symbol& operator=(Symbol&&) = default;
 
   public:
-    Kind kind;
+    Kind::Type kind;
 
     Position position;
 
     std::string name;
 
-    Visibility visibility;
+    Visibility::Type visibility;
 
     std::shared_ptr<Type> type;
 
@@ -54,13 +57,13 @@ export class Symbol {
         print_indent(depth + 1);
         std::cout << "kind: ";
         switch (kind) {
-        case Kind::Var:
+        case Kind::Type::Var:
             std::cout << "var";
             break;
-        case Kind::Function:
+        case Kind::Type::Function:
             std::cout << "function";
             break;
-        case Kind::Type:
+        case Kind::Type::Type:
             std::cout << "type";
             break;
         }
@@ -70,7 +73,7 @@ export class Symbol {
         std::cout << "name: \"" << name << "\",\n";
 
         print_indent(depth + 1);
-        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
 
         print_indent(depth + 1);
         std::cout << "type: ";
@@ -108,12 +111,12 @@ export class Symbol {
 
 export class VarSymbol : public Symbol {
   public:
-    static constexpr Kind static_kind = Kind::Var;
+    static constexpr Kind::Type static_kind = Kind::Type::Var;
 
-    StorageKind storage_kind;
+    StorageKind::Type storage_kind;
 
-    VarSymbol(std::string name, Position position, Visibility visibility, StorageKind storage_kind,
-              std::shared_ptr<Type> type)
+    VarSymbol(std::string name, Position position, Visibility::Type visibility,
+              StorageKind::Type storage_kind, std::shared_ptr<Type> type)
         : Symbol(static_kind, std::move(name), position, visibility, std::move(type)),
           storage_kind(storage_kind) {}
 
@@ -128,10 +131,10 @@ export class VarSymbol : public Symbol {
         std::cout << "name: \"" << name << "\",\n";
 
         print_indent(depth + 1);
-        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
 
         print_indent(depth + 1);
-        std::cout << "storage_kind: " << storage_kind_string(storage_kind) << ",\n";
+        std::cout << "storage_kind: " << StorageKind::to_string(storage_kind) << ",\n";
 
         print_indent(depth + 1);
         std::cout << "type: ";
@@ -153,9 +156,9 @@ export class VarSymbol : public Symbol {
 
 export class FunctionSymbol : public Symbol {
   public:
-    static constexpr Kind static_kind = Kind::Function;
+    static constexpr Kind::Type static_kind = Kind::Type::Function;
 
-    FunctionSymbol(std::string name, Position position, Visibility visibility,
+    FunctionSymbol(std::string name, Position position, Visibility::Type visibility,
                    std::shared_ptr<Type> type)
         : Symbol(static_kind, std::move(name), position, visibility, std::move(type)) {}
 
@@ -170,7 +173,7 @@ export class FunctionSymbol : public Symbol {
         std::cout << "name: \"" << name << "\",\n";
 
         print_indent(depth + 1);
-        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
 
         print_indent(depth + 1);
         std::cout << "type: ";
@@ -192,9 +195,9 @@ export class FunctionSymbol : public Symbol {
 
 export class TypeSymbol : public Symbol {
   public:
-    static constexpr Kind static_kind = Kind::Type;
+    static constexpr Kind::Type static_kind = Kind::Type::Type;
 
-    TypeSymbol(std::string name, Position position, Visibility visibility,
+    TypeSymbol(std::string name, Position position, Visibility::Type visibility,
                std::shared_ptr<Type> type)
         : Symbol(static_kind, std::move(name), position, visibility, std::move(type)) {}
 
@@ -209,7 +212,7 @@ export class TypeSymbol : public Symbol {
         std::cout << "name: \"" << name << "\",\n";
 
         print_indent(depth + 1);
-        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
 
         print_indent(depth + 1);
         std::cout << "type: ";

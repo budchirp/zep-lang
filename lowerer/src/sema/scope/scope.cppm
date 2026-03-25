@@ -49,8 +49,8 @@ export class LoweredScope {
         auto& bucket = functions[symbol_name];
         for (const auto& existing : bucket) {
             if (existing->type != nullptr && symbol->type != nullptr &&
-                existing->type->kind == LoweredType::Kind::Function &&
-                symbol->type->kind == LoweredType::Kind::Function) {
+                existing->type->kind == LoweredType::Kind::Type::Function &&
+                symbol->type->kind == LoweredType::Kind::Type::Function) {
                 auto* existing_fn = existing->type->as<LoweredFunctionType>();
                 auto* new_fn = symbol->type->as<LoweredFunctionType>();
                 if (existing_fn != nullptr && new_fn != nullptr &&

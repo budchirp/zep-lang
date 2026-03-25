@@ -5,27 +5,39 @@ module;
 
 export module zep.sema.kinds;
 
-export enum class Linkage : std::uint8_t { External, Internal };
+export class Linkage {
+  private:
+  public:
+    enum class Type : std::uint8_t { External, Internal };
 
-export enum class Visibility : std::uint8_t { Public, Private };
-
-export enum class StorageKind : std::uint8_t { Const, Var, VarMut };
-
-export std::string linkage_string(Linkage linkage) {
-    return linkage == Linkage::External ? "external" : "internal";
-}
-
-export std::string visibility_string(Visibility visibility) {
-    return visibility == Visibility::Public ? "public" : "private";
-}
-
-export std::string storage_kind_string(StorageKind kind) {
-    switch (kind) {
-    case StorageKind::Const:
-        return "const";
-    case StorageKind::Var:
-        return "var";
-    case StorageKind::VarMut:
-        return "var mut";
+    static std::string to_string(Type linkage) {
+        return linkage == Type::External ? "external" : "internal";
     }
-}
+};
+
+export class Visibility {
+  private:
+  public:
+    enum class Type : std::uint8_t { Public, Private };
+
+    static std::string to_string(Type visibility) {
+        return visibility == Type::Public ? "public" : "private";
+    }
+};
+
+export class StorageKind {
+  private:
+  public:
+    enum class Type : std::uint8_t { Const, Var, VarMut };
+
+    static std::string to_string(Type kind) {
+        switch (kind) {
+        case Type::Const:
+            return "const";
+        case Type::Var:
+            return "var";
+        case Type::VarMut:
+            return "var mut";
+        }
+    }
+};

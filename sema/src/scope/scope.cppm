@@ -56,8 +56,8 @@ export class Scope {
                 if (new_func_type->parameters.size() == existing_func_type->parameters.size()) {
                     bool same = true;
                     for (std::size_t i = 0; i < new_func_type->parameters.size(); ++i) {
-                        if (!Type::compatible(new_func_type->parameters[i].type,
-                                              existing_func_type->parameters[i].type)) {
+                        if (!Type::compatible(new_func_type->parameters[i]->type,
+                                              existing_func_type->parameters[i]->type)) {
                             same = false;
                             break;
                         }

@@ -12,20 +12,23 @@ import zep.common.logger;
 
 export class LoweredType {
   public:
-    enum class Kind : std::uint8_t {
-        Void,
-        Boolean,
-        String,
-        Integer,
-        Float,
-        Pointer,
-        Array,
-        Struct,
-        Function
+    class Kind {
+      public:
+        enum class Type : std::uint8_t {
+            Void,
+            Boolean,
+            String,
+            Integer,
+            Float,
+            Pointer,
+            Array,
+            Struct,
+            Function
+        };
     };
 
   protected:
-    explicit LoweredType(Kind kind) : kind(kind) {}
+    explicit LoweredType(Kind::Type kind) : kind(kind) {}
 
     LoweredType(const LoweredType&) = delete;
     LoweredType& operator=(const LoweredType&) = delete;
@@ -33,7 +36,7 @@ export class LoweredType {
     LoweredType& operator=(LoweredType&&) = default;
 
   public:
-    Kind kind;
+    Kind::Type kind;
 
     virtual ~LoweredType() = default;
 
@@ -59,7 +62,7 @@ export class LoweredType {
 
 export class LoweredVoidType : public LoweredType {
   public:
-    static constexpr Kind static_kind = Kind::Void;
+    static constexpr Kind::Type static_kind = Kind::Type::Void;
 
     LoweredVoidType() : LoweredType(static_kind) {}
 
@@ -78,7 +81,7 @@ export class LoweredVoidType : public LoweredType {
 
 export class LoweredBooleanType : public LoweredType {
   public:
-    static constexpr Kind static_kind = Kind::Boolean;
+    static constexpr Kind::Type static_kind = Kind::Type::Boolean;
 
     LoweredBooleanType() : LoweredType(static_kind) {}
 
@@ -97,7 +100,7 @@ export class LoweredBooleanType : public LoweredType {
 
 export class LoweredStringType : public LoweredType {
   public:
-    static constexpr Kind static_kind = Kind::String;
+    static constexpr Kind::Type static_kind = Kind::Type::String;
 
     LoweredStringType() : LoweredType(static_kind) {}
 
@@ -116,7 +119,7 @@ export class LoweredStringType : public LoweredType {
 
 export class LoweredIntegerType : public LoweredType {
   public:
-    static constexpr Kind static_kind = Kind::Integer;
+    static constexpr Kind::Type static_kind = Kind::Type::Integer;
 
     std::uint8_t bits;
     bool is_signed;
@@ -142,7 +145,7 @@ export class LoweredIntegerType : public LoweredType {
 
 export class LoweredFloatType : public LoweredType {
   public:
-    static constexpr Kind static_kind = Kind::Float;
+    static constexpr Kind::Type static_kind = Kind::Type::Float;
 
     std::uint8_t bits;
 
@@ -163,7 +166,7 @@ export class LoweredFloatType : public LoweredType {
 
 export class LoweredPointerType : public LoweredType {
   public:
-    static constexpr Kind static_kind = Kind::Pointer;
+    static constexpr Kind::Type static_kind = Kind::Type::Pointer;
 
     std::shared_ptr<LoweredType> base;
 
@@ -188,7 +191,7 @@ export class LoweredPointerType : public LoweredType {
 
 export class LoweredArrayType : public LoweredType {
   public:
-    static constexpr Kind static_kind = Kind::Array;
+    static constexpr Kind::Type static_kind = Kind::Type::Array;
 
     std::shared_ptr<LoweredType> element;
     std::size_t size;
@@ -225,7 +228,7 @@ export class LoweredStructField {
 
 export class LoweredStructType : public LoweredType {
   public:
-    static constexpr Kind static_kind = Kind::Struct;
+    static constexpr Kind::Type static_kind = Kind::Type::Struct;
 
     std::string name;
     std::vector<LoweredStructField> fields;
@@ -248,7 +251,7 @@ export class LoweredStructType : public LoweredType {
 
 export class LoweredFunctionType : public LoweredType {
   public:
-    static constexpr Kind static_kind = Kind::Function;
+    static constexpr Kind::Type static_kind = Kind::Type::Function;
 
     std::vector<std::shared_ptr<LoweredType>> parameters;
     std::shared_ptr<LoweredType> return_type;

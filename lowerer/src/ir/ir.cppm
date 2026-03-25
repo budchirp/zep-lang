@@ -15,30 +15,33 @@ export import zep.lowerer.sema.types;
 export import zep.lowerer.sema.scope.symbol;
 export import zep.lowerer.sema.scope;
 
-export enum class LoweredNodeKind : std::uint8_t {
-    NumberLiteral,
-    FloatLiteral,
-    StringLiteral,
-    BooleanLiteral,
-    IdentifierExpression,
-    BinaryExpression,
-    UnaryExpression,
-    CallExpression,
-    IndexExpression,
-    MemberExpression,
-    AssignExpression,
-    StructLiteralExpression,
-    IfExpression,
-    BlockStatement,
-    ExpressionStatement,
-    ReturnStatement,
-    VarDeclaration,
+export class LoweredNodeKind {
+  public:
+    enum class Type : std::uint8_t {
+        NumberLiteral,
+        FloatLiteral,
+        StringLiteral,
+        BooleanLiteral,
+        IdentifierExpression,
+        BinaryExpression,
+        UnaryExpression,
+        CallExpression,
+        IndexExpression,
+        MemberExpression,
+        AssignExpression,
+        StructLiteralExpression,
+        IfExpression,
+        BlockStatement,
+        ExpressionStatement,
+        ReturnStatement,
+        VarDeclaration,
+    };
 };
 
 export class LoweredNode {
   private:
   protected:
-    explicit LoweredNode(LoweredNodeKind kind, Position position)
+    explicit LoweredNode(LoweredNodeKind::Type kind, Position position)
         : kind(kind), position(position) {}
 
     LoweredNode(const LoweredNode&) = delete;
@@ -47,7 +50,7 @@ export class LoweredNode {
     LoweredNode& operator=(LoweredNode&&) = default;
 
   public:
-    LoweredNodeKind kind;
+    LoweredNodeKind::Type kind;
     Position position;
 
     virtual ~LoweredNode() = default;
@@ -95,7 +98,7 @@ export class LoweredStatement : public LoweredNode {
 
 export class LoweredBlockStatement : public LoweredStatement {
   public:
-    static constexpr LoweredNodeKind static_kind = LoweredNodeKind::BlockStatement;
+    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::BlockStatement;
 
     std::vector<std::unique_ptr<LoweredStatement>> statements;
 
@@ -135,7 +138,7 @@ export class LoweredBlockStatement : public LoweredStatement {
 
 export class LoweredNumberLiteral : public LoweredExpression {
   public:
-    static constexpr LoweredNodeKind static_kind = LoweredNodeKind::NumberLiteral;
+    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::NumberLiteral;
 
     std::string value;
 
@@ -157,7 +160,7 @@ export class LoweredNumberLiteral : public LoweredExpression {
 
 export class LoweredFloatLiteral : public LoweredExpression {
   public:
-    static constexpr LoweredNodeKind static_kind = LoweredNodeKind::FloatLiteral;
+    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::FloatLiteral;
 
     std::string value;
 
@@ -179,7 +182,7 @@ export class LoweredFloatLiteral : public LoweredExpression {
 
 export class LoweredStringLiteral : public LoweredExpression {
   public:
-    static constexpr LoweredNodeKind static_kind = LoweredNodeKind::StringLiteral;
+    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::StringLiteral;
 
     std::string value;
 
@@ -201,7 +204,7 @@ export class LoweredStringLiteral : public LoweredExpression {
 
 export class LoweredBooleanLiteral : public LoweredExpression {
   public:
-    static constexpr LoweredNodeKind static_kind = LoweredNodeKind::BooleanLiteral;
+    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::BooleanLiteral;
 
     bool value;
 
@@ -223,7 +226,8 @@ export class LoweredBooleanLiteral : public LoweredExpression {
 
 export class LoweredIdentifierExpression : public LoweredExpression {
   public:
-    static constexpr LoweredNodeKind static_kind = LoweredNodeKind::IdentifierExpression;
+    static constexpr LoweredNodeKind::Type static_kind =
+        LoweredNodeKind::Type::IdentifierExpression;
 
     std::string name;
 
@@ -243,11 +247,9 @@ export class LoweredIdentifierExpression : public LoweredExpression {
     }
 };
 
-export class LoweredBinaryExpression : public LoweredExpression {
+export class LoweredBinaryOperator {
   public:
-    static constexpr LoweredNodeKind static_kind = LoweredNodeKind::BinaryExpression;
-
-    enum class BinaryOperator : std::uint8_t {
+    enum class Type : std::uint8_t {
         Plus,
         Minus,
         Asterisk,
@@ -264,48 +266,54 @@ export class LoweredBinaryExpression : public LoweredExpression {
         As,
         Is,
     };
+};
+
+export class LoweredBinaryExpression : public LoweredExpression {
+  public:
+    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::BinaryExpression;
 
     std::unique_ptr<LoweredExpression> left;
-    BinaryOperator op;
+    LoweredBinaryOperator::Type op;
     std::unique_ptr<LoweredExpression> right;
 
     LoweredBinaryExpression(Position position, std::unique_ptr<LoweredExpression> left,
-                            BinaryOperator op, std::unique_ptr<LoweredExpression> right)
+                            LoweredBinaryOperator::Type op,
+                            std::unique_ptr<LoweredExpression> right)
         : LoweredExpression(static_kind, position), left(std::move(left)), op(op),
           right(std::move(right)) {}
 
   private:
-    static std::string operator_string(BinaryOperator binary_op) {
+    static std::string operator_string(LoweredBinaryOperator::Type binary_op) {
         switch (binary_op) {
-        case BinaryOperator::Plus:
+        case LoweredBinaryOperator::Type::Plus:
             return "+";
-        case BinaryOperator::Minus:
+        case LoweredBinaryOperator::Type::Minus:
             return "-";
-        case BinaryOperator::Asterisk:
+        case LoweredBinaryOperator::Type::Asterisk:
             return "*";
-        case BinaryOperator::Divide:
+        case LoweredBinaryOperator::Type::Divide:
             return "/";
-        case BinaryOperator::Modulo:
+        case LoweredBinaryOperator::Type::Modulo:
             return "%";
-        case BinaryOperator::Equals:
+        case LoweredBinaryOperator::Type::Equals:
             return "==";
-        case BinaryOperator::NotEquals:
+        case LoweredBinaryOperator::Type::NotEquals:
             return "!=";
-        case BinaryOperator::LessThan:
+        case LoweredBinaryOperator::Type::LessThan:
             return "<";
-        case BinaryOperator::GreaterThan:
+        case LoweredBinaryOperator::Type::GreaterThan:
             return ">";
-        case BinaryOperator::LessEqual:
+        case LoweredBinaryOperator::Type::LessEqual:
             return "<=";
-        case BinaryOperator::GreaterEqual:
+        case LoweredBinaryOperator::Type::GreaterEqual:
             return ">=";
-        case BinaryOperator::And:
+        case LoweredBinaryOperator::Type::And:
             return "&&";
-        case BinaryOperator::Or:
+        case LoweredBinaryOperator::Type::Or:
             return "||";
-        case BinaryOperator::As:
+        case LoweredBinaryOperator::Type::As:
             return "as";
-        case BinaryOperator::Is:
+        case LoweredBinaryOperator::Type::Is:
             return "is";
         }
         return "?";
@@ -340,37 +348,40 @@ export class LoweredBinaryExpression : public LoweredExpression {
     }
 };
 
-export class LoweredUnaryExpression : public LoweredExpression {
+export class LoweredUnaryOperator {
   public:
-    static constexpr LoweredNodeKind static_kind = LoweredNodeKind::UnaryExpression;
-
-    enum class UnaryOperator : std::uint8_t {
+    enum class Type : std::uint8_t {
         Plus,
         Minus,
         Not,
         Dereference,
         AddressOf,
     };
+};
 
-    UnaryOperator op;
+export class LoweredUnaryExpression : public LoweredExpression {
+  public:
+    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::UnaryExpression;
+
+    LoweredUnaryOperator::Type op;
     std::unique_ptr<LoweredExpression> operand;
 
-    LoweredUnaryExpression(Position position, UnaryOperator op,
+    LoweredUnaryExpression(Position position, LoweredUnaryOperator::Type op,
                            std::unique_ptr<LoweredExpression> operand)
         : LoweredExpression(static_kind, position), op(op), operand(std::move(operand)) {}
 
   private:
-    static std::string operator_string(UnaryOperator unary_op) {
+    static std::string operator_string(LoweredUnaryOperator::Type unary_op) {
         switch (unary_op) {
-        case UnaryOperator::Plus:
+        case LoweredUnaryOperator::Type::Plus:
             return "+";
-        case UnaryOperator::Minus:
+        case LoweredUnaryOperator::Type::Minus:
             return "-";
-        case UnaryOperator::Not:
+        case LoweredUnaryOperator::Type::Not:
             return "!";
-        case UnaryOperator::Dereference:
+        case LoweredUnaryOperator::Type::Dereference:
             return "*";
-        case UnaryOperator::AddressOf:
+        case LoweredUnaryOperator::Type::AddressOf:
             return "&";
         }
         return "?";
@@ -402,7 +413,7 @@ export class LoweredUnaryExpression : public LoweredExpression {
 
 export class LoweredCallExpression : public LoweredExpression {
   public:
-    static constexpr LoweredNodeKind static_kind = LoweredNodeKind::CallExpression;
+    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::CallExpression;
 
     std::unique_ptr<LoweredExpression> callee;
     std::vector<std::unique_ptr<LoweredExpression>> arguments;
@@ -449,7 +460,7 @@ export class LoweredCallExpression : public LoweredExpression {
 
 export class LoweredIndexExpression : public LoweredExpression {
   public:
-    static constexpr LoweredNodeKind static_kind = LoweredNodeKind::IndexExpression;
+    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::IndexExpression;
 
     std::unique_ptr<LoweredExpression> object;
     std::unique_ptr<LoweredExpression> index;
@@ -486,7 +497,7 @@ export class LoweredIndexExpression : public LoweredExpression {
 
 export class LoweredMemberExpression : public LoweredExpression {
   public:
-    static constexpr LoweredNodeKind static_kind = LoweredNodeKind::MemberExpression;
+    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::MemberExpression;
 
     std::unique_ptr<LoweredExpression> object;
     std::string member;
@@ -521,7 +532,7 @@ export class LoweredMemberExpression : public LoweredExpression {
 
 export class LoweredAssignExpression : public LoweredExpression {
   public:
-    static constexpr LoweredNodeKind static_kind = LoweredNodeKind::AssignExpression;
+    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::AssignExpression;
 
     std::unique_ptr<LoweredExpression> target;
     std::unique_ptr<LoweredExpression> value;
@@ -567,7 +578,8 @@ export class LoweredStructLiteralField {
 
 export class LoweredStructLiteralExpression : public LoweredExpression {
   public:
-    static constexpr LoweredNodeKind static_kind = LoweredNodeKind::StructLiteralExpression;
+    static constexpr LoweredNodeKind::Type static_kind =
+        LoweredNodeKind::Type::StructLiteralExpression;
 
     std::string name;
     std::vector<LoweredStructLiteralField> fields;
@@ -620,7 +632,7 @@ export class LoweredStructLiteralExpression : public LoweredExpression {
 
 export class LoweredIfExpression : public LoweredExpression {
   public:
-    static constexpr LoweredNodeKind static_kind = LoweredNodeKind::IfExpression;
+    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::IfExpression;
 
     std::unique_ptr<LoweredExpression> condition;
     std::unique_ptr<LoweredStatement> then_branch;
@@ -668,7 +680,7 @@ export class LoweredIfExpression : public LoweredExpression {
 
 export class LoweredExpressionStatement : public LoweredStatement {
   public:
-    static constexpr LoweredNodeKind static_kind = LoweredNodeKind::ExpressionStatement;
+    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::ExpressionStatement;
 
     std::unique_ptr<LoweredExpression> expression;
 
@@ -698,7 +710,7 @@ export class LoweredExpressionStatement : public LoweredStatement {
 
 export class LoweredReturnStatement : public LoweredStatement {
   public:
-    static constexpr LoweredNodeKind static_kind = LoweredNodeKind::ReturnStatement;
+    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::ReturnStatement;
 
     std::unique_ptr<LoweredExpression> value;
 
@@ -731,16 +743,17 @@ export class LoweredReturnStatement : public LoweredStatement {
 
 export class LoweredVarDeclaration : public LoweredStatement {
   public:
-    static constexpr LoweredNodeKind static_kind = LoweredNodeKind::VarDeclaration;
+    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::VarDeclaration;
 
-    Visibility visibility;
-    StorageKind storage_kind;
+    Visibility::Type visibility;
+    StorageKind::Type storage_kind;
     std::string name;
     std::shared_ptr<LoweredType> type;
     std::unique_ptr<LoweredExpression> initializer;
 
-    LoweredVarDeclaration(Position position, Visibility visibility, StorageKind storage_kind,
-                          std::string name, std::shared_ptr<LoweredType> type,
+    LoweredVarDeclaration(Position position, Visibility::Type visibility,
+                          StorageKind::Type storage_kind, std::string name,
+                          std::shared_ptr<LoweredType> type,
                           std::unique_ptr<LoweredExpression> initializer)
         : LoweredStatement(static_kind, position), visibility(visibility),
           storage_kind(storage_kind), name(std::move(name)), type(std::move(type)),
@@ -753,10 +766,10 @@ export class LoweredVarDeclaration : public LoweredStatement {
 
         std::cout << "LoweredVarDeclaration(\n";
         print_indent(depth + 1);
-        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
 
         print_indent(depth + 1);
-        std::cout << "storage_kind: " << storage_kind_string(storage_kind) << ",\n";
+        std::cout << "storage_kind: " << StorageKind::to_string(storage_kind) << ",\n";
 
         print_indent(depth + 1);
         std::cout << "name: \"" << name << "\",\n";
@@ -787,14 +800,14 @@ export class LoweredFunctionDeclaration {
     Position position;
 
   public:
-    Visibility visibility;
+    Visibility::Type visibility;
     std::string name;
     std::vector<LoweredParameter> parameters;
     std::shared_ptr<LoweredType> return_type;
     std::unique_ptr<LoweredBlockStatement> body;
     bool variadic;
 
-    LoweredFunctionDeclaration(Position position, Visibility visibility, std::string name,
+    LoweredFunctionDeclaration(Position position, Visibility::Type visibility, std::string name,
                                std::vector<LoweredParameter> parameters,
                                std::shared_ptr<LoweredType> return_type,
                                std::unique_ptr<LoweredBlockStatement> body, bool variadic)
@@ -806,7 +819,7 @@ export class LoweredFunctionDeclaration {
         print_indent(depth);
         std::cout << "LoweredFunctionDeclaration(\n";
         print_indent(depth + 1);
-        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
 
         print_indent(depth + 1);
         std::cout << "name: \"" << name << "\",\n";

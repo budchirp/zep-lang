@@ -51,19 +51,22 @@ export class LoweredParameter {
 
 export class LoweredSymbol {
   public:
-    enum class Kind : std::uint8_t { Var, Function, Type };
+    class Kind {
+      public:
+        enum class Type : std::uint8_t { Var, Function, Type };
+    };
 
   protected:
-    LoweredSymbol(Kind kind, std::string name, Linkage linkage, Visibility visibility,
-                  std::shared_ptr<LoweredType> type)
+    LoweredSymbol(Kind::Type kind, std::string name, Linkage::Type linkage,
+                  Visibility::Type visibility, std::shared_ptr<LoweredType> type)
         : kind(kind), name(std::move(name)), linkage(linkage), visibility(visibility),
           type(std::move(type)) {}
 
   public:
-    Kind kind;
+    Kind::Type kind;
     std::string name;
-    Linkage linkage;
-    Visibility visibility;
+    Linkage::Type linkage;
+    Visibility::Type visibility;
     std::shared_ptr<LoweredType> type;
 
     virtual ~LoweredSymbol() = default;
@@ -78,13 +81,13 @@ export class LoweredSymbol {
         print_indent(depth + 1);
         std::cout << "kind: ";
         switch (kind) {
-        case Kind::Var:
+        case Kind::Type::Var:
             std::cout << "var";
             break;
-        case Kind::Function:
+        case Kind::Type::Function:
             std::cout << "function";
             break;
-        case Kind::Type:
+        case Kind::Type::Type:
             std::cout << "type";
             break;
         }
@@ -94,10 +97,10 @@ export class LoweredSymbol {
         std::cout << "name: \"" << name << "\",\n";
 
         print_indent(depth + 1);
-        std::cout << "linkage: " << linkage_string(linkage) << ",\n";
+        std::cout << "linkage: " << Linkage::to_string(linkage) << ",\n";
 
         print_indent(depth + 1);
-        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
 
         print_indent(depth + 1);
         std::cout << "type: ";
@@ -135,9 +138,9 @@ export class LoweredSymbol {
 
 export class LoweredTypeSymbol : public LoweredSymbol {
   public:
-    static constexpr Kind static_kind = Kind::Type;
+    static constexpr Kind::Type static_kind = Kind::Type::Type;
 
-    LoweredTypeSymbol(std::string name, Linkage linkage, Visibility visibility,
+    LoweredTypeSymbol(std::string name, Linkage::Type linkage, Visibility::Type visibility,
                       std::shared_ptr<LoweredType> type)
         : LoweredSymbol(static_kind, std::move(name), linkage, visibility, std::move(type)) {}
 
@@ -152,10 +155,10 @@ export class LoweredTypeSymbol : public LoweredSymbol {
         std::cout << "name: \"" << name << "\",\n";
 
         print_indent(depth + 1);
-        std::cout << "linkage: " << linkage_string(linkage) << ",\n";
+        std::cout << "linkage: " << Linkage::to_string(linkage) << ",\n";
 
         print_indent(depth + 1);
-        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
 
         print_indent(depth + 1);
         std::cout << "type: ";
@@ -177,9 +180,9 @@ export class LoweredTypeSymbol : public LoweredSymbol {
 
 export class LoweredFunctionSymbol : public LoweredSymbol {
   public:
-    static constexpr Kind static_kind = Kind::Function;
+    static constexpr Kind::Type static_kind = Kind::Type::Function;
 
-    LoweredFunctionSymbol(std::string name, Linkage linkage, Visibility visibility,
+    LoweredFunctionSymbol(std::string name, Linkage::Type linkage, Visibility::Type visibility,
                           std::shared_ptr<LoweredType> type)
         : LoweredSymbol(static_kind, std::move(name), linkage, visibility, std::move(type)) {}
 
@@ -194,10 +197,10 @@ export class LoweredFunctionSymbol : public LoweredSymbol {
         std::cout << "name: \"" << name << "\",\n";
 
         print_indent(depth + 1);
-        std::cout << "linkage: " << linkage_string(linkage) << ",\n";
+        std::cout << "linkage: " << Linkage::to_string(linkage) << ",\n";
 
         print_indent(depth + 1);
-        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
 
         print_indent(depth + 1);
         std::cout << "type: ";
@@ -219,9 +222,9 @@ export class LoweredFunctionSymbol : public LoweredSymbol {
 
 export class LoweredVarSymbol : public LoweredSymbol {
   public:
-    static constexpr Kind static_kind = Kind::Var;
+    static constexpr Kind::Type static_kind = Kind::Type::Var;
 
-    LoweredVarSymbol(std::string name, Linkage linkage, Visibility visibility,
+    LoweredVarSymbol(std::string name, Linkage::Type linkage, Visibility::Type visibility,
                      std::shared_ptr<LoweredType> type)
         : LoweredSymbol(static_kind, std::move(name), linkage, visibility, std::move(type)) {}
 
@@ -236,10 +239,10 @@ export class LoweredVarSymbol : public LoweredSymbol {
         std::cout << "name: \"" << name << "\",\n";
 
         print_indent(depth + 1);
-        std::cout << "linkage: " << linkage_string(linkage) << ",\n";
+        std::cout << "linkage: " << Linkage::to_string(linkage) << ",\n";
 
         print_indent(depth + 1);
-        std::cout << "visibility: " << visibility_string(visibility) << ",\n";
+        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
 
         print_indent(depth + 1);
         std::cout << "type: ";

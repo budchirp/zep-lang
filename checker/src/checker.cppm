@@ -23,7 +23,27 @@ export class TypeChecker : public Visitor<void> {
     Context& context;
     TypeContext type_context;
 
-    std::shared_ptr<FunctionType> current_function_type;
+    std::shared_ptr<FunctionType> current_function;
+
+    template <typename T>
+    bool try_visit_expression(Expression& expression) {
+        if (auto* node = expression.as<T>()) {
+            visit(*node);
+            return true;
+        }
+
+        return false;
+    }
+
+    template <typename T>
+    bool try_visit_statement(Statement& statement) {
+        if (auto* node = statement.as<T>()) {
+            visit(*node);
+            return true;
+        }
+
+        return false;
+    }
 
   public:
     explicit TypeChecker(Context& context) : context(context), type_context(context.env) {}
@@ -34,314 +54,6 @@ export class TypeChecker : public Visitor<void> {
         for (auto& statement : program.statements) {
             visit_statement(*statement);
         }
-    }
-
-    void visit_expression(Expression& expression) {
-        if (auto* node = expression.as<NumberLiteral>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = expression.as<FloatLiteral>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = expression.as<StringLiteral>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = expression.as<BooleanLiteral>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = expression.as<IdentifierExpression>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = expression.as<BinaryExpression>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = expression.as<UnaryExpression>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = expression.as<CallExpression>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = expression.as<IndexExpression>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = expression.as<MemberExpression>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = expression.as<AssignExpression>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = expression.as<StructLiteralExpression>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = expression.as<IfExpression>()) {
-            visit(*node);
-            return;
-        }
-    }
-
-    void visit_statement(Statement& statement) {
-        if (auto* node = statement.as<BlockStatement>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = statement.as<ExpressionStatement>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = statement.as<ReturnStatement>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = statement.as<StructDeclaration>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = statement.as<VarDeclaration>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = statement.as<FunctionDeclaration>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = statement.as<ExternFunctionDeclaration>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = statement.as<ExternVarDeclaration>()) {
-            visit(*node);
-            return;
-        }
-        if (auto* node = statement.as<ImportStatement>()) {
-            visit(*node);
-            return;
-        }
-    }
-
-    bool is_mutable(Expression& expression) {
-        if (auto* node = expression.as<IdentifierExpression>()) {
-            const auto* var = context.env.current_scope->lookup_var(node->name);
-            if (var != nullptr) {
-                return var->storage_kind == StorageKind::VarMut;
-            }
-
-            return false;
-        }
-
-        if (auto* node = expression.as<UnaryExpression>()) {
-            if (node->op == UnaryExpression::UnaryOperator::Dereference) {
-                auto type = node->operand->get_type();
-                if (auto* pointer = type->as<PointerType>()) {
-                    return pointer->is_mutable;
-                }
-            }
-
-            return false;
-        }
-
-        if (auto* node = expression.as<MemberExpression>()) {
-            return is_mutable(*node->value);
-        }
-
-        if (auto* node = expression.as<IndexExpression>()) {
-            return is_mutable(*node->value);
-        }
-
-        return false;
-    }
-
-    std::vector<GenericParameterType> build_generic_parameter_types(
-        std::vector<std::unique_ptr<GenericParameter>>& generic_parameters) {
-        std::vector<GenericParameterType> result;
-        result.reserve(generic_parameters.size());
-
-        for (auto& generic_parameter : generic_parameters) {
-            std::shared_ptr<Type> constraint;
-            if (generic_parameter->constraint) {
-                visit(*generic_parameter->constraint);
-                constraint = generic_parameter->constraint->get_type();
-            }
-
-            result.emplace_back(generic_parameter->name, std::move(constraint));
-        }
-
-        return result;
-    }
-
-    std::shared_ptr<FunctionType> find_function_overload(const std::string& name,
-                                                         const FunctionType& signature) {
-        for (const auto* sym : context.env.current_scope->lookup_function_overloads(name)) {
-            auto* function_type = sym->type ? sym->type->as<FunctionType>() : nullptr;
-            if (!function_type || function_type->parameters.size() != signature.parameters.size()) {
-                continue;
-            }
-
-            bool match = true;
-            for (std::size_t i = 0; i < function_type->parameters.size() && match; ++i) {
-                if (!Type::compatible(function_type->parameters[i].type,
-                                      signature.parameters[i].type)) {
-                    match = false;
-                }
-            }
-
-            if (match) {
-                return std::static_pointer_cast<FunctionType>(sym->type);
-            }
-        }
-
-        return nullptr;
-    }
-
-    std::shared_ptr<Type> select_overload(const std::string& name,
-                                          const std::vector<const Symbol*>& overloads,
-                                          CallExpression& node) {
-        const Symbol* match = nullptr;
-        int match_count = 0;
-
-        for (const auto* sym : overloads) {
-            auto* function_type = sym->type ? sym->type->as<FunctionType>() : nullptr;
-            if (!function_type) {
-                continue;
-            }
-
-            auto param_count = function_type->parameters.size();
-            auto required =
-                function_type->variadic && param_count > 0 ? param_count - 1 : param_count;
-
-            if (function_type->generic_parameters.size() != node.generic_arguments.size()) {
-                continue;
-            }
-
-            if (function_type->variadic ? node.arguments.size() < required
-                                        : node.arguments.size() != param_count) {
-                continue;
-            }
-
-            auto scope = type_context.scoped_substitutions();
-            bool ok = true;
-
-            for (std::size_t i = 0; i < node.generic_arguments.size() && ok; ++i) {
-                visit(*node.generic_arguments[i]);
-                auto arg_type = node.generic_arguments[i]->type->get_type();
-                if (!arg_type) {
-                    ok = false;
-                    continue;
-                }
-                const auto& generic_parameter = function_type->generic_parameters[i];
-                if (generic_parameter.constraint &&
-                    !Type::compatible(arg_type, generic_parameter.constraint)) {
-                    ok = false;
-                    continue;
-                }
-                type_context.add_substitution(generic_parameter.name, arg_type);
-            }
-
-            for (std::size_t i = 0; i < required && ok; ++i) {
-                auto expected = type_context.resolve_type(function_type->parameters[i].type);
-                auto actual = node.arguments[i]->value->get_type();
-                if (!actual || !Type::compatible(actual, expected)) {
-                    ok = false;
-                }
-            }
-
-            if (ok) {
-                match = sym;
-                ++match_count;
-            }
-        }
-
-        if (match_count == 0) {
-            context.diagnostics.add_error(node.position, "no matching overload for '" + name + "'");
-            return nullptr;
-        }
-
-        if (match_count > 1) {
-            context.diagnostics.add_error(node.position, "ambiguous call to '" + name + "'");
-            return nullptr;
-        }
-
-        return match->type;
-    }
-
-    void resolve_generic_arguments(std::vector<std::unique_ptr<GenericArgument>>& generic_arguments,
-                                   const std::vector<GenericParameterType>& generic_parameters,
-                                   const Position& position) {
-        if (generic_arguments.size() != generic_parameters.size()) {
-            context.diagnostics.add_error(position, "expected " +
-                                                        std::to_string(generic_parameters.size()) +
-                                                        " generic argument(s), got " +
-                                                        std::to_string(generic_arguments.size()));
-            return;
-        }
-
-        for (std::size_t i = 0; i < generic_arguments.size(); ++i) {
-            visit(*generic_arguments[i]);
-            auto argument_type = generic_arguments[i]->type->get_type();
-            const auto& generic_parameter = generic_parameters[i];
-
-            if (generic_parameter.constraint) {
-                if (!Type::compatible(argument_type, generic_parameter.constraint)) {
-                    context.diagnostics.add_error(
-                        generic_arguments[i]->position,
-                        "generic argument '" + argument_type->to_string() +
-                            "' does not satisfy constraint '" +
-                            generic_parameter.constraint->to_string() + "'");
-                }
-            }
-
-            type_context.add_substitution(generic_parameter.name, argument_type);
-        }
-    }
-
-    std::shared_ptr<StructType> build_struct_type(StructDeclaration& node) {
-        auto generic_parameter_types = build_generic_parameter_types(node.generic_parameters);
-
-        std::vector<StructFieldType> field_types;
-        field_types.reserve(node.fields.size());
-
-        for (auto& field : node.fields) {
-            visit(*field);
-            field_types.emplace_back(field->name, field->type->get_type());
-        }
-
-        return std::make_shared<StructType>(node.name, std::move(generic_parameter_types),
-                                            std::move(field_types));
-    }
-
-    std::shared_ptr<FunctionType> build_function_type(FunctionPrototype& prototype) {
-        auto generic_parameter_types = build_generic_parameter_types(prototype.generic_parameters);
-
-        bool is_variadic = false;
-
-        std::vector<ParameterType> parameter_types;
-        parameter_types.reserve(prototype.parameters.size());
-
-        for (auto& parameter : prototype.parameters) {
-            visit(*parameter);
-            parameter_types.emplace_back(parameter->name, parameter->type->get_type());
-
-            if (parameter->is_variadic) {
-                is_variadic = true;
-            }
-        }
-
-        visit(*prototype.return_type);
-        auto return_type = prototype.return_type->get_type();
-
-        return std::make_shared<FunctionType>(return_type, std::move(parameter_types),
-                                              std::move(generic_parameter_types), is_variadic);
     }
 
     void register_declarations(Program& program) {
@@ -388,9 +100,297 @@ export class TypeChecker : public Visitor<void> {
                 context.env.current_scope->define_var(
                     node->name,
                     std::make_unique<VarSymbol>(node->name, node->position, node->visibility,
-                                                StorageKind::Var, node->type->get_type()));
+                                                StorageKind::Type::Var, node->type->get_type()));
             }
         }
+    }
+
+    void visit_expression(Expression& expression) {
+        try_visit_expression<NumberLiteral>(expression) ||
+            try_visit_expression<FloatLiteral>(expression) ||
+            try_visit_expression<StringLiteral>(expression) ||
+            try_visit_expression<BooleanLiteral>(expression) ||
+            try_visit_expression<IdentifierExpression>(expression) ||
+            try_visit_expression<BinaryExpression>(expression) ||
+            try_visit_expression<UnaryExpression>(expression) ||
+            try_visit_expression<CallExpression>(expression) ||
+            try_visit_expression<IndexExpression>(expression) ||
+            try_visit_expression<MemberExpression>(expression) ||
+            try_visit_expression<AssignExpression>(expression) ||
+            try_visit_expression<StructLiteralExpression>(expression) ||
+            try_visit_expression<IfExpression>(expression);
+    }
+
+    void visit_statement(Statement& statement) {
+        try_visit_statement<BlockStatement>(statement) ||
+            try_visit_statement<ExpressionStatement>(statement) ||
+            try_visit_statement<ReturnStatement>(statement) ||
+            try_visit_statement<StructDeclaration>(statement) ||
+            try_visit_statement<VarDeclaration>(statement) ||
+            try_visit_statement<FunctionDeclaration>(statement) ||
+            try_visit_statement<ExternFunctionDeclaration>(statement) ||
+            try_visit_statement<ExternVarDeclaration>(statement) ||
+            try_visit_statement<ImportStatement>(statement);
+    }
+
+    bool is_mutable(Expression& expression) {
+        switch (expression.kind) {
+        case Expression::Kind::Type::IdentifierExpression: {
+            const auto* symbol =
+                context.env.current_scope->lookup_var(expression.as<IdentifierExpression>()->name);
+            if (symbol != nullptr) {
+                return symbol->storage_kind == StorageKind::Type::VarMut;
+            }
+
+            return false;
+        }
+        case Expression::Kind::Type::UnaryExpression: {
+            if (expression.as<UnaryExpression>()->op == UnaryOperator::Type::Dereference) {
+                auto type = expression.as<UnaryExpression>()->operand->get_type();
+                if (auto* pointer = type->as<PointerType>()) {
+                    return pointer->is_mutable;
+                }
+            }
+
+            return false;
+        }
+        case Expression::Kind::Type::MemberExpression: {
+            return is_mutable(*expression.as<MemberExpression>()->value);
+        }
+        case Expression::Kind::Type::IndexExpression: {
+            return is_mutable(*expression.as<IndexExpression>()->value);
+        }
+        default: {
+            return false;
+        }
+        }
+    }
+
+    std::shared_ptr<FunctionType> check_function_overload(const FunctionType& signature) {
+        for (const auto* symbol :
+             context.env.current_scope->lookup_function_overloads(signature.name)) {
+            auto* existing = symbol->type ? symbol->type->as<FunctionType>() : nullptr;
+            if (existing == nullptr) {
+                continue;
+            }
+
+            if (existing->parameters.size() != signature.parameters.size() ||
+                existing->variadic != signature.variadic) {
+                continue;
+            }
+
+            bool same_signature = true;
+            for (std::size_t i = 0; i < existing->parameters.size() && same_signature; ++i) {
+                if (!Type::compatible(existing->parameters[i]->type,
+                                      signature.parameters[i]->type)) {
+                    same_signature = false;
+                }
+            }
+
+            if (same_signature) {
+                return std::static_pointer_cast<FunctionType>(symbol->type);
+            }
+        }
+
+        return nullptr;
+    }
+
+    std::shared_ptr<Type>
+    select_function_overload(const std::vector<const FunctionSymbol*>& overloads,
+                             CallExpression& node) {
+        const FunctionSymbol* match = nullptr;
+        int match_count = 0;
+
+        std::string label;
+        if (!overloads.empty()) {
+            if (overloads.front()->type != nullptr) {
+                if (const auto* head_type = overloads.front()->type->as<FunctionType>()) {
+                    label = head_type->name;
+                }
+            }
+            if (label.empty()) {
+                label = overloads.front()->name;
+            }
+        }
+
+        for (const auto* symbol : overloads) {
+            auto* function_type = symbol->type ? symbol->type->as<FunctionType>() : nullptr;
+            if (function_type == nullptr) {
+                continue;
+            }
+
+            auto parameter_count = function_type->parameters.size();
+            auto required = function_type->variadic && parameter_count > 0 ? parameter_count - 1
+                                                                           : parameter_count;
+
+            if (function_type->generic_parameters.size() != node.generic_arguments.size()) {
+                continue;
+            }
+
+            if (function_type->variadic ? node.arguments.size() < required
+                                        : node.arguments.size() != parameter_count) {
+                continue;
+            }
+
+            auto substitution_scope = type_context.scoped_substitutions();
+            bool candidate_ok = true;
+
+            for (std::size_t i = 0; i < node.generic_arguments.size() && candidate_ok; ++i) {
+                visit(*node.generic_arguments[i]);
+                auto argument_type = node.generic_arguments[i]->type->get_type();
+                if (!argument_type) {
+                    candidate_ok = false;
+                    break;
+                }
+
+                const auto& generic_parameter = function_type->generic_parameters[i];
+                if (generic_parameter->constraint &&
+                    !Type::compatible(argument_type, generic_parameter->constraint)) {
+                    candidate_ok = false;
+                    break;
+                }
+
+                type_context.add_substitution(generic_parameter->name, argument_type);
+            }
+
+            for (std::size_t i = 0; i < required && candidate_ok; ++i) {
+                auto expected_type = type_context.resolve_type(function_type->parameters[i]->type);
+                auto actual_type = node.arguments[i]->value->get_type();
+                if (!actual_type || !Type::compatible(actual_type, expected_type)) {
+                    candidate_ok = false;
+                }
+            }
+
+            if (candidate_ok && function_type->variadic && !function_type->parameters.empty()) {
+                auto element_type =
+                    type_context.resolve_type(function_type->parameters.back()->type);
+                if (!element_type) {
+                    candidate_ok = false;
+                } else {
+                    if (auto* array_type = element_type->as<ArrayType>()) {
+                        element_type = array_type->element;
+                    }
+
+                    for (std::size_t i = required; i < node.arguments.size() && candidate_ok; ++i) {
+                        auto actual_type = node.arguments[i]->value->get_type();
+                        if (!actual_type || !Type::compatible(actual_type, element_type)) {
+                            candidate_ok = false;
+                        }
+                    }
+                }
+            }
+
+            if (candidate_ok) {
+                match = symbol;
+                ++match_count;
+            }
+        }
+
+        if (match_count == 0) {
+            context.diagnostics.add_error(node.position,
+                                          "no matching overload for '" + label + "'");
+            return nullptr;
+        }
+
+        if (match_count > 1) {
+            context.diagnostics.add_error(node.position, "ambiguous call to '" + label + "'");
+            return nullptr;
+        }
+
+        return match->type;
+    }
+
+    std::vector<std::shared_ptr<GenericParameterType>> build_generic_parameter_types(
+        std::vector<std::unique_ptr<GenericParameter>>& generic_parameters) {
+        std::vector<std::shared_ptr<GenericParameterType>> result;
+        result.reserve(generic_parameters.size());
+
+        for (auto& generic_parameter : generic_parameters) {
+            std::shared_ptr<Type> constraint;
+            if (generic_parameter->constraint) {
+                visit(*generic_parameter->constraint);
+                constraint = generic_parameter->constraint->get_type();
+            }
+
+            result.emplace_back(std::make_shared<GenericParameterType>(generic_parameter->name,
+                                                                       std::move(constraint)));
+        }
+
+        return result;
+    }
+
+    void resolve_generic_arguments(
+        std::vector<std::unique_ptr<GenericArgument>>& generic_arguments,
+        std::vector<std::shared_ptr<GenericParameterType>>& generic_parameters,
+        const Position& position) {
+        if (generic_arguments.size() != generic_parameters.size()) {
+            context.diagnostics.add_error(position, "expected " +
+                                                        std::to_string(generic_parameters.size()) +
+                                                        " generic argument(s), got " +
+                                                        std::to_string(generic_arguments.size()));
+            return;
+        }
+
+        for (std::size_t i = 0; i < generic_arguments.size(); ++i) {
+            visit(*generic_arguments[i]);
+
+            auto argument_type = generic_arguments[i]->type->get_type();
+            const auto& generic_parameter = generic_parameters[i];
+
+            if (generic_parameter->constraint) {
+                if (!Type::compatible(argument_type, generic_parameter->constraint)) {
+                    context.diagnostics.add_error(
+                        generic_arguments[i]->position,
+                        "generic argument '" + argument_type->to_string() +
+                            "' does not satisfy constraint '" +
+                            generic_parameter->constraint->to_string() + "'");
+                }
+            }
+
+            type_context.add_substitution(generic_parameter->name, argument_type);
+        }
+    }
+
+    std::shared_ptr<StructType> build_struct_type(StructDeclaration& node) {
+        auto generic_parameter_types = build_generic_parameter_types(node.generic_parameters);
+
+        std::vector<std::shared_ptr<StructFieldType>> field_types;
+        field_types.reserve(node.fields.size());
+
+        for (auto& field : node.fields) {
+            visit(*field);
+            field_types.emplace_back(
+                std::make_shared<StructFieldType>(field->name, field->type->get_type()));
+        }
+
+        return std::make_shared<StructType>(node.name, std::move(generic_parameter_types),
+                                            std::move(field_types));
+    }
+
+    std::shared_ptr<FunctionType> build_function_type(FunctionPrototype& prototype) {
+        auto generic_parameter_types = build_generic_parameter_types(prototype.generic_parameters);
+
+        bool is_variadic = false;
+
+        std::vector<std::shared_ptr<ParameterType>> parameter_types;
+        parameter_types.reserve(prototype.parameters.size());
+
+        for (auto& parameter : prototype.parameters) {
+            visit(*parameter);
+            parameter_types.emplace_back(
+                std::make_shared<ParameterType>(parameter->name, parameter->type->get_type()));
+
+            if (parameter->is_variadic) {
+                is_variadic = true;
+            }
+        }
+
+        visit(*prototype.return_type);
+        auto return_type = prototype.return_type->get_type();
+
+        return std::make_shared<FunctionType>(prototype.name, return_type,
+                                              std::move(parameter_types),
+                                              std::move(generic_parameter_types), is_variadic);
     }
 
     void visit(TypeExpression& node) override {
@@ -440,6 +440,7 @@ export class TypeChecker : public Visitor<void> {
         if (symbol == nullptr) {
             symbol = context.env.current_scope->lookup_function(node.name);
         }
+
         if (symbol != nullptr) {
             node.set_type(symbol->type);
             return;
@@ -456,7 +457,7 @@ export class TypeChecker : public Visitor<void> {
     }
 
     void visit(BinaryExpression& node) override {
-        using Op = BinaryExpression::BinaryOperator;
+        using Op = BinaryOperator::Type;
 
         switch (node.op) {
         case Op::As:
@@ -535,7 +536,7 @@ export class TypeChecker : public Visitor<void> {
             }
             case Op::And:
             case Op::Or: {
-                if (left_type->kind != Type::Kind::Boolean) {
+                if (left_type->kind != Type::Kind::Type::Boolean) {
                     context.diagnostics.add_error(
                         node.left->position,
                         "left operand of logical operator must be boolean, got '" +
@@ -543,7 +544,7 @@ export class TypeChecker : public Visitor<void> {
                     return;
                 }
 
-                if (right_type->kind != Type::Kind::Boolean) {
+                if (right_type->kind != Type::Kind::Type::Boolean) {
                     context.diagnostics.add_error(
                         node.right->position,
                         "right operand of logical operator must be boolean, got '" +
@@ -563,7 +564,7 @@ export class TypeChecker : public Visitor<void> {
     }
 
     void visit(UnaryExpression& node) override {
-        using Op = UnaryExpression::UnaryOperator;
+        using Op = UnaryOperator::Type;
 
         visit_expression(*node.operand);
 
@@ -587,7 +588,7 @@ export class TypeChecker : public Visitor<void> {
             break;
         }
         case Op::Not: {
-            if (operand_type->kind != Type::Kind::Boolean) {
+            if (operand_type->kind != Type::Kind::Type::Boolean) {
                 context.diagnostics.add_error(node.position,
                                               "operand of '!' must be boolean, got '" +
                                                   operand_type->to_string() + "'");
@@ -618,38 +619,24 @@ export class TypeChecker : public Visitor<void> {
     }
 
     void visit(CallExpression& node) override {
-        bool overloaded = false;
+        for (auto& argument : node.arguments) {
+            visit(*argument);
+        }
 
         if (auto* identifier = node.callee->as<IdentifierExpression>()) {
             auto overloads = context.env.current_scope->lookup_function_overloads(identifier->name);
 
-            std::size_t function_count = 0;
-            for (const auto* sym : overloads) {
-                if (sym->kind == Symbol::Kind::Function) {
-                    ++function_count;
-                }
-            }
-
-            if (function_count > 1) {
-                overloaded = true;
-                for (auto& argument : node.arguments) {
-                    visit(*argument);
-                }
-
-                std::vector<const Symbol*> symbol_overloads;
-                for (const auto* sym : overloads) {
-                    symbol_overloads.push_back(sym);
-                }
-                auto selected = select_overload(identifier->name, symbol_overloads, node);
-                if (!selected) {
+            if (!overloads.empty()) {
+                auto selected_type = select_function_overload(overloads, node);
+                if (!selected_type) {
                     return;
                 }
 
-                node.callee->set_type(selected);
+                node.callee->set_type(selected_type);
+            } else {
+                visit_expression(*node.callee);
             }
-        }
-
-        if (!overloaded) {
+        } else {
             visit_expression(*node.callee);
         }
 
@@ -668,12 +655,6 @@ export class TypeChecker : public Visitor<void> {
         auto scope = type_context.scoped_substitutions();
         resolve_generic_arguments(node.generic_arguments, function_type->generic_parameters,
                                   node.position);
-
-        if (!overloaded) {
-            for (auto& argument : node.arguments) {
-                visit(*argument);
-            }
-        }
 
         auto parameter_count = function_type->parameters.size();
         auto argument_count = node.arguments.size();
@@ -695,8 +676,9 @@ export class TypeChecker : public Visitor<void> {
         }
 
         for (std::size_t i = 0; i < required; ++i) {
-            auto expected_type = type_context.resolve_type(function_type->parameters[i].type);
+            auto expected_type = type_context.resolve_type(function_type->parameters[i]->type);
             auto actual_type = node.arguments[i]->value->get_type();
+
             if (!Type::compatible(actual_type, expected_type)) {
                 context.diagnostics.add_error(node.arguments[i]->position,
                                               "argument type mismatch: expected '" +
@@ -706,26 +688,26 @@ export class TypeChecker : public Visitor<void> {
         }
 
         if (function_type->variadic && parameter_count > 0) {
-            auto element_type = type_context.resolve_type(function_type->parameters.back().type);
+            auto element_type = type_context.resolve_type(function_type->parameters.back()->type);
             if (!element_type) {
                 return;
             }
 
-            if (auto* arr = element_type->as<ArrayType>()) {
-                element_type = arr->element;
+            if (auto* array_type = element_type->as<ArrayType>()) {
+                element_type = array_type->element;
             }
 
             for (std::size_t i = required; i < argument_count; ++i) {
-                auto actual = node.arguments[i]->value->get_type();
-                if (!actual) {
+                auto actual_type = node.arguments[i]->value->get_type();
+                if (!actual_type) {
                     continue;
                 }
 
-                if (!Type::compatible(actual, element_type)) {
+                if (!Type::compatible(actual_type, element_type)) {
                     context.diagnostics.add_error(node.arguments[i]->position,
                                                   "argument type mismatch: expected '" +
                                                       element_type->to_string() + "', got '" +
-                                                      actual->to_string() + "'");
+                                                      actual_type->to_string() + "'");
                 }
             }
         }
@@ -754,7 +736,7 @@ export class TypeChecker : public Visitor<void> {
             return;
         }
 
-        if (index_type->kind != Type::Kind::Integer) {
+        if (index_type->kind != Type::Kind::Type::Integer) {
             context.diagnostics.add_error(node.index->position,
                                           "array index must be an integer, got '" +
                                               index_type->to_string() + "'");
@@ -780,8 +762,8 @@ export class TypeChecker : public Visitor<void> {
         }
 
         for (const auto& field : struct_type->fields) {
-            if (field.name == node.member) {
-                node.set_type(field.type);
+            if (field->name == node.member) {
+                node.set_type(field->type);
                 return;
             }
         }
@@ -848,9 +830,9 @@ export class TypeChecker : public Visitor<void> {
 
             bool found = false;
             for (const auto& declared_field : struct_type->fields) {
-                if (declared_field.name == literal_field->name) {
+                if (declared_field->name == literal_field->name) {
                     found = true;
-                    auto expected_type = type_context.resolve_type(declared_field.type);
+                    auto expected_type = type_context.resolve_type(declared_field->type);
                     auto actual_type = literal_field->value->get_type();
                     if (!Type::compatible(actual_type, expected_type)) {
                         context.diagnostics.add_error(literal_field->position,
@@ -871,9 +853,9 @@ export class TypeChecker : public Visitor<void> {
         }
 
         for (const auto& declared_field : struct_type->fields) {
-            if (!provided_fields.contains(declared_field.name)) {
+            if (!provided_fields.contains(declared_field->name)) {
                 context.diagnostics.add_error(
-                    node.position, "missing field '" + declared_field.name + "' in struct '" +
+                    node.position, "missing field '" + declared_field->name + "' in struct '" +
                                        struct_type->name + "' literal");
             }
         }
@@ -911,7 +893,7 @@ export class TypeChecker : public Visitor<void> {
             return;
         }
 
-        if (condition_type->kind != Type::Kind::Boolean) {
+        if (condition_type->kind != Type::Kind::Type::Boolean) {
             context.diagnostics.add_error(node.condition->position,
                                           "if condition must be boolean, got '" +
                                               condition_type->to_string() + "'");
@@ -943,11 +925,11 @@ export class TypeChecker : public Visitor<void> {
     }
 
     void visit(ReturnStatement& node) override {
-        if (!current_function_type) {
+        if (!current_function) {
             context.diagnostics.add_error(node.position, "return statement outside of function");
         }
 
-        auto expected = type_context.resolve_type(current_function_type->return_type);
+        auto expected = type_context.resolve_type(current_function->return_type);
         if (!expected) {
             return;
         }
@@ -965,7 +947,7 @@ export class TypeChecker : public Visitor<void> {
                     node.position, "return type mismatch: expected '" + expected->to_string() +
                                        "', got '" + type->to_string() + "'");
             }
-        } else if (expected->kind != Type::Kind::Void) {
+        } else if (expected->kind != Type::Kind::Type::Void) {
             context.diagnostics.add_error(node.position, "non-void function must return a value");
         }
     }
@@ -1024,7 +1006,7 @@ export class TypeChecker : public Visitor<void> {
 
         auto built_type = build_function_type(*node.prototype);
 
-        auto function_type = find_function_overload(node.prototype->name, *built_type);
+        auto function_type = check_function_overload(*built_type);
         if (!function_type) {
             function_type = built_type;
             context.env.current_scope->define_function(
@@ -1033,33 +1015,34 @@ export class TypeChecker : public Visitor<void> {
                                                  node.visibility, function_type));
         }
 
-        auto previous_function_type = current_function_type;
-        current_function_type = function_type;
+        auto previous_function_type = current_function;
+        current_function = function_type;
 
         auto scope = type_context.scoped_substitutions();
         for (const auto& generic_parameter : function_type->generic_parameters) {
-            if (generic_parameter.constraint) {
-                type_context.add_substitution(generic_parameter.name, generic_parameter.constraint);
+            if (generic_parameter->constraint) {
+                type_context.add_substitution(generic_parameter->name,
+                                              generic_parameter->constraint);
             } else {
-                type_context.add_substitution(generic_parameter.name, std::make_shared<AnyType>());
+                type_context.add_substitution(generic_parameter->name, std::make_shared<AnyType>());
             }
         }
 
         context.env.push_scope(context.env.current_scope->name + "." + node.prototype->name);
 
         for (const auto& parameter : function_type->parameters) {
-            auto param_type = type_context.resolve_type(parameter.type);
+            auto param_type = type_context.resolve_type(parameter->type);
             context.env.current_scope->define_var(
-                parameter.name,
-                std::make_unique<VarSymbol>(parameter.name, node.position, Visibility::Private,
-                                            StorageKind::Var, param_type));
+                parameter->name, std::make_unique<VarSymbol>(parameter->name, node.position,
+                                                             Visibility::Type::Private,
+                                                             StorageKind::Type::Var, param_type));
         }
 
         visit(*node.body);
 
         context.env.pop_scope();
 
-        current_function_type = previous_function_type;
+        current_function = previous_function_type;
     }
 
     void visit(ExternFunctionDeclaration& node) override {
@@ -1087,7 +1070,7 @@ export class TypeChecker : public Visitor<void> {
 
         context.env.current_scope->define_var(
             node.name, std::make_unique<VarSymbol>(node.name, node.position, node.visibility,
-                                                   StorageKind::Var, node.type->get_type()));
+                                                   StorageKind::Type::Var, node.type->get_type()));
     }
 
     void visit(ImportStatement& node [[maybe_unused]]) override {}

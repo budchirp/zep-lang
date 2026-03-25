@@ -46,7 +46,6 @@ export class NameMangler {
         return result;
     }
 
-  public:
     static std::string encode_type(const std::shared_ptr<Type>& type) {
         if (type == nullptr) {
             return "void";
@@ -55,57 +54,24 @@ export class NameMangler {
         return sanitize(type->to_string());
     }
 
-    static std::string mangle_function_if_needed(
-        const std::string& name, const std::vector<std::shared_ptr<Type>>& generic_type_arguments,
-        const std::vector<std::shared_ptr<Type>>& parameter_types,
-        const std::shared_ptr<Type>& return_type, bool is_variadic, bool has_overloads) {
-        if (generic_type_arguments.empty() && !has_overloads) {
-            return name;
-        }
-        return mangle_function(name, generic_type_arguments, parameter_types, return_type,
-                               is_variadic);
-    }
-
-    static std::string
-    mangle_function(const std::string& name,
-                    const std::vector<std::shared_ptr<Type>>& generic_type_arguments,
-                    const std::vector<std::shared_ptr<Type>>& parameter_types,
-                    const std::shared_ptr<Type>& return_type, bool is_variadic) {
-        std::string result = name;
-
-        if (!generic_type_arguments.empty()) {
-            result += "_G";
-            for (const auto& type : generic_type_arguments) {
-                result += "_" + encode_type(type);
+    static std::string join_type_suffix(const std::vector<std::shared_ptr<Type>>& types) {
+        std::string result;
+        for (std::size_t index = 0; index < types.size(); ++index) {
+            if (index > 0) {
+                result += '_';
             }
+            result += encode_type(types[index]);
         }
-
-        result += "_P";
-        for (const auto& type : parameter_types) {
-            result += "_" + encode_type(type);
-        }
-
-        result += "_R_" + encode_type(return_type);
-
-        if (is_variadic) {
-            result += "_VA";
-        }
-
         return result;
     }
 
-    static std::string
-    mangle_struct(const std::string& name,
-                  const std::vector<std::shared_ptr<Type>>& generic_type_arguments) {
-        if (generic_type_arguments.empty()) {
+  public:
+    static std::string mangle(const std::string& name,
+                              const std::vector<std::shared_ptr<Type>>& types) {
+        if (types.empty()) {
             return name;
         }
 
-        std::string result = name + "_G";
-        for (const auto& type : generic_type_arguments) {
-            result += "_" + encode_type(type);
-        }
-
-        return result;
+        return name + "$" + join_type_suffix(types);
     }
 };
