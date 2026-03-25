@@ -1,7 +1,6 @@
 module;
 
 #include <cstdint>
-#include <iostream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -108,30 +107,30 @@ export class LoweredBlockStatement : public LoweredStatement {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "LoweredBlockStatement(\n";
-        print_indent(depth + 1);
-        std::cout << "statements: [";
+        Logger::print("LoweredBlockStatement(\n");
+        Logger::print_indent(depth + 1);
+        Logger::print("statements: [");
 
         if (statements.empty()) {
-            std::cout << "]\n";
+            Logger::print("]\n");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             for (const auto& stmt : statements) {
                 stmt->dump(depth + 2);
-                std::cout << ",\n";
+                Logger::print(",\n");
             }
-            print_indent(depth + 1);
-            std::cout << "]\n";
+            Logger::print_indent(depth + 1);
+            Logger::print("]\n");
         }
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -147,13 +146,13 @@ export class LoweredNumberLiteral : public LoweredExpression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "LoweredNumberLiteral(value: \"" << value << "\")";
+        Logger::print("LoweredNumberLiteral(value: \"", value, "\")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -169,13 +168,13 @@ export class LoweredFloatLiteral : public LoweredExpression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "LoweredFloatLiteral(value: \"" << value << "\")";
+        Logger::print("LoweredFloatLiteral(value: \"", value, "\")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -191,13 +190,13 @@ export class LoweredStringLiteral : public LoweredExpression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "LoweredStringLiteral(value: \"" << value << "\")";
+        Logger::print("LoweredStringLiteral(value: \"", value, "\")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -213,13 +212,13 @@ export class LoweredBooleanLiteral : public LoweredExpression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "LoweredBooleanLiteral(value: " << (value ? "true" : "false") << ")";
+        Logger::print("LoweredBooleanLiteral(value: ", (value ? "true" : "false"), ")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -236,13 +235,13 @@ export class LoweredIdentifierExpression : public LoweredExpression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "LoweredIdentifierExpression(name: \"" << name << "\")";
+        Logger::print("LoweredIdentifierExpression(name: \"", name, "\")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -322,28 +321,28 @@ export class LoweredBinaryExpression : public LoweredExpression {
   public:
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "LoweredBinaryExpression(\n";
-        print_indent(depth + 1);
-        std::cout << "left: ";
+        Logger::print("LoweredBinaryExpression(\n");
+        Logger::print_indent(depth + 1);
+        Logger::print("left: ");
         left->dump(depth + 1, false, false);
-        std::cout << ",\n";
+        Logger::print(",\n");
 
-        print_indent(depth + 1);
-        std::cout << "op: " << operator_string(op) << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("op: ", operator_string(op), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "right: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("right: ");
         right->dump(depth + 1, false, false);
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -390,23 +389,23 @@ export class LoweredUnaryExpression : public LoweredExpression {
   public:
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "LoweredUnaryExpression(\n";
-        print_indent(depth + 1);
-        std::cout << "op: " << operator_string(op) << ",\n";
+        Logger::print("LoweredUnaryExpression(\n");
+        Logger::print_indent(depth + 1);
+        Logger::print("op: ", operator_string(op), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "operand: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("operand: ");
         operand->dump(depth + 1, false, false);
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -425,35 +424,35 @@ export class LoweredCallExpression : public LoweredExpression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "LoweredCallExpression(\n";
-        print_indent(depth + 1);
-        std::cout << "callee: ";
+        Logger::print("LoweredCallExpression(\n");
+        Logger::print_indent(depth + 1);
+        Logger::print("callee: ");
         callee->dump(depth + 1, false, false);
-        std::cout << ",\n";
+        Logger::print(",\n");
 
-        print_indent(depth + 1);
-        std::cout << "arguments: [";
+        Logger::print_indent(depth + 1);
+        Logger::print("arguments: [");
 
         if (arguments.empty()) {
-            std::cout << "]\n";
+            Logger::print("]\n");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             for (const auto& argument : arguments) {
                 argument->dump(depth + 2);
-                std::cout << ",\n";
+                Logger::print(",\n");
             }
-            print_indent(depth + 1);
-            std::cout << "]\n";
+            Logger::print_indent(depth + 1);
+            Logger::print("]\n");
         }
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -472,25 +471,25 @@ export class LoweredIndexExpression : public LoweredExpression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "LoweredIndexExpression(\n";
-        print_indent(depth + 1);
-        std::cout << "object: ";
+        Logger::print("LoweredIndexExpression(\n");
+        Logger::print_indent(depth + 1);
+        Logger::print("object: ");
         object->dump(depth + 1, false, false);
-        std::cout << ",\n";
+        Logger::print(",\n");
 
-        print_indent(depth + 1);
-        std::cout << "index: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("index: ");
         index->dump(depth + 1, false, false);
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -509,23 +508,23 @@ export class LoweredMemberExpression : public LoweredExpression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "LoweredMemberExpression(\n";
-        print_indent(depth + 1);
-        std::cout << "object: ";
+        Logger::print("LoweredMemberExpression(\n");
+        Logger::print_indent(depth + 1);
+        Logger::print("object: ");
         object->dump(depth + 1, false, false);
-        std::cout << ",\n";
+        Logger::print(",\n");
 
-        print_indent(depth + 1);
-        std::cout << "member: \"" << member << "\"\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("member: \"", member, "\"\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -544,25 +543,25 @@ export class LoweredAssignExpression : public LoweredExpression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "LoweredAssignExpression(\n";
-        print_indent(depth + 1);
-        std::cout << "target: ";
+        Logger::print("LoweredAssignExpression(\n");
+        Logger::print_indent(depth + 1);
+        Logger::print("target: ");
         target->dump(depth + 1, false, false);
-        std::cout << ",\n";
+        Logger::print(",\n");
 
-        print_indent(depth + 1);
-        std::cout << "value: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("value: ");
         value->dump(depth + 1, false, false);
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -591,41 +590,41 @@ export class LoweredStructLiteralExpression : public LoweredExpression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "LoweredStructLiteralExpression(\n";
-        print_indent(depth + 1);
-        std::cout << "name: \"" << name << "\",\n";
+        Logger::print("LoweredStructLiteralExpression(\n");
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", name, "\",\n");
 
-        print_indent(depth + 1);
-        std::cout << "fields: [";
+        Logger::print_indent(depth + 1);
+        Logger::print("fields: [");
 
         if (fields.empty()) {
-            std::cout << "]\n";
+            Logger::print("]\n");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             for (const auto& field : fields) {
-                print_indent(depth + 2);
-                std::cout << "LoweredStructLiteralField(\n";
-                print_indent(depth + 3);
-                std::cout << "name: \"" << field.name << "\",\n";
-                print_indent(depth + 3);
-                std::cout << "value: ";
+                Logger::print_indent(depth + 2);
+                Logger::print("LoweredStructLiteralField(\n");
+                Logger::print_indent(depth + 3);
+                Logger::print("name: \"", field.name, "\",\n");
+                Logger::print_indent(depth + 3);
+                Logger::print("value: ");
                 field.value->dump(depth + 3, false, false);
-                std::cout << "\n";
-                print_indent(depth + 2);
-                std::cout << "),\n";
+                Logger::print("\n");
+                Logger::print_indent(depth + 2);
+                Logger::print("),\n");
             }
-            print_indent(depth + 1);
-            std::cout << "]\n";
+            Logger::print_indent(depth + 1);
+            Logger::print("]\n");
         }
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -646,34 +645,34 @@ export class LoweredIfExpression : public LoweredExpression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "LoweredIfExpression(\n";
-        print_indent(depth + 1);
-        std::cout << "condition: ";
+        Logger::print("LoweredIfExpression(\n");
+        Logger::print_indent(depth + 1);
+        Logger::print("condition: ");
         condition->dump(depth + 1, false, false);
-        std::cout << ",\n";
+        Logger::print(",\n");
 
-        print_indent(depth + 1);
-        std::cout << "then_branch: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("then_branch: ");
         then_branch->dump(depth + 1, false, false);
-        std::cout << ",\n";
+        Logger::print(",\n");
 
-        print_indent(depth + 1);
-        std::cout << "else_branch: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("else_branch: ");
         if (else_branch != nullptr) {
             else_branch->dump(depth + 1, false, false);
         } else {
-            std::cout << "null";
+            Logger::print("null");
         }
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -690,20 +689,20 @@ export class LoweredExpressionStatement : public LoweredStatement {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "LoweredExpressionStatement(\n";
-        print_indent(depth + 1);
-        std::cout << "expression: ";
+        Logger::print("LoweredExpressionStatement(\n");
+        Logger::print_indent(depth + 1);
+        Logger::print("expression: ");
         expression->dump(depth + 1, false, false);
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -719,24 +718,24 @@ export class LoweredReturnStatement : public LoweredStatement {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "LoweredReturnStatement(\n";
-        print_indent(depth + 1);
-        std::cout << "value: ";
+        Logger::print("LoweredReturnStatement(\n");
+        Logger::print_indent(depth + 1);
+        Logger::print("value: ");
         if (value != nullptr) {
             value->dump(depth + 1, false, false);
         } else {
-            std::cout << "null";
+            Logger::print("null");
         }
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -761,36 +760,36 @@ export class LoweredVarDeclaration : public LoweredStatement {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "LoweredVarDeclaration(\n";
-        print_indent(depth + 1);
-        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
+        Logger::print("LoweredVarDeclaration(\n");
+        Logger::print_indent(depth + 1);
+        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "storage_kind: " << StorageKind::to_string(storage_kind) << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("storage_kind: ", StorageKind::to_string(storage_kind), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "name: \"" << name << "\",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", name, "\",\n");
 
-        print_indent(depth + 1);
-        std::cout << "type: " << (type != nullptr ? type->to_string() : "null") << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ", (type != nullptr ? type->to_string() : "null"), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "initializer: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("initializer: ");
         if (initializer != nullptr) {
             initializer->dump(depth + 1, false, false);
         } else {
-            std::cout << "null";
+            Logger::print("null");
         }
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -816,42 +815,42 @@ export class LoweredFunctionDeclaration {
           body(std::move(body)), variadic(variadic) {}
 
     void dump(int depth = 0) const {
-        print_indent(depth);
-        std::cout << "LoweredFunctionDeclaration(\n";
-        print_indent(depth + 1);
-        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
+        Logger::print_indent(depth);
+        Logger::print("LoweredFunctionDeclaration(\n");
+        Logger::print_indent(depth + 1);
+        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "name: \"" << name << "\",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", name, "\",\n");
 
-        print_indent(depth + 1);
-        std::cout << "parameters: [";
+        Logger::print_indent(depth + 1);
+        Logger::print("parameters: [");
         if (parameters.empty()) {
-            std::cout << "],\n";
+            Logger::print("],\n");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             for (const auto& parameter : parameters) {
                 parameter.dump(depth + 2);
-                std::cout << ",\n";
+                Logger::print(",\n");
             }
-            print_indent(depth + 1);
-            std::cout << "],\n";
+            Logger::print_indent(depth + 1);
+            Logger::print("],\n");
         }
 
-        print_indent(depth + 1);
-        std::cout << "return_type: " << (return_type != nullptr ? return_type->to_string() : "null")
-                  << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("return_type: ", (return_type != nullptr ? return_type->to_string() : "null"),
+                      ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "variadic: " << (variadic ? "true" : "false") << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("variadic: ", (variadic ? "true" : "false"), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "body: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("body: ");
         body->dump(depth + 1, false, false);
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
     }
 };
 
@@ -865,30 +864,30 @@ export class LoweredProgram {
         : global_scope(std::move(global_scope)), functions(std::move(functions)) {}
 
     void dump() const {
-        std::cout << "LoweredProgram(\n";
+        Logger::print("LoweredProgram(\n");
 
-        print_indent(1);
-        std::cout << "global_scope: ";
+        Logger::print_indent(1);
+        Logger::print("global_scope: ");
         if (global_scope != nullptr) {
             global_scope->dump(1, false, true);
         } else {
-            std::cout << "null\n";
+            Logger::print("null\n");
         }
 
-        print_indent(1);
-        std::cout << "functions: [";
+        Logger::print_indent(1);
+        Logger::print("functions: [");
         if (functions.empty()) {
-            std::cout << "]\n";
+            Logger::print("]\n");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             for (const auto& function : functions) {
                 function->dump(2);
-                std::cout << ",\n";
+                Logger::print(",\n");
             }
-            print_indent(1);
-            std::cout << "]\n";
+            Logger::print_indent(1);
+            Logger::print("]\n");
         }
 
-        std::cout << ")\n";
+        Logger::print(")\n");
     }
 };

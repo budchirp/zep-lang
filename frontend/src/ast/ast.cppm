@@ -1,7 +1,6 @@
 module;
 
 #include <cstdint>
-#include <iostream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -124,19 +123,19 @@ export class TypeExpression : public Node {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "TypeExpression(type: ";
+        Logger::print("TypeExpression(type: ");
         if (type) {
             type->dump(depth, false, false);
         } else {
-            std::cout << "null";
+            Logger::print("null");
         }
-        std::cout << ")";
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -162,28 +161,28 @@ export class GenericParameter : public Node {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "GenericParameter(\n";
+        Logger::print("GenericParameter(\n");
 
-        print_indent(depth + 1);
-        std::cout << "name: \"" << name << "\",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", name, "\",\n");
 
-        print_indent(depth + 1);
-        std::cout << "constraint: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("constraint: ");
         if (constraint) {
             constraint->dump(depth + 1, false, false);
         } else {
-            std::cout << "null";
+            Logger::print("null");
         }
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -208,28 +207,28 @@ export class GenericArgument : public Node {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "GenericArgument(\n";
+        Logger::print("GenericArgument(\n");
 
-        print_indent(depth + 1);
-        std::cout << "name: \"" << name << "\",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", name, "\",\n");
 
-        print_indent(depth + 1);
-        std::cout << "type: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
         if (type) {
             type->dump(depth + 1, false, false);
         } else {
-            std::cout << "null";
+            Logger::print("null");
         }
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -255,31 +254,31 @@ export class Parameter : public Node {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "Parameter(\n";
+        Logger::print("Parameter(\n");
 
-        print_indent(depth + 1);
-        std::cout << "is_variadic: " << (is_variadic ? "true" : "false") << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("is_variadic: ", (is_variadic ? "true" : "false"), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "name: \"" << name << "\",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", name, "\",\n");
 
-        print_indent(depth + 1);
-        std::cout << "type: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
         if (type) {
             type->dump(depth + 1, false, false);
         } else {
-            std::cout << "null";
+            Logger::print("null");
         }
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -301,24 +300,24 @@ export class Argument : public Node {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "Argument(\n";
+        Logger::print("Argument(\n");
 
-        print_indent(depth + 1);
-        std::cout << "name: \"" << name << "\",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", name, "\",\n");
 
-        print_indent(depth + 1);
-        std::cout << "value: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("value: ");
         value->dump(depth + 1, false, false);
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -349,58 +348,58 @@ export class FunctionPrototype : public Node {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "FunctionPrototype(\n";
+        Logger::print("FunctionPrototype(\n");
 
-        print_indent(depth + 1);
-        std::cout << "name: \"" << name << "\",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", name, "\",\n");
 
-        print_indent(depth + 1);
-        std::cout << "generic_parameters: [";
+        Logger::print_indent(depth + 1);
+        Logger::print("generic_parameters: [");
         if (generic_parameters.empty()) {
-            std::cout << "],\n";
+            Logger::print("],\n");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             for (std::size_t i = 0; i < generic_parameters.size(); ++i) {
                 generic_parameters[i]->dump(depth + 2, true, false);
-                std::cout << (i + 1 < generic_parameters.size() ? ",\n" : "\n");
+                Logger::print((i + 1 < generic_parameters.size() ? ",\n" : "\n"));
             }
 
-            print_indent(depth + 1);
-            std::cout << "],\n";
+            Logger::print_indent(depth + 1);
+            Logger::print("],\n");
         }
 
-        print_indent(depth + 1);
-        std::cout << "parameters: [";
+        Logger::print_indent(depth + 1);
+        Logger::print("parameters: [");
         if (parameters.empty()) {
-            std::cout << "],\n";
+            Logger::print("],\n");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             for (std::size_t i = 0; i < parameters.size(); ++i) {
                 parameters[i]->dump(depth + 2, true, false);
-                std::cout << (i + 1 < parameters.size() ? ",\n" : "\n");
+                Logger::print((i + 1 < parameters.size() ? ",\n" : "\n"));
             }
 
-            print_indent(depth + 1);
-            std::cout << "],\n";
+            Logger::print_indent(depth + 1);
+            Logger::print("],\n");
         }
 
-        print_indent(depth + 1);
-        std::cout << "return_type: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("return_type: ");
         if (return_type) {
             return_type->dump(depth + 1, false, false);
         } else {
-            std::cout << "null";
+            Logger::print("null");
         }
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -426,31 +425,31 @@ export class StructField : public Node {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "StructField(\n";
+        Logger::print("StructField(\n");
 
-        print_indent(depth + 1);
-        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "name: \"" << name << "\",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", name, "\",\n");
 
-        print_indent(depth + 1);
-        std::cout << "type: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
         if (type) {
             type->dump(depth + 1, false, false);
         } else {
-            std::cout << "null";
+            Logger::print("null");
         }
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -472,24 +471,24 @@ export class StructLiteralField : public Node {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "StructLiteralField(\n";
+        Logger::print("StructLiteralField(\n");
 
-        print_indent(depth + 1);
-        std::cout << "name: \"" << name << "\",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", name, "\",\n");
 
-        print_indent(depth + 1);
-        std::cout << "value: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("value: ");
         value->dump(depth + 1, false, false);
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -510,13 +509,13 @@ export class NumberLiteral : public Expression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "NumberLiteral(value: \"" << value << "\")";
+        Logger::print("NumberLiteral(value: \"", value, "\")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -537,13 +536,13 @@ export class FloatLiteral : public Expression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "FloatLiteral(value: \"" << value << "\")";
+        Logger::print("FloatLiteral(value: \"", value, "\")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -564,13 +563,13 @@ export class StringLiteral : public Expression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "StringLiteral(value: \"" << value << "\")";
+        Logger::print("StringLiteral(value: \"", value, "\")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -591,13 +590,13 @@ export class BooleanLiteral : public Expression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "BooleanLiteral(value: " << (value ? "true" : "false") << ")";
+        Logger::print("BooleanLiteral(value: ", (value ? "true" : "false"), ")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -618,13 +617,13 @@ export class IdentifierExpression : public Expression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "IdentifierExpression(name: \"" << name << "\")";
+        Logger::print("IdentifierExpression(name: \"", name, "\")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -719,29 +718,29 @@ export class BinaryExpression : public Expression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "BinaryExpression(\n";
+        Logger::print("BinaryExpression(\n");
 
-        print_indent(depth + 1);
-        std::cout << "left: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("left: ");
         left->dump(depth + 1, false, false);
-        std::cout << ",\n";
+        Logger::print(",\n");
 
-        print_indent(depth + 1);
-        std::cout << "op: " << operator_string(op) << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("op: ", operator_string(op), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "right: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("right: ");
         right->dump(depth + 1, false, false);
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -781,24 +780,24 @@ export class UnaryExpression : public Expression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "UnaryExpression(\n";
+        Logger::print("UnaryExpression(\n");
 
-        print_indent(depth + 1);
-        std::cout << "op: " << operator_string(op) << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("op: ", operator_string(op), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "operand: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("operand: ");
         operand->dump(depth + 1, false, false);
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -826,51 +825,51 @@ export class CallExpression : public Expression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "CallExpression(\n";
+        Logger::print("CallExpression(\n");
 
-        print_indent(depth + 1);
-        std::cout << "callee: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("callee: ");
         callee->dump(depth + 1, false, false);
-        std::cout << ",\n";
+        Logger::print(",\n");
 
-        print_indent(depth + 1);
-        std::cout << "generic_arguments: [";
+        Logger::print_indent(depth + 1);
+        Logger::print("generic_arguments: [");
         if (generic_arguments.empty()) {
-            std::cout << "],\n";
+            Logger::print("],\n");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             for (std::size_t i = 0; i < generic_arguments.size(); ++i) {
                 generic_arguments[i]->dump(depth + 2, true, false);
-                std::cout << (i + 1 < generic_arguments.size() ? ",\n" : "\n");
+                Logger::print((i + 1 < generic_arguments.size() ? ",\n" : "\n"));
             }
 
-            print_indent(depth + 1);
-            std::cout << "],\n";
+            Logger::print_indent(depth + 1);
+            Logger::print("],\n");
         }
 
-        print_indent(depth + 1);
-        std::cout << "arguments: [";
+        Logger::print_indent(depth + 1);
+        Logger::print("arguments: [");
         if (arguments.empty()) {
-            std::cout << "]\n";
+            Logger::print("]\n");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             for (std::size_t i = 0; i < arguments.size(); ++i) {
                 arguments[i]->dump(depth + 2, true, false);
-                std::cout << (i + 1 < arguments.size() ? ",\n" : "\n");
+                Logger::print((i + 1 < arguments.size() ? ",\n" : "\n"));
             }
 
-            print_indent(depth + 1);
-            std::cout << "]\n";
+            Logger::print_indent(depth + 1);
+            Logger::print("]\n");
         }
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -893,26 +892,26 @@ export class IndexExpression : public Expression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "IndexExpression(\n";
+        Logger::print("IndexExpression(\n");
 
-        print_indent(depth + 1);
-        std::cout << "value: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("value: ");
         value->dump(depth + 1, false, false);
-        std::cout << ",\n";
+        Logger::print(",\n");
 
-        print_indent(depth + 1);
-        std::cout << "index: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("index: ");
         index->dump(depth + 1, false, false);
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -934,24 +933,24 @@ export class MemberExpression : public Expression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "MemberExpression(\n";
+        Logger::print("MemberExpression(\n");
 
-        print_indent(depth + 1);
-        std::cout << "value: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("value: ");
         value->dump(depth + 1, false, false);
-        std::cout << ",\n";
+        Logger::print(",\n");
 
-        print_indent(depth + 1);
-        std::cout << "member: \"" << member << "\"\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("member: \"", member, "\"\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -974,26 +973,26 @@ export class AssignExpression : public Expression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "AssignExpression(\n";
+        Logger::print("AssignExpression(\n");
 
-        print_indent(depth + 1);
-        std::cout << "target: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("target: ");
         target->dump(depth + 1, false, false);
-        std::cout << ",\n";
+        Logger::print(",\n");
 
-        print_indent(depth + 1);
-        std::cout << "value: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("value: ");
         value->dump(depth + 1, false, false);
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -1021,51 +1020,51 @@ export class StructLiteralExpression : public Expression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "StructLiteralExpression(\n";
+        Logger::print("StructLiteralExpression(\n");
 
-        print_indent(depth + 1);
-        std::cout << "name: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("name: ");
         name->dump(depth + 1, false, false);
-        std::cout << ",\n";
+        Logger::print(",\n");
 
-        print_indent(depth + 1);
-        std::cout << "generic_arguments: [";
+        Logger::print_indent(depth + 1);
+        Logger::print("generic_arguments: [");
         if (generic_arguments.empty()) {
-            std::cout << "],\n";
+            Logger::print("],\n");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             for (std::size_t i = 0; i < generic_arguments.size(); ++i) {
                 generic_arguments[i]->dump(depth + 2, true, false);
-                std::cout << (i + 1 < generic_arguments.size() ? ",\n" : "\n");
+                Logger::print((i + 1 < generic_arguments.size() ? ",\n" : "\n"));
             }
 
-            print_indent(depth + 1);
-            std::cout << "],\n";
+            Logger::print_indent(depth + 1);
+            Logger::print("],\n");
         }
 
-        print_indent(depth + 1);
-        std::cout << "fields: [";
+        Logger::print_indent(depth + 1);
+        Logger::print("fields: [");
         if (fields.empty()) {
-            std::cout << "]\n";
+            Logger::print("]\n");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             for (std::size_t i = 0; i < fields.size(); ++i) {
                 fields[i]->dump(depth + 2, true, false);
-                std::cout << (i + 1 < fields.size() ? ",\n" : "\n");
+                Logger::print((i + 1 < fields.size() ? ",\n" : "\n"));
             }
 
-            print_indent(depth + 1);
-            std::cout << "]\n";
+            Logger::print_indent(depth + 1);
+            Logger::print("]\n");
         }
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -1086,25 +1085,25 @@ export class BlockStatement : public Statement {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "BlockStatement(statements: [";
+        Logger::print("BlockStatement(statements: [");
         if (statements.empty()) {
-            std::cout << "])";
+            Logger::print("])");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             for (std::size_t i = 0; i < statements.size(); ++i) {
                 statements[i]->dump(depth + 1, true, false);
-                std::cout << (i + 1 < statements.size() ? ",\n" : "\n");
+                Logger::print((i + 1 < statements.size() ? ",\n" : "\n"));
             }
 
-            print_indent(depth);
-            std::cout << "])";
+            Logger::print_indent(depth);
+            Logger::print("])");
         }
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -1125,15 +1124,15 @@ export class ExpressionStatement : public Statement {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "ExpressionStatement(expression: ";
+        Logger::print("ExpressionStatement(expression: ");
         expression->dump(depth, false, false);
-        std::cout << ")";
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -1158,35 +1157,35 @@ export class IfExpression : public Expression {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "IfStatement(\n";
+        Logger::print("IfStatement(\n");
 
-        print_indent(depth + 1);
-        std::cout << "condition: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("condition: ");
         condition->dump(depth + 1, false, false);
-        std::cout << ",\n";
+        Logger::print(",\n");
 
-        print_indent(depth + 1);
-        std::cout << "then_branch: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("then_branch: ");
         then_branch->dump(depth + 1, false, false);
-        std::cout << ",\n";
+        Logger::print(",\n");
 
-        print_indent(depth + 1);
-        std::cout << "else_branch: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("else_branch: ");
         if (else_branch) {
             else_branch->dump(depth + 1, false, false);
         } else {
-            std::cout << "null";
+            Logger::print("null");
         }
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -1207,19 +1206,19 @@ export class ReturnStatement : public Statement {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "ReturnStatement(value: ";
+        Logger::print("ReturnStatement(value: ");
         if (value) {
             value->dump(depth, false, false);
         } else {
-            std::cout << "null";
+            Logger::print("null");
         }
-        std::cout << ")";
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -1249,52 +1248,52 @@ export class StructDeclaration : public Statement {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "StructDeclaration(\n";
+        Logger::print("StructDeclaration(\n");
 
-        print_indent(depth + 1);
-        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "name: \"" << name << "\",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", name, "\",\n");
 
-        print_indent(depth + 1);
-        std::cout << "generic_parameters: [";
+        Logger::print_indent(depth + 1);
+        Logger::print("generic_parameters: [");
         if (generic_parameters.empty()) {
-            std::cout << "],\n";
+            Logger::print("],\n");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             for (std::size_t i = 0; i < generic_parameters.size(); ++i) {
                 generic_parameters[i]->dump(depth + 2, true, false);
-                std::cout << (i + 1 < generic_parameters.size() ? ",\n" : "\n");
+                Logger::print((i + 1 < generic_parameters.size() ? ",\n" : "\n"));
             }
 
-            print_indent(depth + 1);
-            std::cout << "],\n";
+            Logger::print_indent(depth + 1);
+            Logger::print("],\n");
         }
 
-        print_indent(depth + 1);
-        std::cout << "fields: [";
+        Logger::print_indent(depth + 1);
+        Logger::print("fields: [");
         if (fields.empty()) {
-            std::cout << "]\n";
+            Logger::print("]\n");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             for (std::size_t i = 0; i < fields.size(); ++i) {
                 fields[i]->dump(depth + 2, true, false);
-                std::cout << (i + 1 < fields.size() ? ",\n" : "\n");
+                Logger::print((i + 1 < fields.size() ? ",\n" : "\n"));
             }
 
-            print_indent(depth + 1);
-            std::cout << "]\n";
+            Logger::print_indent(depth + 1);
+            Logger::print("]\n");
         }
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -1323,43 +1322,43 @@ export class VarDeclaration : public Statement {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "VarDeclaration(\n";
+        Logger::print("VarDeclaration(\n");
 
-        print_indent(depth + 1);
-        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "storage_kind: " << StorageKind::to_string(storage_kind) << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("storage_kind: ", StorageKind::to_string(storage_kind), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "name: \"" << name << "\",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", name, "\",\n");
 
-        print_indent(depth + 1);
-        std::cout << "type: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
         if (type) {
             type->dump(depth + 1, false, false);
         } else {
-            std::cout << "null";
+            Logger::print("null");
         }
-        std::cout << ",\n";
+        Logger::print(",\n");
 
-        print_indent(depth + 1);
-        std::cout << "initializer: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("initializer: ");
         if (initializer) {
             initializer->dump(depth + 1, false, false);
         } else {
-            std::cout << "null";
+            Logger::print("null");
         }
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -1386,29 +1385,29 @@ export class FunctionDeclaration : public Statement {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "FunctionDeclaration(\n";
+        Logger::print("FunctionDeclaration(\n");
 
-        print_indent(depth + 1);
-        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "prototype: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("prototype: ");
         prototype->dump(depth + 1, false, false);
-        std::cout << ",\n";
+        Logger::print(",\n");
 
-        print_indent(depth + 1);
-        std::cout << "body: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("body: ");
         body->dump(depth + 1, false, false);
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -1433,24 +1432,24 @@ export class ExternFunctionDeclaration : public Statement {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "ExternFunctionDeclaration(\n";
+        Logger::print("ExternFunctionDeclaration(\n");
 
-        print_indent(depth + 1);
-        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "prototype: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("prototype: ");
         prototype->dump(depth + 1, false, false);
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -1476,27 +1475,27 @@ export class ExternVarDeclaration : public Statement {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "ExternVarDeclaration(\n";
+        Logger::print("ExternVarDeclaration(\n");
 
-        print_indent(depth + 1);
-        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "name: \"" << name << "\",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", name, "\",\n");
 
-        print_indent(depth + 1);
-        std::cout << "type: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
         type->dump(depth + 1, false, false);
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -1517,25 +1516,25 @@ export class ImportStatement : public Statement {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "ImportStatement(path: [";
+        Logger::print("ImportStatement(path: [");
         if (path.empty()) {
-            std::cout << "])";
+            Logger::print("])");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             for (std::size_t i = 0; i < path.size(); ++i) {
                 path[i]->dump(depth + 1, true, false);
-                std::cout << (i + 1 < path.size() ? ",\n" : "\n");
+                Logger::print((i + 1 < path.size() ? ",\n" : "\n"));
             }
 
-            print_indent(depth);
-            std::cout << "])";
+            Logger::print_indent(depth);
+            Logger::print("])");
         }
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 

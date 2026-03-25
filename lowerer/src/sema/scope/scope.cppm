@@ -1,6 +1,5 @@
 module;
 
-#include <iostream>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -141,84 +140,84 @@ export class LoweredScope {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "Scope(\n";
+        Logger::print("Scope(\n");
 
-        print_indent(depth + 1);
-        std::cout << "name: \"" << name << "\",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", name, "\",\n");
 
-        print_indent(depth + 1);
-        std::cout << "types: [";
+        Logger::print_indent(depth + 1);
+        Logger::print("types: [");
         if (types.empty()) {
-            std::cout << "],\n";
+            Logger::print("],\n");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             std::size_t type_index = 0;
             for (const auto& entry : types) {
                 entry.second->dump(depth + 2, true, false);
-                std::cout << (++type_index < types.size() ? ",\n" : "\n");
+                Logger::print((++type_index < types.size() ? ",\n" : "\n"));
             }
-            print_indent(depth + 1);
-            std::cout << "],\n";
+            Logger::print_indent(depth + 1);
+            Logger::print("],\n");
         }
 
-        print_indent(depth + 1);
-        std::cout << "vars: [";
+        Logger::print_indent(depth + 1);
+        Logger::print("vars: [");
         if (vars.empty()) {
-            std::cout << "],\n";
+            Logger::print("],\n");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             std::size_t var_index = 0;
             for (const auto& entry : vars) {
                 entry.second->dump(depth + 2, true, false);
-                std::cout << (++var_index < vars.size() ? ",\n" : "\n");
+                Logger::print((++var_index < vars.size() ? ",\n" : "\n"));
             }
-            print_indent(depth + 1);
-            std::cout << "],\n";
+            Logger::print_indent(depth + 1);
+            Logger::print("],\n");
         }
 
-        print_indent(depth + 1);
-        std::cout << "functions: [";
+        Logger::print_indent(depth + 1);
+        Logger::print("functions: [");
         std::size_t function_total = 0;
         for (const auto& entry : functions) {
             function_total += entry.second.size();
         }
         if (function_total == 0) {
-            std::cout << "],\n";
+            Logger::print("],\n");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             std::size_t function_index = 0;
             for (const auto& entry : functions) {
                 for (const auto& sym : entry.second) {
                     sym->dump(depth + 2, true, false);
-                    std::cout << (++function_index < function_total ? ",\n" : "\n");
+                    Logger::print((++function_index < function_total ? ",\n" : "\n"));
                 }
             }
-            print_indent(depth + 1);
-            std::cout << "],\n";
+            Logger::print_indent(depth + 1);
+            Logger::print("],\n");
         }
 
-        print_indent(depth + 1);
-        std::cout << "children: [";
+        Logger::print_indent(depth + 1);
+        Logger::print("children: [");
         if (children.empty()) {
-            std::cout << "]\n";
+            Logger::print("]\n");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             for (std::size_t child_index = 0; child_index < children.size(); ++child_index) {
                 children[child_index]->dump(depth + 2, true, false);
-                std::cout << (child_index + 1 < children.size() ? ",\n" : "\n");
+                Logger::print((child_index + 1 < children.size() ? ",\n" : "\n"));
             }
-            print_indent(depth + 1);
-            std::cout << "]\n";
+            Logger::print_indent(depth + 1);
+            Logger::print("]\n");
         }
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };

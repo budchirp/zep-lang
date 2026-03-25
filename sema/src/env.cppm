@@ -1,6 +1,5 @@
 module;
 
-#include <iostream>
 #include <memory>
 #include <string>
 
@@ -35,14 +34,14 @@ export class Env {
     }
 
     void dump(int depth = 0) const {
-        print_indent(depth);
-        std::cout << "Env(\n";
+        Logger::print_indent(depth);
+        Logger::print("Env(\n");
 
-        print_indent(depth + 1);
-        std::cout << "global_scope: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("global_scope: ");
         global_scope->dump(depth + 1, false, true);
 
-        print_indent(depth);
-        std::cout << ")\n";
+        Logger::print_indent(depth);
+        Logger::print(")\n");
     }
 };

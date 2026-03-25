@@ -1,8 +1,8 @@
-#include <cstdio>
-#include <print>
+#include <exception>
 
 import argman;
 import zep.cli.commands.compile;
+import zep.common.logger;
 
 class RootCommand : public argman::Command {
   private:
@@ -15,7 +15,7 @@ class RootCommand : public argman::Command {
                 .commands = {&compile_command}};
     }
 
-    void execute() override { std::println("Use --help for available commands."); }
+    void execute() override { Logger::print("Use --help for available commands.\n"); }
 };
 
 int main(int argc, char* argv[]) {
@@ -25,7 +25,7 @@ int main(int argc, char* argv[]) {
     try {
         parser.parse(argc, argv);
     } catch (const std::exception& exception) {
-        std::println(stderr, "zep: error: {}", exception.what());
+        Logger::print_stderr("zep: error: ", exception.what(), "\n");
         return 1;
     }
 

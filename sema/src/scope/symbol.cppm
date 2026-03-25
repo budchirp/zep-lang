@@ -1,6 +1,5 @@
 module;
 
-#include <iostream>
 #include <memory>
 #include <string>
 
@@ -49,46 +48,46 @@ export class Symbol {
 
     virtual void dump(int depth, bool with_indent = true, bool trailing_newline = true) const {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "Symbol(\n";
+        Logger::print("Symbol(\n");
 
-        print_indent(depth + 1);
-        std::cout << "kind: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("kind: ");
         switch (kind) {
         case Kind::Type::Var:
-            std::cout << "var";
+            Logger::print("var");
             break;
         case Kind::Type::Function:
-            std::cout << "function";
+            Logger::print("function");
             break;
         case Kind::Type::Type:
-            std::cout << "type";
+            Logger::print("type");
             break;
         }
-        std::cout << ",\n";
+        Logger::print(",\n");
 
-        print_indent(depth + 1);
-        std::cout << "name: \"" << name << "\",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", name, "\",\n");
 
-        print_indent(depth + 1);
-        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "type: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
         if (type != nullptr) {
             type->dump(depth + 1, false, false);
         } else {
-            std::cout << "null";
+            Logger::print("null");
         }
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -122,34 +121,34 @@ export class VarSymbol : public Symbol {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "VarSymbol(\n";
+        Logger::print("VarSymbol(\n");
 
-        print_indent(depth + 1);
-        std::cout << "name: \"" << name << "\",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", name, "\",\n");
 
-        print_indent(depth + 1);
-        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "storage_kind: " << StorageKind::to_string(storage_kind) << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("storage_kind: ", StorageKind::to_string(storage_kind), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "type: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
         if (type != nullptr) {
             type->dump(depth + 1, false, false);
         } else {
-            std::cout << "null";
+            Logger::print("null");
         }
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -164,31 +163,31 @@ export class FunctionSymbol : public Symbol {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "FunctionSymbol(\n";
+        Logger::print("FunctionSymbol(\n");
 
-        print_indent(depth + 1);
-        std::cout << "name: \"" << name << "\",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", name, "\",\n");
 
-        print_indent(depth + 1);
-        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "type: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
         if (type != nullptr) {
             type->dump(depth + 1, false, false);
         } else {
-            std::cout << "null";
+            Logger::print("null");
         }
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };
@@ -203,31 +202,31 @@ export class TypeSymbol : public Symbol {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
 
-        std::cout << "TypeSymbol(\n";
+        Logger::print("TypeSymbol(\n");
 
-        print_indent(depth + 1);
-        std::cout << "name: \"" << name << "\",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", name, "\",\n");
 
-        print_indent(depth + 1);
-        std::cout << "visibility: " << Visibility::to_string(visibility) << ",\n";
+        Logger::print_indent(depth + 1);
+        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
 
-        print_indent(depth + 1);
-        std::cout << "type: ";
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
         if (type != nullptr) {
             type->dump(depth + 1, false, false);
         } else {
-            std::cout << "null";
+            Logger::print("null");
         }
-        std::cout << "\n";
+        Logger::print("\n");
 
-        print_indent(depth);
-        std::cout << ")";
+        Logger::print_indent(depth);
+        Logger::print(")");
 
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 };

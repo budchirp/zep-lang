@@ -1,7 +1,6 @@
 module;
 
 #include <cstdint>
-#include <iostream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -68,11 +67,11 @@ export class LoweredVoidType : public LoweredType {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
-        std::cout << "LoweredVoidType()";
+        Logger::print("LoweredVoidType()");
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -87,11 +86,11 @@ export class LoweredBooleanType : public LoweredType {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
-        std::cout << "LoweredBooleanType()";
+        Logger::print("LoweredBooleanType()");
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -106,11 +105,11 @@ export class LoweredStringType : public LoweredType {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
-        std::cout << "LoweredStringType()";
+        Logger::print("LoweredStringType()");
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -129,12 +128,12 @@ export class LoweredIntegerType : public LoweredType {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
-        std::cout << "LoweredIntegerType(bits: " << static_cast<int>(bits)
-                  << ", is_signed: " << (is_signed ? "true" : "false") << ")";
+        Logger::print("LoweredIntegerType(bits: ", static_cast<int>(bits),
+                      ", is_signed: ", (is_signed ? "true" : "false"), ")");
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -153,11 +152,11 @@ export class LoweredFloatType : public LoweredType {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
-        std::cout << "LoweredFloatType(bits: " << static_cast<int>(bits) << ")";
+        Logger::print("LoweredFloatType(bits: ", static_cast<int>(bits), ")");
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -175,12 +174,12 @@ export class LoweredPointerType : public LoweredType {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
-        std::cout << "LoweredPointerType(base: " << (base != nullptr ? base->to_string() : "null")
-                  << ")";
+        Logger::print("LoweredPointerType(base: ", (base != nullptr ? base->to_string() : "null"),
+                      ")");
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -201,13 +200,12 @@ export class LoweredArrayType : public LoweredType {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
-        std::cout << "LoweredArrayType(element: "
-                  << (element != nullptr ? element->to_string() : "null") << ", size: " << size
-                  << ")";
+        Logger::print("LoweredArrayType(element: ",
+                      (element != nullptr ? element->to_string() : "null"), ", size: ", size, ")");
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -238,11 +236,11 @@ export class LoweredStructType : public LoweredType {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
-        std::cout << "LoweredStructType(name: \"" << name << "\", fields: " << fields.size() << ")";
+        Logger::print("LoweredStructType(name: \"", name, "\", fields: ", fields.size(), ")");
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 
@@ -264,19 +262,19 @@ export class LoweredFunctionType : public LoweredType {
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
-            print_indent(depth);
+            Logger::print_indent(depth);
         }
-        std::cout << "LoweredFunctionType(return: "
-                  << (return_type != nullptr ? return_type->to_string() : "null") << ", params: [";
+        Logger::print("LoweredFunctionType(return: ",
+                      (return_type != nullptr ? return_type->to_string() : "null"), ", params: [");
         for (std::size_t i = 0; i < parameters.size(); ++i) {
             if (i > 0) {
-                std::cout << ", ";
+                Logger::print(", ");
             }
-            std::cout << (parameters[i] != nullptr ? parameters[i]->to_string() : "null");
+            Logger::print((parameters[i] != nullptr ? parameters[i]->to_string() : "null"));
         }
-        std::cout << "], variadic: " << (variadic ? "true" : "false") << ")";
+        Logger::print("], variadic: ", (variadic ? "true" : "false"), ")");
         if (trailing_newline) {
-            std::cout << "\n";
+            Logger::print("\n");
         }
     }
 

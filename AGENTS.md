@@ -50,7 +50,7 @@ cmake --build cmake-build-release
 - DO NOT use shortcut names (e.g., `ty` for type, `ctx` for context)
 - ALWAYS use classes (never structs); use explicit constructors to ensure all members are initialized
 - ALWAYS ASK QUESTIONS. Do not change code for unrelated issues; ask and I will guide you.
-- Use modern C++ features. (e.g., std::print)
+- Use modern C++ features. Use `Logger::print` / `Logger::print_stderr` for console output; do not use `std::print` or `std::println` outside the logger module.
 - DO NOT use get_private_field and etc. If its gonna be used externally, make it public, if its used only within the class make it private.
 - DO NOT use underscore postfix on field names (e.g. `context` not `context_`). Use same names for member and constructor parameter (e.g. `Foo(Context& context) : context(context)`).
 - DO NOT use implicit conversions. Use explicit casts (e.g. `static_cast`, `explicit` constructors).

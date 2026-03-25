@@ -1,6 +1,5 @@
 module;
 
-#include <iostream>
 #include <memory>
 #include <vector>
 
@@ -18,20 +17,20 @@ export class Program {
 
     void dump() const {
         constexpr int depth = 0;
-        print_indent(depth);
+        Logger::print_indent(depth);
 
-        std::cout << "Program(statements: [";
+        Logger::print("Program(statements: [");
         if (statements.empty()) {
-            std::cout << "])\n";
+            Logger::print("])\n");
         } else {
-            std::cout << "\n";
+            Logger::print("\n");
             for (std::size_t i = 0; i < statements.size(); ++i) {
                 statements[i]->dump(depth + 1, true, false);
-                std::cout << (i + 1 < statements.size() ? ",\n" : "\n");
+                Logger::print((i + 1 < statements.size() ? ",\n" : "\n"));
             }
 
-            print_indent(depth);
-            std::cout << "])\n";
+            Logger::print_indent(depth);
+            Logger::print("])\n");
         }
     }
 };

@@ -64,7 +64,12 @@ export class DiagnosticList {
     }
 
     void print(const Logger& logger) const {
+        bool first = true;
         for (const auto& diagnostic : diagnostics) {
+            if (!first) {
+                Logger::print("\n");
+            }
+            first = false;
             diagnostic.print(logger);
         }
     }
