@@ -6,11 +6,11 @@ module;
 #include <unordered_set>
 #include <vector>
 
-export module zep.lowerer.monomorphizer;
+export module zep.hir.monomorphizer;
 
-import zep.sema.type;
+import zep.frontend.sema.type;
 import zep.frontend.ast;
-import zep.lowerer.mangler;
+import zep.frontend.sema.mangler;
 
 export class MonoCacheResult {
   public:

@@ -3,18 +3,18 @@ module;
 #include <memory>
 #include <string>
 
-export module zep.lowerer.sema.env;
+export module zep.hir.sema.env;
 
 import zep.common.logger;
-export import zep.lowerer.sema.scope;
+export import zep.hir.sema.scope;
 
-export class LoweredEnv {
+export class HIREnv {
   public:
-    std::unique_ptr<LoweredScope> global_scope;
-    LoweredScope* current_scope;
+    std::unique_ptr<HIRScope> global_scope;
+    HIRScope* current_scope;
 
-    explicit LoweredEnv()
-        : global_scope(std::make_unique<LoweredScope>("global", nullptr)),
+    explicit HIREnv()
+        : global_scope(std::make_unique<HIRScope>("global", nullptr)),
           current_scope(global_scope.get()) {}
 
     void push_scope(const std::string& scope_name) {

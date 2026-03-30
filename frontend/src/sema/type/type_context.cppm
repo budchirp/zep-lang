@@ -7,10 +7,10 @@ module;
 #include <utility>
 #include <vector>
 
-export module zep.sema.type.type_context;
+export module zep.frontend.sema.type.type_context;
 
-import zep.sema.type;
-import zep.sema.env;
+import zep.frontend.sema.type;
+import zep.frontend.sema.env;
 
 export class TypeContext {
   private:

@@ -5,11 +5,11 @@ module;
 #include <string>
 #include <vector>
 
-export module zep.lowerer.sema.type;
+export module zep.hir.sema.type;
 
 import zep.common.logger;
 
-export class LoweredType {
+export class HIRType {
   public:
     class Kind {
       public:
@@ -27,17 +27,17 @@ export class LoweredType {
     };
 
   protected:
-    explicit LoweredType(Kind::Type kind) : kind(kind) {}
+    explicit HIRType(Kind::Type kind) : kind(kind) {}
 
-    LoweredType(const LoweredType&) = delete;
-    LoweredType& operator=(const LoweredType&) = delete;
-    LoweredType(LoweredType&&) = default;
-    LoweredType& operator=(LoweredType&&) = default;
+    HIRType(const HIRType&) = delete;
+    HIRType& operator=(const HIRType&) = delete;
+    HIRType(HIRType&&) = default;
+    HIRType& operator=(HIRType&&) = default;
 
   public:
     Kind::Type kind;
 
-    virtual ~LoweredType() = default;
+    virtual ~HIRType() = default;
 
     virtual void dump(int depth, bool with_indent = true, bool trailing_newline = true) const = 0;
     virtual std::string to_string() const = 0;
@@ -59,17 +59,17 @@ export class LoweredType {
     }
 };
 
-export class LoweredVoidType : public LoweredType {
+export class HIRVoidType : public HIRType {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Void;
 
-    LoweredVoidType() : LoweredType(static_kind) {}
+    HIRVoidType() : HIRType(static_kind) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
-        Logger::print("LoweredVoidType()");
+        Logger::print("HIRVoidType()");
         if (trailing_newline) {
             Logger::print("\n");
         }
@@ -78,17 +78,17 @@ export class LoweredVoidType : public LoweredType {
     std::string to_string() const override { return "void"; }
 };
 
-export class LoweredBooleanType : public LoweredType {
+export class HIRBooleanType : public HIRType {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Boolean;
 
-    LoweredBooleanType() : LoweredType(static_kind) {}
+    HIRBooleanType() : HIRType(static_kind) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
-        Logger::print("LoweredBooleanType()");
+        Logger::print("HIRBooleanType()");
         if (trailing_newline) {
             Logger::print("\n");
         }
@@ -97,17 +97,17 @@ export class LoweredBooleanType : public LoweredType {
     std::string to_string() const override { return "bool"; }
 };
 
-export class LoweredStringType : public LoweredType {
+export class HIRStringType : public HIRType {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::String;
 
-    LoweredStringType() : LoweredType(static_kind) {}
+    HIRStringType() : HIRType(static_kind) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
-        Logger::print("LoweredStringType()");
+        Logger::print("HIRStringType()");
         if (trailing_newline) {
             Logger::print("\n");
         }
@@ -116,21 +116,21 @@ export class LoweredStringType : public LoweredType {
     std::string to_string() const override { return "string"; }
 };
 
-export class LoweredIntegerType : public LoweredType {
+export class HIRIntegerType : public HIRType {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Integer;
 
     std::uint8_t bits;
     bool is_signed;
 
-    LoweredIntegerType(std::uint8_t bits, bool is_signed)
-        : LoweredType(static_kind), bits(bits), is_signed(is_signed) {}
+    HIRIntegerType(std::uint8_t bits, bool is_signed)
+        : HIRType(static_kind), bits(bits), is_signed(is_signed) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
-        Logger::print("LoweredIntegerType(bits: ", static_cast<int>(bits),
+        Logger::print("HIRIntegerType(bits: ", static_cast<int>(bits),
                       ", is_signed: ", (is_signed ? "true" : "false"), ")");
         if (trailing_newline) {
             Logger::print("\n");
@@ -142,19 +142,19 @@ export class LoweredIntegerType : public LoweredType {
     }
 };
 
-export class LoweredFloatType : public LoweredType {
+export class HIRFloatType : public HIRType {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Float;
 
     std::uint8_t bits;
 
-    explicit LoweredFloatType(std::uint8_t bits = 64) : LoweredType(static_kind), bits(bits) {}
+    explicit HIRFloatType(std::uint8_t bits = 64) : HIRType(static_kind), bits(bits) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
-        Logger::print("LoweredFloatType(bits: ", static_cast<int>(bits), ")");
+        Logger::print("HIRFloatType(bits: ", static_cast<int>(bits), ")");
         if (trailing_newline) {
             Logger::print("\n");
         }
@@ -163,21 +163,20 @@ export class LoweredFloatType : public LoweredType {
     std::string to_string() const override { return "f" + std::to_string(bits); }
 };
 
-export class LoweredPointerType : public LoweredType {
+export class HIRPointerType : public HIRType {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Pointer;
 
-    std::shared_ptr<LoweredType> base;
+    std::shared_ptr<HIRType> base;
 
-    explicit LoweredPointerType(std::shared_ptr<LoweredType> base)
-        : LoweredType(static_kind), base(std::move(base)) {}
+    explicit HIRPointerType(std::shared_ptr<HIRType> base)
+        : HIRType(static_kind), base(std::move(base)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
-        Logger::print("LoweredPointerType(base: ", (base != nullptr ? base->to_string() : "null"),
-                      ")");
+        Logger::print("HIRPointerType(base: ", (base != nullptr ? base->to_string() : "null"), ")");
         if (trailing_newline) {
             Logger::print("\n");
         }
@@ -188,21 +187,21 @@ export class LoweredPointerType : public LoweredType {
     }
 };
 
-export class LoweredArrayType : public LoweredType {
+export class HIRArrayType : public HIRType {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Array;
 
-    std::shared_ptr<LoweredType> element;
+    std::shared_ptr<HIRType> element;
     std::size_t size;
 
-    LoweredArrayType(std::shared_ptr<LoweredType> element, std::size_t size)
-        : LoweredType(static_kind), element(std::move(element)), size(size) {}
+    HIRArrayType(std::shared_ptr<HIRType> element, std::size_t size)
+        : HIRType(static_kind), element(std::move(element)), size(size) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
-        Logger::print("LoweredArrayType(element: ",
+        Logger::print("HIRArrayType(element: ",
                       (element != nullptr ? element->to_string() : "null"), ", size: ", size, ")");
         if (trailing_newline) {
             Logger::print("\n");
@@ -215,30 +214,30 @@ export class LoweredArrayType : public LoweredType {
     }
 };
 
-export class LoweredStructField {
+export class HIRStructField {
   public:
     std::string name;
-    std::shared_ptr<LoweredType> type;
+    std::shared_ptr<HIRType> type;
 
-    LoweredStructField(std::string name, std::shared_ptr<LoweredType> type)
+    HIRStructField(std::string name, std::shared_ptr<HIRType> type)
         : name(std::move(name)), type(std::move(type)) {}
 };
 
-export class LoweredStructType : public LoweredType {
+export class HIRStructType : public HIRType {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Struct;
 
     std::string name;
-    std::vector<LoweredStructField> fields;
+    std::vector<HIRStructField> fields;
 
-    LoweredStructType(std::string name, std::vector<LoweredStructField> fields = {})
-        : LoweredType(static_kind), name(std::move(name)), fields(std::move(fields)) {}
+    HIRStructType(std::string name, std::vector<HIRStructField> fields = {})
+        : HIRType(static_kind), name(std::move(name)), fields(std::move(fields)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
-        Logger::print("LoweredStructType(name: \"", name, "\", fields: ", fields.size(), ")");
+        Logger::print("HIRStructType(name: \"", name, "\", fields: ", fields.size(), ")");
         if (trailing_newline) {
             Logger::print("\n");
         }
@@ -247,24 +246,24 @@ export class LoweredStructType : public LoweredType {
     std::string to_string() const override { return name; }
 };
 
-export class LoweredFunctionType : public LoweredType {
+export class HIRFunctionType : public HIRType {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Function;
 
-    std::vector<std::shared_ptr<LoweredType>> parameters;
-    std::shared_ptr<LoweredType> return_type;
+    std::vector<std::shared_ptr<HIRType>> parameters;
+    std::shared_ptr<HIRType> return_type;
     bool variadic;
 
-    LoweredFunctionType(std::vector<std::shared_ptr<LoweredType>> parameters,
-                        std::shared_ptr<LoweredType> return_type, bool variadic = false)
-        : LoweredType(static_kind), parameters(std::move(parameters)),
+    HIRFunctionType(std::vector<std::shared_ptr<HIRType>> parameters,
+                    std::shared_ptr<HIRType> return_type, bool variadic = false)
+        : HIRType(static_kind), parameters(std::move(parameters)),
           return_type(std::move(return_type)), variadic(variadic) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
-        Logger::print("LoweredFunctionType(return: ",
+        Logger::print("HIRFunctionType(return: ",
                       (return_type != nullptr ? return_type->to_string() : "null"), ", params: [");
         for (std::size_t i = 0; i < parameters.size(); ++i) {
             if (i > 0) {

@@ -11,8 +11,8 @@ import zep.common.logger;
 import zep.frontend.lexer;
 import zep.frontend.parser;
 import zep.checker.type_checker;
-import zep.sema.context;
-import zep.lowerer;
+import zep.frontend.sema.context;
+import zep.hir;
 
 export class Driver {
   public:
@@ -36,8 +36,8 @@ export class Driver {
 
         context.env.dump();
 
-        Lowerer lowerer(context);
-        auto lowered_program = lowerer.lower(program);
-        lowered_program.dump();
+        HIRBuilder hir_builder(context);
+        auto hir_program = hir_builder.lower(program);
+        hir_program.dump();
     }
 };

@@ -5,11 +5,11 @@ module;
 #include <unordered_map>
 #include <vector>
 
-export module zep.sema.scope;
+export module zep.frontend.sema.scope;
 
 import zep.common.logger;
-import zep.sema.type;
-import zep.sema.symbol;
+import zep.frontend.sema.type;
+import zep.frontend.sema.symbol;
 
 export class Scope {
   private:

@@ -5,29 +5,29 @@ module;
 #include <unordered_map>
 #include <vector>
 
-export module zep.lowerer.sema.scope;
+export module zep.hir.sema.scope;
 
 import zep.common.logger;
-import zep.lowerer.sema.scope.symbol;
-import zep.lowerer.sema.type;
+import zep.hir.sema.scope.symbol;
+import zep.hir.sema.type;
 
-export class LoweredScope {
+export class HIRScope {
   private:
-    std::vector<std::unique_ptr<LoweredScope>> children;
+    std::vector<std::unique_ptr<HIRScope>> children;
 
-    std::unordered_map<std::string, std::unique_ptr<LoweredTypeSymbol>> types;
-    std::unordered_map<std::string, std::unique_ptr<LoweredVarSymbol>> vars;
-    std::unordered_map<std::string, std::unique_ptr<LoweredFunctionSymbol>> functions;
+    std::unordered_map<std::string, std::unique_ptr<HIRTypeSymbol>> types;
+    std::unordered_map<std::string, std::unique_ptr<HIRVarSymbol>> vars;
+    std::unordered_map<std::string, std::unique_ptr<HIRFunctionSymbol>> functions;
 
   public:
     std::string name;
-    LoweredScope* parent;
+    HIRScope* parent;
 
-    LoweredScope(std::string name, LoweredScope* parent) : name(std::move(name)), parent(parent) {}
+    HIRScope(std::string name, HIRScope* parent) : name(std::move(name)), parent(parent) {}
 
     std::size_t child_count() const { return children.size(); }
 
-    bool define_type(const std::string& symbol_name, std::unique_ptr<LoweredTypeSymbol> symbol) {
+    bool define_type(const std::string& symbol_name, std::unique_ptr<HIRTypeSymbol> symbol) {
         if (types.contains(symbol_name)) {
             return false;
         }
@@ -35,7 +35,7 @@ export class LoweredScope {
         return true;
     }
 
-    bool define_var(const std::string& symbol_name, std::unique_ptr<LoweredVarSymbol> symbol) {
+    bool define_var(const std::string& symbol_name, std::unique_ptr<HIRVarSymbol> symbol) {
         if (vars.contains(symbol_name)) {
             return false;
         }
@@ -44,7 +44,7 @@ export class LoweredScope {
     }
 
     bool define_function(const std::string& symbol_name,
-                         std::unique_ptr<LoweredFunctionSymbol> symbol) {
+                         std::unique_ptr<HIRFunctionSymbol> symbol) {
         if (functions.contains(symbol_name)) {
             return false;
         }
@@ -52,7 +52,7 @@ export class LoweredScope {
         return true;
     }
 
-    const LoweredTypeSymbol* lookup_type(const std::string& symbol_name) const {
+    const HIRTypeSymbol* lookup_type(const std::string& symbol_name) const {
         auto iterator = types.find(symbol_name);
         if (iterator != types.end()) {
             return iterator->second.get();
@@ -63,7 +63,7 @@ export class LoweredScope {
         return nullptr;
     }
 
-    const LoweredVarSymbol* lookup_var(const std::string& symbol_name) const {
+    const HIRVarSymbol* lookup_var(const std::string& symbol_name) const {
         auto iterator = vars.find(symbol_name);
         if (iterator != vars.end()) {
             return iterator->second.get();
@@ -74,7 +74,7 @@ export class LoweredScope {
         return nullptr;
     }
 
-    const LoweredFunctionSymbol* lookup_function(const std::string& symbol_name) const {
+    const HIRFunctionSymbol* lookup_function(const std::string& symbol_name) const {
         auto iterator = functions.find(symbol_name);
         if (iterator != functions.end()) {
             return iterator->second.get();
@@ -85,14 +85,14 @@ export class LoweredScope {
         return nullptr;
     }
 
-    std::shared_ptr<LoweredType> lookup_type_as_lowered(const std::string& symbol_name) const {
+    std::shared_ptr<HIRType> lookup_type_as_hir(const std::string& symbol_name) const {
         const auto* symbol = lookup_type(symbol_name);
         return symbol != nullptr ? symbol->type : nullptr;
     }
 
-    LoweredScope* add_child(std::string child_name) {
-        auto child = std::make_unique<LoweredScope>(std::move(child_name), this);
-        LoweredScope* child_ptr = child.get();
+    HIRScope* add_child(std::string child_name) {
+        auto child = std::make_unique<HIRScope>(std::move(child_name), this);
+        HIRScope* child_ptr = child.get();
         children.push_back(std::move(child));
         return child_ptr;
     }

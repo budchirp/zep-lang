@@ -3,12 +3,12 @@ module;
 #include <memory>
 #include <string>
 
-export module zep.sema.symbol;
+export module zep.frontend.sema.symbol;
 
 import zep.common.logger;
 import zep.common.position;
-import zep.sema.kinds;
-import zep.sema.type;
+import zep.frontend.sema.kinds;
+import zep.frontend.sema.type;
 
 export class Symbol {
   public:

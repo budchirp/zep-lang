@@ -4,10 +4,10 @@ module;
 #include <string>
 #include <unordered_map>
 
-export module zep.sema.builtins;
+export module zep.frontend.sema.builtins;
 
-import zep.sema.scope;
-import zep.sema.type;
+import zep.frontend.sema.scope;
+import zep.frontend.sema.type;
 
 export class Builtins {
   private:

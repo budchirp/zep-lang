@@ -3,11 +3,11 @@ module;
 #include <memory>
 #include <string>
 
-export module zep.sema.env;
+export module zep.frontend.sema.env;
 
 import zep.common.logger;
-export import zep.sema.scope;
-import zep.sema.builtins;
+export import zep.frontend.sema.scope;
+import zep.frontend.sema.builtins;
 
 export class Env {
   private:

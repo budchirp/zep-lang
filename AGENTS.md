@@ -30,7 +30,7 @@ cmake --build cmake-build-release
 
 - C++26 with modules (`.cppm` extension)
 - Build dir: `cmake-build-debug` (debug) or `cmake-build-release` (release)
-- Subdirs: `common`, `frontend`, `checker`, `lowerer`, `codegen`, `driver`, `cli`
+- Subdirs: `common`, `frontend`, `checker`, `hir`, `codegen`, `driver`, `cli`
 
 ## Code Standards
 

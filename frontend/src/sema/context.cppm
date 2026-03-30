@@ -1,10 +1,10 @@
 module;
 
-export module zep.sema.context;
+export module zep.frontend.sema.context;
 
 import zep.common.source;
 import zep.common.logger;
-import zep.sema.env;
+import zep.frontend.sema.env;
 import zep.common.logger.diagnostic;
 
 export class Context {

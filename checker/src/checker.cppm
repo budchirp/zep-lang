@@ -8,15 +8,15 @@ module;
 export module zep.checker.type_checker;
 
 import zep.common.position;
-import zep.sema.type;
+import zep.frontend.sema.type;
 import zep.frontend.ast;
 import zep.frontend.ast.program;
 import zep.common.logger.diagnostic;
-import zep.sema.type.type_context;
-import zep.sema.context;
-import zep.sema.env;
-import zep.sema.symbol;
-import zep.sema.kinds;
+import zep.frontend.sema.type.type_context;
+import zep.frontend.sema.context;
+import zep.frontend.sema.env;
+import zep.frontend.sema.symbol;
+import zep.frontend.sema.kinds;
 
 export class TypeChecker : public Visitor<void> {
   private:

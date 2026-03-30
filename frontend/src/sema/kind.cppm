@@ -3,7 +3,7 @@ module;
 #include <cstdint>
 #include <string>
 
-export module zep.sema.kinds;
+export module zep.frontend.sema.kinds;
 
 export class Linkage {
   private:

@@ -3,18 +3,18 @@ module;
 #include <memory>
 #include <string>
 
-export module zep.lowerer.sema.scope.symbol;
+export module zep.hir.sema.scope.symbol;
 
 import zep.common.logger;
-import zep.lowerer.sema.type;
-import zep.sema.kinds;
+import zep.hir.sema.type;
+import zep.frontend.sema.kinds;
 
-export class LoweredParameter {
+export class HIRParameter {
   public:
     std::string name;
-    std::shared_ptr<LoweredType> type;
+    std::shared_ptr<HIRType> type;
 
-    LoweredParameter(std::string name, std::shared_ptr<LoweredType> type)
+    HIRParameter(std::string name, std::shared_ptr<HIRType> type)
         : name(std::move(name)), type(std::move(type)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const {
@@ -48,7 +48,7 @@ export class LoweredParameter {
     }
 };
 
-export class LoweredSymbol {
+export class HIRSymbol {
   public:
     class Kind {
       public:
@@ -56,8 +56,8 @@ export class LoweredSymbol {
     };
 
   protected:
-    LoweredSymbol(Kind::Type kind, std::string name, Linkage::Type linkage,
-                  Visibility::Type visibility, std::shared_ptr<LoweredType> type)
+    HIRSymbol(Kind::Type kind, std::string name, Linkage::Type linkage,
+                  Visibility::Type visibility, std::shared_ptr<HIRType> type)
         : kind(kind), name(std::move(name)), linkage(linkage), visibility(visibility),
           type(std::move(type)) {}
 
@@ -66,9 +66,9 @@ export class LoweredSymbol {
     std::string name;
     Linkage::Type linkage;
     Visibility::Type visibility;
-    std::shared_ptr<LoweredType> type;
+    std::shared_ptr<HIRType> type;
 
-    virtual ~LoweredSymbol() = default;
+    virtual ~HIRSymbol() = default;
 
     virtual void dump(int depth, bool with_indent = true, bool trailing_newline = true) const {
         if (with_indent) {
@@ -135,13 +135,13 @@ export class LoweredSymbol {
     }
 };
 
-export class LoweredTypeSymbol : public LoweredSymbol {
+export class HIRTypeSymbol : public HIRSymbol {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Type;
 
-    LoweredTypeSymbol(std::string name, Linkage::Type linkage, Visibility::Type visibility,
-                      std::shared_ptr<LoweredType> type)
-        : LoweredSymbol(static_kind, std::move(name), linkage, visibility, std::move(type)) {}
+    HIRTypeSymbol(std::string name, Linkage::Type linkage, Visibility::Type visibility,
+                      std::shared_ptr<HIRType> type)
+        : HIRSymbol(static_kind, std::move(name), linkage, visibility, std::move(type)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -177,13 +177,13 @@ export class LoweredTypeSymbol : public LoweredSymbol {
     }
 };
 
-export class LoweredFunctionSymbol : public LoweredSymbol {
+export class HIRFunctionSymbol : public HIRSymbol {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Function;
 
-    LoweredFunctionSymbol(std::string name, Linkage::Type linkage, Visibility::Type visibility,
-                          std::shared_ptr<LoweredType> type)
-        : LoweredSymbol(static_kind, std::move(name), linkage, visibility, std::move(type)) {}
+    HIRFunctionSymbol(std::string name, Linkage::Type linkage, Visibility::Type visibility,
+                          std::shared_ptr<HIRType> type)
+        : HIRSymbol(static_kind, std::move(name), linkage, visibility, std::move(type)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
@@ -219,13 +219,13 @@ export class LoweredFunctionSymbol : public LoweredSymbol {
     }
 };
 
-export class LoweredVarSymbol : public LoweredSymbol {
+export class HIRVarSymbol : public HIRSymbol {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Var;
 
-    LoweredVarSymbol(std::string name, Linkage::Type linkage, Visibility::Type visibility,
-                     std::shared_ptr<LoweredType> type)
-        : LoweredSymbol(static_kind, std::move(name), linkage, visibility, std::move(type)) {}
+    HIRVarSymbol(std::string name, Linkage::Type linkage, Visibility::Type visibility,
+                     std::shared_ptr<HIRType> type)
+        : HIRSymbol(static_kind, std::move(name), linkage, visibility, std::move(type)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {

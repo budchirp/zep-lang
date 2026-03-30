@@ -6,7 +6,7 @@ module;
 #include <string>
 #include <vector>
 
-export module zep.sema.type;
+export module zep.frontend.sema.type;
 
 import zep.common.logger;
 

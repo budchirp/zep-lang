@@ -5,16 +5,16 @@ module;
 #include <string>
 #include <vector>
 
-export module zep.lowerer.ast.node;
+export module zep.hir.ir;
 
 import zep.common.position;
 import zep.common.logger;
-import zep.sema.kinds;
-export import zep.lowerer.sema.type;
-export import zep.lowerer.sema.scope.symbol;
-export import zep.lowerer.sema.scope;
+import zep.frontend.sema.kinds;
+export import zep.hir.sema.type;
+export import zep.hir.sema.scope.symbol;
+export import zep.hir.sema.scope;
 
-export class LoweredNodeKind {
+export class HIRNodeKind {
   public:
     enum class Type : std::uint8_t {
         NumberLiteral,
@@ -37,22 +37,21 @@ export class LoweredNodeKind {
     };
 };
 
-export class LoweredNode {
+export class HIRNode {
   private:
   protected:
-    explicit LoweredNode(LoweredNodeKind::Type kind, Position position)
-        : kind(kind), position(position) {}
+    explicit HIRNode(HIRNodeKind::Type kind, Position position) : kind(kind), position(position) {}
 
-    LoweredNode(const LoweredNode&) = delete;
-    LoweredNode& operator=(const LoweredNode&) = delete;
-    LoweredNode(LoweredNode&&) = default;
-    LoweredNode& operator=(LoweredNode&&) = default;
+    HIRNode(const HIRNode&) = delete;
+    HIRNode& operator=(const HIRNode&) = delete;
+    HIRNode(HIRNode&&) = default;
+    HIRNode& operator=(HIRNode&&) = default;
 
   public:
-    LoweredNodeKind::Type kind;
+    HIRNodeKind::Type kind;
     Position position;
 
-    virtual ~LoweredNode() = default;
+    virtual ~HIRNode() = default;
 
     virtual void dump(int depth, bool with_indent = true, bool trailing_newline = true) const = 0;
 
@@ -73,44 +72,44 @@ export class LoweredNode {
     }
 };
 
-export class LoweredExpression : public LoweredNode {
+export class HIRExpression : public HIRNode {
   private:
-    std::shared_ptr<LoweredType> type;
+    std::shared_ptr<HIRType> type;
 
   public:
-    using LoweredNode::LoweredNode;
+    using HIRNode::HIRNode;
 
-    void set_type(std::shared_ptr<LoweredType> type) { this->type = std::move(type); }
-    std::shared_ptr<LoweredType> get_type() const { return type; }
+    void set_type(std::shared_ptr<HIRType> type) { this->type = std::move(type); }
+    std::shared_ptr<HIRType> get_type() const { return type; }
 };
 
-export class LoweredStatement : public LoweredNode {
+export class HIRStatement : public HIRNode {
   private:
-    std::shared_ptr<LoweredType> type;
+    std::shared_ptr<HIRType> type;
 
   public:
-    using LoweredNode::LoweredNode;
+    using HIRNode::HIRNode;
 
-    void set_type(std::shared_ptr<LoweredType> type) { this->type = std::move(type); }
-    std::shared_ptr<LoweredType> get_type() const { return type; }
+    void set_type(std::shared_ptr<HIRType> type) { this->type = std::move(type); }
+    std::shared_ptr<HIRType> get_type() const { return type; }
 };
 
-export class LoweredBlockStatement : public LoweredStatement {
+export class HIRBlockStatement : public HIRStatement {
   public:
-    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::BlockStatement;
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::BlockStatement;
 
-    std::vector<std::unique_ptr<LoweredStatement>> statements;
+    std::vector<std::unique_ptr<HIRStatement>> statements;
 
-    explicit LoweredBlockStatement(Position position,
-                                   std::vector<std::unique_ptr<LoweredStatement>> statements)
-        : LoweredStatement(static_kind, position), statements(std::move(statements)) {}
+    explicit HIRBlockStatement(Position position,
+                               std::vector<std::unique_ptr<HIRStatement>> statements)
+        : HIRStatement(static_kind, position), statements(std::move(statements)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
 
-        Logger::print("LoweredBlockStatement(\n");
+        Logger::print("HIRBlockStatement(\n");
         Logger::print_indent(depth + 1);
         Logger::print("statements: [");
 
@@ -135,21 +134,21 @@ export class LoweredBlockStatement : public LoweredStatement {
     }
 };
 
-export class LoweredNumberLiteral : public LoweredExpression {
+export class HIRNumberLiteral : public HIRExpression {
   public:
-    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::NumberLiteral;
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::NumberLiteral;
 
     std::string value;
 
-    LoweredNumberLiteral(Position position, std::string value)
-        : LoweredExpression(static_kind, position), value(std::move(value)) {}
+    HIRNumberLiteral(Position position, std::string value)
+        : HIRExpression(static_kind, position), value(std::move(value)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
 
-        Logger::print("LoweredNumberLiteral(value: \"", value, "\")");
+        Logger::print("HIRNumberLiteral(value: \"", value, "\")");
 
         if (trailing_newline) {
             Logger::print("\n");
@@ -157,21 +156,21 @@ export class LoweredNumberLiteral : public LoweredExpression {
     }
 };
 
-export class LoweredFloatLiteral : public LoweredExpression {
+export class HIRFloatLiteral : public HIRExpression {
   public:
-    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::FloatLiteral;
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::FloatLiteral;
 
     std::string value;
 
-    LoweredFloatLiteral(Position position, std::string value)
-        : LoweredExpression(static_kind, position), value(std::move(value)) {}
+    HIRFloatLiteral(Position position, std::string value)
+        : HIRExpression(static_kind, position), value(std::move(value)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
 
-        Logger::print("LoweredFloatLiteral(value: \"", value, "\")");
+        Logger::print("HIRFloatLiteral(value: \"", value, "\")");
 
         if (trailing_newline) {
             Logger::print("\n");
@@ -179,21 +178,21 @@ export class LoweredFloatLiteral : public LoweredExpression {
     }
 };
 
-export class LoweredStringLiteral : public LoweredExpression {
+export class HIRStringLiteral : public HIRExpression {
   public:
-    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::StringLiteral;
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::StringLiteral;
 
     std::string value;
 
-    LoweredStringLiteral(Position position, std::string value)
-        : LoweredExpression(static_kind, position), value(std::move(value)) {}
+    HIRStringLiteral(Position position, std::string value)
+        : HIRExpression(static_kind, position), value(std::move(value)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
 
-        Logger::print("LoweredStringLiteral(value: \"", value, "\")");
+        Logger::print("HIRStringLiteral(value: \"", value, "\")");
 
         if (trailing_newline) {
             Logger::print("\n");
@@ -201,21 +200,21 @@ export class LoweredStringLiteral : public LoweredExpression {
     }
 };
 
-export class LoweredBooleanLiteral : public LoweredExpression {
+export class HIRBooleanLiteral : public HIRExpression {
   public:
-    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::BooleanLiteral;
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::BooleanLiteral;
 
     bool value;
 
-    LoweredBooleanLiteral(Position position, bool value)
-        : LoweredExpression(static_kind, position), value(value) {}
+    HIRBooleanLiteral(Position position, bool value)
+        : HIRExpression(static_kind, position), value(value) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
 
-        Logger::print("LoweredBooleanLiteral(value: ", (value ? "true" : "false"), ")");
+        Logger::print("HIRBooleanLiteral(value: ", (value ? "true" : "false"), ")");
 
         if (trailing_newline) {
             Logger::print("\n");
@@ -223,22 +222,21 @@ export class LoweredBooleanLiteral : public LoweredExpression {
     }
 };
 
-export class LoweredIdentifierExpression : public LoweredExpression {
+export class HIRIdentifierExpression : public HIRExpression {
   public:
-    static constexpr LoweredNodeKind::Type static_kind =
-        LoweredNodeKind::Type::IdentifierExpression;
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::IdentifierExpression;
 
     std::string name;
 
-    LoweredIdentifierExpression(Position position, std::string name)
-        : LoweredExpression(static_kind, position), name(std::move(name)) {}
+    HIRIdentifierExpression(Position position, std::string name)
+        : HIRExpression(static_kind, position), name(std::move(name)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
 
-        Logger::print("LoweredIdentifierExpression(name: \"", name, "\")");
+        Logger::print("HIRIdentifierExpression(name: \"", name, "\")");
 
         if (trailing_newline) {
             Logger::print("\n");
@@ -246,7 +244,7 @@ export class LoweredIdentifierExpression : public LoweredExpression {
     }
 };
 
-export class LoweredBinaryOperator {
+export class HIRBinaryOperator {
   public:
     enum class Type : std::uint8_t {
         Plus,
@@ -267,52 +265,51 @@ export class LoweredBinaryOperator {
     };
 };
 
-export class LoweredBinaryExpression : public LoweredExpression {
+export class HIRBinaryExpression : public HIRExpression {
   public:
-    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::BinaryExpression;
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::BinaryExpression;
 
-    std::unique_ptr<LoweredExpression> left;
-    LoweredBinaryOperator::Type op;
-    std::unique_ptr<LoweredExpression> right;
+    std::unique_ptr<HIRExpression> left;
+    HIRBinaryOperator::Type op;
+    std::unique_ptr<HIRExpression> right;
 
-    LoweredBinaryExpression(Position position, std::unique_ptr<LoweredExpression> left,
-                            LoweredBinaryOperator::Type op,
-                            std::unique_ptr<LoweredExpression> right)
-        : LoweredExpression(static_kind, position), left(std::move(left)), op(op),
+    HIRBinaryExpression(Position position, std::unique_ptr<HIRExpression> left,
+                        HIRBinaryOperator::Type op, std::unique_ptr<HIRExpression> right)
+        : HIRExpression(static_kind, position), left(std::move(left)), op(op),
           right(std::move(right)) {}
 
   private:
-    static std::string operator_string(LoweredBinaryOperator::Type binary_op) {
+    static std::string operator_string(HIRBinaryOperator::Type binary_op) {
         switch (binary_op) {
-        case LoweredBinaryOperator::Type::Plus:
+        case HIRBinaryOperator::Type::Plus:
             return "+";
-        case LoweredBinaryOperator::Type::Minus:
+        case HIRBinaryOperator::Type::Minus:
             return "-";
-        case LoweredBinaryOperator::Type::Asterisk:
+        case HIRBinaryOperator::Type::Asterisk:
             return "*";
-        case LoweredBinaryOperator::Type::Divide:
+        case HIRBinaryOperator::Type::Divide:
             return "/";
-        case LoweredBinaryOperator::Type::Modulo:
+        case HIRBinaryOperator::Type::Modulo:
             return "%";
-        case LoweredBinaryOperator::Type::Equals:
+        case HIRBinaryOperator::Type::Equals:
             return "==";
-        case LoweredBinaryOperator::Type::NotEquals:
+        case HIRBinaryOperator::Type::NotEquals:
             return "!=";
-        case LoweredBinaryOperator::Type::LessThan:
+        case HIRBinaryOperator::Type::LessThan:
             return "<";
-        case LoweredBinaryOperator::Type::GreaterThan:
+        case HIRBinaryOperator::Type::GreaterThan:
             return ">";
-        case LoweredBinaryOperator::Type::LessEqual:
+        case HIRBinaryOperator::Type::LessEqual:
             return "<=";
-        case LoweredBinaryOperator::Type::GreaterEqual:
+        case HIRBinaryOperator::Type::GreaterEqual:
             return ">=";
-        case LoweredBinaryOperator::Type::And:
+        case HIRBinaryOperator::Type::And:
             return "&&";
-        case LoweredBinaryOperator::Type::Or:
+        case HIRBinaryOperator::Type::Or:
             return "||";
-        case LoweredBinaryOperator::Type::As:
+        case HIRBinaryOperator::Type::As:
             return "as";
-        case LoweredBinaryOperator::Type::Is:
+        case HIRBinaryOperator::Type::Is:
             return "is";
         }
         return "?";
@@ -324,7 +321,7 @@ export class LoweredBinaryExpression : public LoweredExpression {
             Logger::print_indent(depth);
         }
 
-        Logger::print("LoweredBinaryExpression(\n");
+        Logger::print("HIRBinaryExpression(\n");
         Logger::print_indent(depth + 1);
         Logger::print("left: ");
         left->dump(depth + 1, false, false);
@@ -347,7 +344,7 @@ export class LoweredBinaryExpression : public LoweredExpression {
     }
 };
 
-export class LoweredUnaryOperator {
+export class HIRUnaryOperator {
   public:
     enum class Type : std::uint8_t {
         Plus,
@@ -358,29 +355,29 @@ export class LoweredUnaryOperator {
     };
 };
 
-export class LoweredUnaryExpression : public LoweredExpression {
+export class HIRUnaryExpression : public HIRExpression {
   public:
-    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::UnaryExpression;
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::UnaryExpression;
 
-    LoweredUnaryOperator::Type op;
-    std::unique_ptr<LoweredExpression> operand;
+    HIRUnaryOperator::Type op;
+    std::unique_ptr<HIRExpression> operand;
 
-    LoweredUnaryExpression(Position position, LoweredUnaryOperator::Type op,
-                           std::unique_ptr<LoweredExpression> operand)
-        : LoweredExpression(static_kind, position), op(op), operand(std::move(operand)) {}
+    HIRUnaryExpression(Position position, HIRUnaryOperator::Type op,
+                       std::unique_ptr<HIRExpression> operand)
+        : HIRExpression(static_kind, position), op(op), operand(std::move(operand)) {}
 
   private:
-    static std::string operator_string(LoweredUnaryOperator::Type unary_op) {
+    static std::string operator_string(HIRUnaryOperator::Type unary_op) {
         switch (unary_op) {
-        case LoweredUnaryOperator::Type::Plus:
+        case HIRUnaryOperator::Type::Plus:
             return "+";
-        case LoweredUnaryOperator::Type::Minus:
+        case HIRUnaryOperator::Type::Minus:
             return "-";
-        case LoweredUnaryOperator::Type::Not:
+        case HIRUnaryOperator::Type::Not:
             return "!";
-        case LoweredUnaryOperator::Type::Dereference:
+        case HIRUnaryOperator::Type::Dereference:
             return "*";
-        case LoweredUnaryOperator::Type::AddressOf:
+        case HIRUnaryOperator::Type::AddressOf:
             return "&";
         }
         return "?";
@@ -392,7 +389,7 @@ export class LoweredUnaryExpression : public LoweredExpression {
             Logger::print_indent(depth);
         }
 
-        Logger::print("LoweredUnaryExpression(\n");
+        Logger::print("HIRUnaryExpression(\n");
         Logger::print_indent(depth + 1);
         Logger::print("op: ", operator_string(op), ",\n");
 
@@ -410,16 +407,16 @@ export class LoweredUnaryExpression : public LoweredExpression {
     }
 };
 
-export class LoweredCallExpression : public LoweredExpression {
+export class HIRCallExpression : public HIRExpression {
   public:
-    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::CallExpression;
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::CallExpression;
 
-    std::unique_ptr<LoweredExpression> callee;
-    std::vector<std::unique_ptr<LoweredExpression>> arguments;
+    std::unique_ptr<HIRExpression> callee;
+    std::vector<std::unique_ptr<HIRExpression>> arguments;
 
-    LoweredCallExpression(Position position, std::unique_ptr<LoweredExpression> callee,
-                          std::vector<std::unique_ptr<LoweredExpression>> arguments)
-        : LoweredExpression(static_kind, position), callee(std::move(callee)),
+    HIRCallExpression(Position position, std::unique_ptr<HIRExpression> callee,
+                      std::vector<std::unique_ptr<HIRExpression>> arguments)
+        : HIRExpression(static_kind, position), callee(std::move(callee)),
           arguments(std::move(arguments)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
@@ -427,7 +424,7 @@ export class LoweredCallExpression : public LoweredExpression {
             Logger::print_indent(depth);
         }
 
-        Logger::print("LoweredCallExpression(\n");
+        Logger::print("HIRCallExpression(\n");
         Logger::print_indent(depth + 1);
         Logger::print("callee: ");
         callee->dump(depth + 1, false, false);
@@ -457,24 +454,24 @@ export class LoweredCallExpression : public LoweredExpression {
     }
 };
 
-export class LoweredIndexExpression : public LoweredExpression {
+export class HIRIndexExpression : public HIRExpression {
   public:
-    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::IndexExpression;
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::IndexExpression;
 
-    std::unique_ptr<LoweredExpression> object;
-    std::unique_ptr<LoweredExpression> index;
+    std::unique_ptr<HIRExpression> object;
+    std::unique_ptr<HIRExpression> index;
 
-    LoweredIndexExpression(Position position, std::unique_ptr<LoweredExpression> object,
-                           std::unique_ptr<LoweredExpression> index)
-        : LoweredExpression(static_kind, position), object(std::move(object)),
-          index(std::move(index)) {}
+    HIRIndexExpression(Position position, std::unique_ptr<HIRExpression> object,
+                       std::unique_ptr<HIRExpression> index)
+        : HIRExpression(static_kind, position), object(std::move(object)), index(std::move(index)) {
+    }
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
 
-        Logger::print("LoweredIndexExpression(\n");
+        Logger::print("HIRIndexExpression(\n");
         Logger::print_indent(depth + 1);
         Logger::print("object: ");
         object->dump(depth + 1, false, false);
@@ -494,16 +491,16 @@ export class LoweredIndexExpression : public LoweredExpression {
     }
 };
 
-export class LoweredMemberExpression : public LoweredExpression {
+export class HIRMemberExpression : public HIRExpression {
   public:
-    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::MemberExpression;
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::MemberExpression;
 
-    std::unique_ptr<LoweredExpression> object;
+    std::unique_ptr<HIRExpression> object;
     std::string member;
 
-    LoweredMemberExpression(Position position, std::unique_ptr<LoweredExpression> object,
-                            std::string member)
-        : LoweredExpression(static_kind, position), object(std::move(object)),
+    HIRMemberExpression(Position position, std::unique_ptr<HIRExpression> object,
+                        std::string member)
+        : HIRExpression(static_kind, position), object(std::move(object)),
           member(std::move(member)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
@@ -511,7 +508,7 @@ export class LoweredMemberExpression : public LoweredExpression {
             Logger::print_indent(depth);
         }
 
-        Logger::print("LoweredMemberExpression(\n");
+        Logger::print("HIRMemberExpression(\n");
         Logger::print_indent(depth + 1);
         Logger::print("object: ");
         object->dump(depth + 1, false, false);
@@ -529,24 +526,24 @@ export class LoweredMemberExpression : public LoweredExpression {
     }
 };
 
-export class LoweredAssignExpression : public LoweredExpression {
+export class HIRAssignExpression : public HIRExpression {
   public:
-    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::AssignExpression;
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::AssignExpression;
 
-    std::unique_ptr<LoweredExpression> target;
-    std::unique_ptr<LoweredExpression> value;
+    std::unique_ptr<HIRExpression> target;
+    std::unique_ptr<HIRExpression> value;
 
-    LoweredAssignExpression(Position position, std::unique_ptr<LoweredExpression> target,
-                            std::unique_ptr<LoweredExpression> value)
-        : LoweredExpression(static_kind, position), target(std::move(target)),
-          value(std::move(value)) {}
+    HIRAssignExpression(Position position, std::unique_ptr<HIRExpression> target,
+                        std::unique_ptr<HIRExpression> value)
+        : HIRExpression(static_kind, position), target(std::move(target)), value(std::move(value)) {
+    }
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
 
-        Logger::print("LoweredAssignExpression(\n");
+        Logger::print("HIRAssignExpression(\n");
         Logger::print_indent(depth + 1);
         Logger::print("target: ");
         target->dump(depth + 1, false, false);
@@ -566,34 +563,32 @@ export class LoweredAssignExpression : public LoweredExpression {
     }
 };
 
-export class LoweredStructLiteralField {
+export class HIRStructLiteralField {
   public:
     std::string name;
-    std::unique_ptr<LoweredExpression> value;
+    std::unique_ptr<HIRExpression> value;
 
-    LoweredStructLiteralField(std::string name, std::unique_ptr<LoweredExpression> value)
+    HIRStructLiteralField(std::string name, std::unique_ptr<HIRExpression> value)
         : name(std::move(name)), value(std::move(value)) {}
 };
 
-export class LoweredStructLiteralExpression : public LoweredExpression {
+export class HIRStructLiteralExpression : public HIRExpression {
   public:
-    static constexpr LoweredNodeKind::Type static_kind =
-        LoweredNodeKind::Type::StructLiteralExpression;
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::StructLiteralExpression;
 
     std::string name;
-    std::vector<LoweredStructLiteralField> fields;
+    std::vector<HIRStructLiteralField> fields;
 
-    LoweredStructLiteralExpression(Position position, std::string name,
-                                   std::vector<LoweredStructLiteralField> fields)
-        : LoweredExpression(static_kind, position), name(std::move(name)),
-          fields(std::move(fields)) {}
+    HIRStructLiteralExpression(Position position, std::string name,
+                               std::vector<HIRStructLiteralField> fields)
+        : HIRExpression(static_kind, position), name(std::move(name)), fields(std::move(fields)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
 
-        Logger::print("LoweredStructLiteralExpression(\n");
+        Logger::print("HIRStructLiteralExpression(\n");
         Logger::print_indent(depth + 1);
         Logger::print("name: \"", name, "\",\n");
 
@@ -606,7 +601,7 @@ export class LoweredStructLiteralExpression : public LoweredExpression {
             Logger::print("\n");
             for (const auto& field : fields) {
                 Logger::print_indent(depth + 2);
-                Logger::print("LoweredStructLiteralField(\n");
+                Logger::print("HIRStructLiteralField(\n");
                 Logger::print_indent(depth + 3);
                 Logger::print("name: \"", field.name, "\",\n");
                 Logger::print_indent(depth + 3);
@@ -629,18 +624,18 @@ export class LoweredStructLiteralExpression : public LoweredExpression {
     }
 };
 
-export class LoweredIfExpression : public LoweredExpression {
+export class HIRIfExpression : public HIRExpression {
   public:
-    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::IfExpression;
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::IfExpression;
 
-    std::unique_ptr<LoweredExpression> condition;
-    std::unique_ptr<LoweredStatement> then_branch;
-    std::unique_ptr<LoweredStatement> else_branch;
+    std::unique_ptr<HIRExpression> condition;
+    std::unique_ptr<HIRStatement> then_branch;
+    std::unique_ptr<HIRStatement> else_branch;
 
-    LoweredIfExpression(Position position, std::unique_ptr<LoweredExpression> condition,
-                        std::unique_ptr<LoweredStatement> then_branch,
-                        std::unique_ptr<LoweredStatement> else_branch)
-        : LoweredExpression(static_kind, position), condition(std::move(condition)),
+    HIRIfExpression(Position position, std::unique_ptr<HIRExpression> condition,
+                    std::unique_ptr<HIRStatement> then_branch,
+                    std::unique_ptr<HIRStatement> else_branch)
+        : HIRExpression(static_kind, position), condition(std::move(condition)),
           then_branch(std::move(then_branch)), else_branch(std::move(else_branch)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
@@ -648,7 +643,7 @@ export class LoweredIfExpression : public LoweredExpression {
             Logger::print_indent(depth);
         }
 
-        Logger::print("LoweredIfExpression(\n");
+        Logger::print("HIRIfExpression(\n");
         Logger::print_indent(depth + 1);
         Logger::print("condition: ");
         condition->dump(depth + 1, false, false);
@@ -677,22 +672,21 @@ export class LoweredIfExpression : public LoweredExpression {
     }
 };
 
-export class LoweredExpressionStatement : public LoweredStatement {
+export class HIRExpressionStatement : public HIRStatement {
   public:
-    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::ExpressionStatement;
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::ExpressionStatement;
 
-    std::unique_ptr<LoweredExpression> expression;
+    std::unique_ptr<HIRExpression> expression;
 
-    explicit LoweredExpressionStatement(Position position,
-                                        std::unique_ptr<LoweredExpression> expression)
-        : LoweredStatement(static_kind, position), expression(std::move(expression)) {}
+    explicit HIRExpressionStatement(Position position, std::unique_ptr<HIRExpression> expression)
+        : HIRStatement(static_kind, position), expression(std::move(expression)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
 
-        Logger::print("LoweredExpressionStatement(\n");
+        Logger::print("HIRExpressionStatement(\n");
         Logger::print_indent(depth + 1);
         Logger::print("expression: ");
         expression->dump(depth + 1, false, false);
@@ -707,21 +701,21 @@ export class LoweredExpressionStatement : public LoweredStatement {
     }
 };
 
-export class LoweredReturnStatement : public LoweredStatement {
+export class HIRReturnStatement : public HIRStatement {
   public:
-    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::ReturnStatement;
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::ReturnStatement;
 
-    std::unique_ptr<LoweredExpression> value;
+    std::unique_ptr<HIRExpression> value;
 
-    LoweredReturnStatement(Position position, std::unique_ptr<LoweredExpression> value)
-        : LoweredStatement(static_kind, position), value(std::move(value)) {}
+    HIRReturnStatement(Position position, std::unique_ptr<HIRExpression> value)
+        : HIRStatement(static_kind, position), value(std::move(value)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
 
-        Logger::print("LoweredReturnStatement(\n");
+        Logger::print("HIRReturnStatement(\n");
         Logger::print_indent(depth + 1);
         Logger::print("value: ");
         if (value != nullptr) {
@@ -740,30 +734,28 @@ export class LoweredReturnStatement : public LoweredStatement {
     }
 };
 
-export class LoweredVarDeclaration : public LoweredStatement {
+export class HIRVarDeclaration : public HIRStatement {
   public:
-    static constexpr LoweredNodeKind::Type static_kind = LoweredNodeKind::Type::VarDeclaration;
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::VarDeclaration;
 
     Visibility::Type visibility;
     StorageKind::Type storage_kind;
     std::string name;
-    std::shared_ptr<LoweredType> type;
-    std::unique_ptr<LoweredExpression> initializer;
+    std::shared_ptr<HIRType> type;
+    std::unique_ptr<HIRExpression> initializer;
 
-    LoweredVarDeclaration(Position position, Visibility::Type visibility,
-                          StorageKind::Type storage_kind, std::string name,
-                          std::shared_ptr<LoweredType> type,
-                          std::unique_ptr<LoweredExpression> initializer)
-        : LoweredStatement(static_kind, position), visibility(visibility),
-          storage_kind(storage_kind), name(std::move(name)), type(std::move(type)),
-          initializer(std::move(initializer)) {}
+    HIRVarDeclaration(Position position, Visibility::Type visibility,
+                      StorageKind::Type storage_kind, std::string name,
+                      std::shared_ptr<HIRType> type, std::unique_ptr<HIRExpression> initializer)
+        : HIRStatement(static_kind, position), visibility(visibility), storage_kind(storage_kind),
+          name(std::move(name)), type(std::move(type)), initializer(std::move(initializer)) {}
 
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
 
-        Logger::print("LoweredVarDeclaration(\n");
+        Logger::print("HIRVarDeclaration(\n");
         Logger::print_indent(depth + 1);
         Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
 
@@ -794,29 +786,29 @@ export class LoweredVarDeclaration : public LoweredStatement {
     }
 };
 
-export class LoweredFunctionDeclaration {
+export class HIRFunctionDeclaration {
   private:
     Position position;
 
   public:
     Visibility::Type visibility;
     std::string name;
-    std::vector<LoweredParameter> parameters;
-    std::shared_ptr<LoweredType> return_type;
-    std::unique_ptr<LoweredBlockStatement> body;
+    std::vector<HIRParameter> parameters;
+    std::shared_ptr<HIRType> return_type;
+    std::unique_ptr<HIRBlockStatement> body;
     bool variadic;
 
-    LoweredFunctionDeclaration(Position position, Visibility::Type visibility, std::string name,
-                               std::vector<LoweredParameter> parameters,
-                               std::shared_ptr<LoweredType> return_type,
-                               std::unique_ptr<LoweredBlockStatement> body, bool variadic)
+    HIRFunctionDeclaration(Position position, Visibility::Type visibility, std::string name,
+                           std::vector<HIRParameter> parameters,
+                           std::shared_ptr<HIRType> return_type,
+                           std::unique_ptr<HIRBlockStatement> body, bool variadic)
         : position(position), visibility(visibility), name(std::move(name)),
           parameters(std::move(parameters)), return_type(std::move(return_type)),
           body(std::move(body)), variadic(variadic) {}
 
     void dump(int depth = 0) const {
         Logger::print_indent(depth);
-        Logger::print("LoweredFunctionDeclaration(\n");
+        Logger::print("HIRFunctionDeclaration(\n");
         Logger::print_indent(depth + 1);
         Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
 
@@ -854,17 +846,17 @@ export class LoweredFunctionDeclaration {
     }
 };
 
-export class LoweredProgram {
+export class HIRProgram {
   public:
-    std::unique_ptr<LoweredScope> global_scope;
-    std::vector<std::unique_ptr<LoweredFunctionDeclaration>> functions;
+    std::unique_ptr<HIRScope> global_scope;
+    std::vector<std::unique_ptr<HIRFunctionDeclaration>> functions;
 
-    LoweredProgram(std::unique_ptr<LoweredScope> global_scope,
-                   std::vector<std::unique_ptr<LoweredFunctionDeclaration>> functions)
+    HIRProgram(std::unique_ptr<HIRScope> global_scope,
+               std::vector<std::unique_ptr<HIRFunctionDeclaration>> functions)
         : global_scope(std::move(global_scope)), functions(std::move(functions)) {}
 
     void dump() const {
-        Logger::print("LoweredProgram(\n");
+        Logger::print("HIRProgram(\n");
 
         Logger::print_indent(1);
         Logger::print("global_scope: ");

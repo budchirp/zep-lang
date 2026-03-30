@@ -8,4 +8,4 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(argman)
 
-zep_add_executable(zep DEPENDS zep_compiler zep_common argman)
+zep_add_executable(zep DEPENDS zep_driver zep_common argman)

@@ -9,8 +9,8 @@ export module zep.frontend.ast;
 
 import zep.common.position;
 import zep.common.logger;
-import zep.sema.type;
-export import zep.sema.kinds;
+import zep.frontend.sema.type;
+export import zep.frontend.sema.kinds;
 
 export template <typename T>
 class Visitor;

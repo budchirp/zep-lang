@@ -4,9 +4,9 @@ module;
 #include <string>
 #include <vector>
 
-export module zep.lowerer.mangler;
+export module zep.frontend.sema.mangler;
 
-import zep.sema.type;
+import zep.frontend.sema.type;
 
 export class NameMangler {
   private:

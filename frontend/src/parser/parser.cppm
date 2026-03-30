@@ -16,7 +16,7 @@ import zep.frontend.lexer;
 import zep.frontend.parser.precedence;
 import zep.common.position;
 import zep.common.logger;
-import zep.sema.type;
+import zep.frontend.sema.type;
 
 export class Parser {
   private:
