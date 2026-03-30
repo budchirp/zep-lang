@@ -4,7 +4,7 @@ module;
 #include <string>
 #include <vector>
 
-export module zep.checker.generic_resolver;
+export module zep.frontend.sema.checker.generic_resolver;
 
 import zep.common.position;
 import zep.frontend.sema.type;

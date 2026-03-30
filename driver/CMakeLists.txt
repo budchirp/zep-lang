@@ -1,1 +1,1 @@
-zep_add_module(zep_driver DEPENDS zep_common zep_frontend zep_checker zep_hir zep_codegen)
+zep_add_module(zep_driver DEPENDS zep_common zep_frontend zep_hir zep_codegen)

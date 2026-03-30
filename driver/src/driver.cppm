@@ -10,7 +10,7 @@ import zep.common.source;
 import zep.common.logger;
 import zep.frontend.lexer;
 import zep.frontend.parser;
-import zep.checker.type_checker;
+import zep.frontend.sema.checker.type_checker;
 import zep.frontend.sema.context;
 import zep.hir;
 

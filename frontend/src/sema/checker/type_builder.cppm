@@ -3,7 +3,7 @@ module;
 #include <memory>
 #include <vector>
 
-export module zep.checker.type_builder;
+export module zep.frontend.sema.checker.type_builder;
 
 import zep.frontend.sema.type;
 import zep.frontend.ast;

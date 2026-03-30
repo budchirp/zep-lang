@@ -5,7 +5,7 @@ module;
 #include <unordered_map>
 #include <vector>
 
-export module zep.checker.struct_resolver;
+export module zep.frontend.sema.checker.struct_resolver;
 
 import zep.common.position;
 import zep.frontend.sema.type;
@@ -13,7 +13,7 @@ import zep.frontend.ast;
 import zep.common.logger.diagnostic;
 import zep.frontend.sema.type.type_context;
 import zep.frontend.sema.context;
-import zep.checker.generic_resolver;
+import zep.frontend.sema.checker.generic_resolver;
 
 export class StructResolver {
   private:

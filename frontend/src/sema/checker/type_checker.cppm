@@ -5,7 +5,7 @@ module;
 #include <unordered_map>
 #include <vector>
 
-export module zep.checker.type_checker;
+export module zep.frontend.sema.checker.type_checker;
 
 import zep.common.position;
 import zep.frontend.sema.type;
@@ -17,10 +17,10 @@ import zep.frontend.sema.context;
 import zep.frontend.sema.env;
 import zep.frontend.sema.symbol;
 import zep.frontend.sema.kinds;
-import zep.checker.type_builder;
-import zep.checker.call_resolver;
-import zep.checker.generic_resolver;
-import zep.checker.struct_resolver;
+import zep.frontend.sema.checker.type_builder;
+import zep.frontend.sema.checker.call_resolver;
+import zep.frontend.sema.checker.generic_resolver;
+import zep.frontend.sema.checker.struct_resolver;
 export class TypeChecker : public Visitor<void> {
   private:
     Context& context;
@@ -28,60 +28,98 @@ export class TypeChecker : public Visitor<void> {
 
     const FunctionType* current_function = nullptr;
 
-    void register_declarations(Program& program) {
-        TypeBuilder type_builder(*this);
+    void define_struct(StructDeclaration& node) {
+        if (node.get_type() != nullptr) {
+            return;
+        }
 
+        TypeBuilder type_builder(*this);
+        auto type = type_builder.build_struct(node);
+        node.set_type(type);
+
+        context.env.current_scope->define_type(node.name, std::move(type));
+    }
+
+    void define_function(FunctionDeclaration& node) {
+        if (node.get_type() != nullptr) {
+            return;
+        }
+
+        TypeBuilder type_builder(*this);
+        auto type = type_builder.build_function(*node.prototype);
+        node.set_type(type);
+
+        if (!context.env.current_scope->define_function(
+                node.prototype->name,
+                std::make_unique<FunctionSymbol>(node.prototype->name, node.position,
+                                                 node.visibility, type))) {
+            context.diagnostics.add_error(node.position,
+                                          "redefinition of function '" + node.prototype->name +
+                                              "' with same parameter types");
+        }
+    }
+
+    void define_extern_function(ExternFunctionDeclaration& node) {
+        if (node.get_type() != nullptr) {
+            return;
+        }
+
+        TypeBuilder type_builder(*this);
+        auto type = type_builder.build_function(*node.prototype);
+        node.set_type(type);
+
+        context.env.current_scope->define_function(
+            node.prototype->name,
+            std::make_unique<FunctionSymbol>(node.prototype->name, node.position, node.visibility,
+                                             type));
+    }
+
+    void define_variable(VarDeclaration& node) {
+        if (node.get_type() != nullptr) {
+            return;
+        }
+
+        if (node.type) {
+            visit(*node.type);
+        }
+
+        auto type = node.type ? node.type->get_type() : nullptr;
+        node.set_type(type);
+
+        context.env.current_scope->define_var(
+            node.name, std::make_unique<VarSymbol>(node.name, node.position, node.visibility,
+                                                   node.storage_kind, type));
+    }
+
+    void define_extern_variable(ExternVarDeclaration& node) {
+        if (node.get_type() != nullptr) {
+            return;
+        }
+
+        if (node.type) {
+            visit(*node.type);
+        }
+
+        auto type = node.type ? node.type->get_type() : nullptr;
+        node.set_type(type);
+
+        context.env.current_scope->define_var(
+            node.name, std::make_unique<VarSymbol>(node.name, node.position, node.visibility,
+                                                   StorageKind::Type::Var, type));
+    }
+
+    void register_declarations(Program& program) {
         for (auto& statement : program.statements) {
             if (auto* node = statement->as<StructDeclaration>()) {
-                auto type = type_builder.build_struct(*node);
-                node->set_type(type);
-
-                context.env.current_scope->define_type(node->name, std::move(type));
+                define_struct(*node);
             } else if (auto* node = statement->as<VarDeclaration>()) {
-                if (node->type) {
-                    visit(*node->type);
-                }
-
-                auto type = node->type ? node->type->get_type() : nullptr;
-                node->set_type(type);
-
-                context.env.current_scope->define_var(
-                    node->name,
-                    std::make_unique<VarSymbol>(node->name, node->position, node->visibility,
-                                                node->storage_kind, std::move(type)));
+                define_variable(*node);
             } else if (auto* node = statement->as<FunctionDeclaration>()) {
-                auto& proto = *node->prototype;
-
-                auto type = type_builder.build_function(proto);
-                node->set_type(type);
-
-                if (!context.env.current_scope->define_function(
-                        proto.name,
-                        std::make_unique<FunctionSymbol>(proto.name, node->position,
-                                                         node->visibility, std::move(type)))) {
-                    context.diagnostics.add_error(node->position,
-                                                  "redefinition of function '" + proto.name +
-                                                      "' with same parameter types");
-                }
+                define_function(*node);
             } else if (auto* node = statement->as<ExternFunctionDeclaration>()) {
-                auto& proto = *node->prototype;
-
-                auto type = type_builder.build_function(proto);
-                node->set_type(type);
-
-                context.env.current_scope->define_function(
-                    proto.name, std::make_unique<FunctionSymbol>(
-                                    proto.name, node->position, node->visibility, std::move(type)));
+                define_extern_function(*node);
             } else if (auto* node = statement->as<ExternVarDeclaration>()) {
-                visit(*node->type);
-
-                auto type = node->type ? node->type->get_type() : nullptr;
-                node->set_type(type);
-
-                context.env.current_scope->define_var(
-                    node->name,
-                    std::make_unique<VarSymbol>(node->name, node->position, node->visibility,
-                                                StorageKind::Type::Var, std::move(type)));
+                define_extern_variable(*node);
             }
         }
     }
@@ -100,8 +138,10 @@ export class TypeChecker : public Visitor<void> {
         case Expression::Kind::Type::UnaryExpression: {
             if (expression.as<UnaryExpression>()->op == UnaryOperator::Type::Dereference) {
                 auto type = expression.as<UnaryExpression>()->operand->get_type();
-                if (auto* pointer = type->as<PointerType>()) {
-                    return pointer->is_mutable;
+                if (type != nullptr) {
+                    if (auto* pointer = type->as<PointerType>()) {
+                        return pointer->is_mutable;
+                    }
                 }
             }
 
@@ -627,15 +667,7 @@ export class TypeChecker : public Visitor<void> {
     }
 
     void visit(StructDeclaration& node) override {
-        if (context.env.current_scope->lookup_type(node.name) != nullptr) {
-            return;
-        }
-
-        TypeBuilder type_builder(*this);
-        auto type = type_builder.build_struct(node);
-        node.set_type(type);
-
-        context.env.current_scope->define_type(node.name, type);
+        define_struct(node);
     }
 
     void visit(VarDeclaration& node) override {
@@ -677,6 +709,7 @@ export class TypeChecker : public Visitor<void> {
                 context.diagnostics.add_error(node.position, "redefinition of '" + node.name + "'");
             }
         }
+        
         node.set_type(var_type);
     }
 
@@ -687,17 +720,8 @@ export class TypeChecker : public Visitor<void> {
             return;
         }
 
-        const auto* function_type = node.get_type() ? node.get_type()->as<FunctionType>() : nullptr;
-        if (function_type == nullptr) {
-            TypeBuilder type_builder(*this);
-            auto built_type = type_builder.build_function(*node.prototype);
-            function_type = built_type.get();
-            node.set_type(built_type);
-            context.env.current_scope->define_function(
-                node.prototype->name,
-                std::make_unique<FunctionSymbol>(node.prototype->name, node.position,
-                                                 node.visibility, built_type));
-        }
+        define_function(node);
+        const auto* function_type = node.get_type()->as<FunctionType>();
 
         auto previous_function_type = current_function;
         current_function = function_type;
@@ -724,44 +748,11 @@ export class TypeChecker : public Visitor<void> {
     }
 
     void visit(ExternFunctionDeclaration& node) override {
-        if (node.get_type() != nullptr) {
-            return;
-        }
-
-        if (context.env.current_scope->lookup_var(node.prototype->name) != nullptr ||
-            context.env.current_scope->lookup_function(node.prototype->name) != nullptr) {
-            return;
-        }
-
-        TypeBuilder type_builder(*this);
-        auto function_type = type_builder.build_function(*node.prototype);
-        node.set_type(function_type);
-        context.env.current_scope->define_function(
-            node.prototype->name,
-            std::make_unique<FunctionSymbol>(node.prototype->name, node.position, node.visibility,
-                                             function_type));
+        define_extern_function(node);
     }
 
     void visit(ExternVarDeclaration& node) override {
-        if (node.get_type() != nullptr) {
-            return;
-        }
-
-        if (context.env.current_scope->lookup_var(node.name) != nullptr ||
-            context.env.current_scope->lookup_function(node.name) != nullptr) {
-            return;
-        }
-
-        if (node.type) {
-            visit(*node.type);
-        }
-
-        auto type = node.type ? node.type->get_type() : nullptr;
-        node.set_type(type);
-
-        context.env.current_scope->define_var(
-            node.name, std::make_unique<VarSymbol>(node.name, node.position, node.visibility,
-                                                   StorageKind::Type::Var, std::move(type)));
+        define_extern_variable(node);
     }
 
     void visit(ImportStatement& node [[maybe_unused]]) override {}
