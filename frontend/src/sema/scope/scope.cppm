@@ -19,6 +19,24 @@ export class Scope {
     std::unordered_map<std::string, std::unique_ptr<VarSymbol>> vars;
     std::unordered_map<std::string, std::vector<std::unique_ptr<FunctionSymbol>>> functions;
 
+    static bool has_matching_signature(const FunctionType* first, const FunctionType* second) {
+        if (first == nullptr || second == nullptr) {
+            return first == nullptr && second == nullptr;
+        }
+
+        if (first->parameters.size() != second->parameters.size()) {
+            return false;
+        }
+
+        for (std::size_t i = 0; i < first->parameters.size(); ++i) {
+            if (!Type::compatible(first->parameters[i]->type, second->parameters[i]->type)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
   public:
     std::string name;
     Scope* parent;
@@ -32,6 +50,7 @@ export class Scope {
         if (types.contains(symbol_name)) {
             return false;
         }
+
         types[symbol_name] = std::move(type);
         return true;
     }
@@ -40,32 +59,19 @@ export class Scope {
         if (vars.contains(symbol_name)) {
             return false;
         }
+
         vars[symbol_name] = std::move(symbol);
         return true;
     }
 
     bool define_function(const std::string& symbol_name, std::unique_ptr<FunctionSymbol> symbol) {
-        auto* new_func_type = symbol->type ? symbol->type->as<FunctionType>() : nullptr;
+        auto* new_type = symbol->type != nullptr ? symbol->type->as<FunctionType>() : nullptr;
 
         for (const auto& existing : functions[symbol_name]) {
-            auto* existing_func_type =
-                existing->type ? existing->type->as<FunctionType>() : nullptr;
+            auto* existing_type =
+                existing->type != nullptr ? existing->type->as<FunctionType>() : nullptr;
 
-            if (new_func_type && existing_func_type) {
-                if (new_func_type->parameters.size() == existing_func_type->parameters.size()) {
-                    bool same = true;
-                    for (std::size_t i = 0; i < new_func_type->parameters.size(); ++i) {
-                        if (!Type::compatible(new_func_type->parameters[i]->type,
-                                              existing_func_type->parameters[i]->type)) {
-                            same = false;
-                            break;
-                        }
-                    }
-                    if (same) {
-                        return false;
-                    }
-                }
-            } else if (!new_func_type && !existing_func_type) {
+            if (has_matching_signature(new_type, existing_type)) {
                 return false;
             }
         }
@@ -79,9 +85,11 @@ export class Scope {
         if (iterator != types.end()) {
             return iterator->second;
         }
+
         if (parent != nullptr) {
             return parent->lookup_type(symbol_name);
         }
+
         return nullptr;
     }
 
@@ -90,9 +98,11 @@ export class Scope {
         if (iterator != vars.end()) {
             return iterator->second.get();
         }
+
         if (parent != nullptr) {
             return parent->lookup_var(symbol_name);
         }
+
         return nullptr;
     }
 
@@ -101,26 +111,31 @@ export class Scope {
         if (iterator != functions.end() && !iterator->second.empty()) {
             return iterator->second.front().get();
         }
+
         if (parent != nullptr) {
             return parent->lookup_function(symbol_name);
         }
+
         return nullptr;
     }
 
     std::vector<const FunctionSymbol*>
     lookup_function_overloads(const std::string& symbol_name) const {
         std::vector<const FunctionSymbol*> result;
+
         auto iterator = functions.find(symbol_name);
         if (iterator != functions.end()) {
-            for (const auto& sym : iterator->second) {
-                result.push_back(sym.get());
+            result.reserve(iterator->second.size());
+            for (const auto& symbol : iterator->second) {
+                result.push_back(symbol.get());
             }
         }
+
         if (parent != nullptr) {
-            for (const auto* sym : parent->lookup_function_overloads(symbol_name)) {
-                result.push_back(sym);
-            }
+            auto parent_overloads = parent->lookup_function_overloads(symbol_name);
+            result.insert(result.end(), parent_overloads.begin(), parent_overloads.end());
         }
+
         return result;
     }
 
