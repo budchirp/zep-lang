@@ -9,7 +9,7 @@ export module zep.cli.commands.compile;
 
 import argman;
 import zep.common.source;
-import zep.compiler;
+import zep.driver;
 
 export class CompileCommand : public argman::Command {
   public:
@@ -37,7 +37,7 @@ export class CompileCommand : public argman::Command {
         auto content = buffer.str();
 
         auto source = Source(filename, content);
-        auto compiler = Compiler();
-        compiler.compile(source);
+        auto driver = Driver();
+        driver.run(source);
     }
 };

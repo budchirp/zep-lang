@@ -9,7 +9,7 @@ export module zep.lowerer.sema.scope;
 
 import zep.common.logger;
 import zep.lowerer.sema.scope.symbol;
-import zep.lowerer.sema.types;
+import zep.lowerer.sema.type;
 
 export class LoweredScope {
   private:
@@ -17,7 +17,7 @@ export class LoweredScope {
 
     std::unordered_map<std::string, std::unique_ptr<LoweredTypeSymbol>> types;
     std::unordered_map<std::string, std::unique_ptr<LoweredVarSymbol>> vars;
-    std::unordered_map<std::string, std::vector<std::unique_ptr<LoweredFunctionSymbol>>> functions;
+    std::unordered_map<std::string, std::unique_ptr<LoweredFunctionSymbol>> functions;
 
   public:
     std::string name;
@@ -45,34 +45,10 @@ export class LoweredScope {
 
     bool define_function(const std::string& symbol_name,
                          std::unique_ptr<LoweredFunctionSymbol> symbol) {
-        auto& bucket = functions[symbol_name];
-        for (const auto& existing : bucket) {
-            if (existing->type != nullptr && symbol->type != nullptr &&
-                existing->type->kind == LoweredType::Kind::Type::Function &&
-                symbol->type->kind == LoweredType::Kind::Type::Function) {
-                auto* existing_fn = existing->type->as<LoweredFunctionType>();
-                auto* new_fn = symbol->type->as<LoweredFunctionType>();
-                if (existing_fn != nullptr && new_fn != nullptr &&
-                    existing_fn->parameters.size() == new_fn->parameters.size()) {
-                    bool same = true;
-                    for (std::size_t i = 0; i < existing_fn->parameters.size() && same; ++i) {
-                        auto a = existing_fn->parameters[i] != nullptr
-                                     ? existing_fn->parameters[i]->to_string()
-                                     : "";
-                        auto b = new_fn->parameters[i] != nullptr
-                                     ? new_fn->parameters[i]->to_string()
-                                     : "";
-                        if (a != b) {
-                            same = false;
-                        }
-                    }
-                    if (same) {
-                        return false;
-                    }
-                }
-            }
+        if (functions.contains(symbol_name)) {
+            return false;
         }
-        bucket.push_back(std::move(symbol));
+        functions[symbol_name] = std::move(symbol);
         return true;
     }
 
@@ -100,30 +76,13 @@ export class LoweredScope {
 
     const LoweredFunctionSymbol* lookup_function(const std::string& symbol_name) const {
         auto iterator = functions.find(symbol_name);
-        if (iterator != functions.end() && !iterator->second.empty()) {
-            return iterator->second.front().get();
+        if (iterator != functions.end()) {
+            return iterator->second.get();
         }
         if (parent != nullptr) {
             return parent->lookup_function(symbol_name);
         }
         return nullptr;
-    }
-
-    std::vector<const LoweredFunctionSymbol*>
-    lookup_function_overloads(const std::string& symbol_name) const {
-        std::vector<const LoweredFunctionSymbol*> result;
-        auto iterator = functions.find(symbol_name);
-        if (iterator != functions.end()) {
-            for (const auto& sym : iterator->second) {
-                result.push_back(sym.get());
-            }
-        }
-        if (parent != nullptr) {
-            for (const auto* sym : parent->lookup_function_overloads(symbol_name)) {
-                result.push_back(sym);
-            }
-        }
-        return result;
     }
 
     std::shared_ptr<LoweredType> lookup_type_as_lowered(const std::string& symbol_name) const {
@@ -180,20 +139,14 @@ export class LoweredScope {
 
         Logger::print_indent(depth + 1);
         Logger::print("functions: [");
-        std::size_t function_total = 0;
-        for (const auto& entry : functions) {
-            function_total += entry.second.size();
-        }
-        if (function_total == 0) {
+        if (functions.empty()) {
             Logger::print("],\n");
         } else {
             Logger::print("\n");
             std::size_t function_index = 0;
             for (const auto& entry : functions) {
-                for (const auto& sym : entry.second) {
-                    sym->dump(depth + 2, true, false);
-                    Logger::print((++function_index < function_total ? ",\n" : "\n"));
-                }
+                entry.second->dump(depth + 2, true, false);
+                Logger::print((++function_index < functions.size() ? ",\n" : "\n"));
             }
             Logger::print_indent(depth + 1);
             Logger::print("],\n");

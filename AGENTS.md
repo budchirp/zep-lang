@@ -17,7 +17,7 @@ cmake --build cmake-build-debug
 
 **Test with the design file:**
 ```
-./cmake-build-debug/cli/zep compile --input design/main.zep
+./cmake-build-debug/cli/zep compile --input examples/main.zep
 ```
 
 **Release build:**
@@ -30,7 +30,7 @@ cmake --build cmake-build-release
 
 - C++26 with modules (`.cppm` extension)
 - Build dir: `cmake-build-debug` (debug) or `cmake-build-release` (release)
-- Subdirs: `common`, `frontend`, `sema`, `checker`, `lowerer`, `codegen`, `compiler`, `cli`
+- Subdirs: `common`, `frontend`, `checker`, `lowerer`, `codegen`, `driver`, `cli`
 
 ## Code Standards
 

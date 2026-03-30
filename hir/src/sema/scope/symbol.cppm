@@ -6,7 +6,7 @@ module;
 export module zep.lowerer.sema.scope.symbol;
 
 import zep.common.logger;
-import zep.lowerer.sema.types;
+import zep.lowerer.sema.type;
 import zep.sema.kinds;
 
 export class LoweredParameter {

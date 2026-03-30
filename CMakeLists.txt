@@ -25,6 +25,6 @@ add_subdirectory(sema)
 add_subdirectory(checker)
 add_subdirectory(lowerer)
 add_subdirectory(codegen)
-add_subdirectory(compiler)
+add_subdirectory(driver)
 add_subdirectory(cli)
 

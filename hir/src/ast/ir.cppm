@@ -5,12 +5,12 @@ module;
 #include <string>
 #include <vector>
 
-export module zep.lowerer.ir;
+export module zep.lowerer.ast.node;
 
 import zep.common.position;
 import zep.common.logger;
 import zep.sema.kinds;
-export import zep.lowerer.sema.types;
+export import zep.lowerer.sema.type;
 export import zep.lowerer.sema.scope.symbol;
 export import zep.lowerer.sema.scope;
 

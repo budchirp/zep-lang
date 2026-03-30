@@ -13,8 +13,8 @@ import zep.frontend.ast;
 import zep.frontend.ast.program;
 import zep.sema.type;
 import zep.sema.kinds;
-import zep.lowerer.ir;
-import zep.lowerer.sema.types;
+import zep.lowerer.ast.node;
+import zep.lowerer.sema.type;
 import zep.lowerer.sema.env;
 import zep.lowerer.mangler;
 import zep.lowerer.monomorphizer;
@@ -529,11 +529,15 @@ export class Lowerer {
     }
 
     void lower_extern_function_declaration(ExternFunctionDeclaration& declaration) {
+        std::vector<std::shared_ptr<Type>> mangling_parameter_types;
+        mangling_parameter_types.reserve(declaration.prototype->parameters.size());
         std::vector<std::shared_ptr<LoweredType>> lowered_params;
         for (auto& parameter : declaration.prototype->parameters) {
-            auto param_type =
-                sema_to_lowered_type(type_context.resolve_type(parameter->type->get_type()));
-            lowered_params.push_back(std::move(param_type));
+            auto resolved = type_context.resolve_type(parameter->type->get_type());
+            lowered_params.push_back(sema_to_lowered_type(resolved));
+            if (!parameter->is_variadic) {
+                mangling_parameter_types.push_back(resolved);
+            }
         }
 
         auto return_type = sema_to_lowered_type(
@@ -542,10 +546,12 @@ export class Lowerer {
         auto func_type = std::make_shared<LoweredFunctionType>(std::move(lowered_params),
                                                                std::move(return_type), variadic);
 
+        std::string mangled_name =
+            NameMangler::mangle(declaration.prototype->name, mangling_parameter_types);
+
         auto symbol = std::make_unique<LoweredFunctionSymbol>(
-            declaration.prototype->name, Linkage::Type::External, declaration.visibility,
-            std::move(func_type));
-        env.current_scope->define_function(declaration.prototype->name, std::move(symbol));
+            mangled_name, Linkage::Type::External, declaration.visibility, std::move(func_type));
+        env.current_scope->define_function(mangled_name, std::move(symbol));
     }
 
     void lower_extern_var_declaration(ExternVarDeclaration& declaration) {

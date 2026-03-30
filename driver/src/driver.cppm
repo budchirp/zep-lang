@@ -4,7 +4,7 @@ module;
 #include <memory>
 #include <utility>
 
-export module zep.compiler;
+export module zep.driver;
 
 import zep.common.source;
 import zep.common.logger;
@@ -14,11 +14,11 @@ import zep.checker.type_checker;
 import zep.sema.context;
 import zep.lowerer;
 
-export class Compiler {
+export class Driver {
   public:
-    Compiler() = default;
+    Driver() = default;
 
-    void compile(const Source& source) {
+    void run(const Source& source) {
         Context context(source);
 
         Lexer lexer(context.source.content);

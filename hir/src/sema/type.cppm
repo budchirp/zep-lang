@@ -5,7 +5,7 @@ module;
 #include <string>
 #include <vector>
 
-export module zep.lowerer.sema.types;
+export module zep.lowerer.sema.type;
 
 import zep.common.logger;
 

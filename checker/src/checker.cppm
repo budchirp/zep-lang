@@ -45,17 +45,6 @@ export class TypeChecker : public Visitor<void> {
         return false;
     }
 
-  public:
-    explicit TypeChecker(Context& context) : context(context), type_context(context.env) {}
-
-    void check(Program& program) {
-        register_declarations(program);
-
-        for (auto& statement : program.statements) {
-            visit_statement(*statement);
-        }
-    }
-
     void register_declarations(Program& program) {
         for (auto& statement : program.statements) {
             if (auto* node = statement->as<StructDeclaration>()) {
@@ -102,6 +91,17 @@ export class TypeChecker : public Visitor<void> {
                     std::make_unique<VarSymbol>(node->name, node->position, node->visibility,
                                                 StorageKind::Type::Var, node->type->get_type()));
             }
+        }
+    }
+
+  public:
+    explicit TypeChecker(Context& context) : context(context), type_context(context.env) {}
+
+    void check(Program& program) {
+        register_declarations(program);
+
+        for (auto& statement : program.statements) {
+            visit_statement(*statement);
         }
     }
 
@@ -436,13 +436,15 @@ export class TypeChecker : public Visitor<void> {
     void visit(BooleanLiteral& node) override { node.set_type(std::make_shared<BooleanType>()); }
 
     void visit(IdentifierExpression& node) override {
-        const Symbol* symbol = context.env.current_scope->lookup_var(node.name);
-        if (symbol == nullptr) {
-            symbol = context.env.current_scope->lookup_function(node.name);
+        const auto* var = context.env.current_scope->lookup_var(node.name);
+        if (var != nullptr) {
+            node.set_type(var->type);
+            return;
         }
 
-        if (symbol != nullptr) {
-            node.set_type(symbol->type);
+        const auto* function = context.env.current_scope->lookup_function(node.name);
+        if (function != nullptr) {
+            node.set_type(function->type);
             return;
         }
 
@@ -453,7 +455,7 @@ export class TypeChecker : public Visitor<void> {
         }
 
         context.diagnostics.add_error(node.position,
-                                      "use of undeclared identifier '" + node.name + "'");
+                                      "use of undeclared symbol '" + node.name + "'");
     }
 
     void visit(BinaryExpression& node) override {
@@ -623,22 +625,7 @@ export class TypeChecker : public Visitor<void> {
             visit(*argument);
         }
 
-        if (auto* identifier = node.callee->as<IdentifierExpression>()) {
-            auto overloads = context.env.current_scope->lookup_function_overloads(identifier->name);
-
-            if (!overloads.empty()) {
-                auto selected_type = select_function_overload(overloads, node);
-                if (!selected_type) {
-                    return;
-                }
-
-                node.callee->set_type(selected_type);
-            } else {
-                visit_expression(*node.callee);
-            }
-        } else {
-            visit_expression(*node.callee);
-        }
+        visit_expression(*node.callee);
 
         auto callee_type = node.callee->get_type();
         if (!callee_type) {
@@ -650,6 +637,16 @@ export class TypeChecker : public Visitor<void> {
             context.diagnostics.add_error(node.position, "cannot call non-function type '" +
                                                              callee_type->to_string() + "'");
             return;
+        }
+
+        auto overloads = context.env.current_scope->lookup_function_overloads(function_type->name);
+        if (!overloads.empty()) {
+            auto selected_type = select_function_overload(overloads, node);
+            if (!selected_type) {
+                return;
+            }
+
+            function_type = selected_type->as<FunctionType>();
         }
 
         auto scope = type_context.scoped_substitutions();
@@ -695,6 +692,9 @@ export class TypeChecker : public Visitor<void> {
 
             if (auto* array_type = element_type->as<ArrayType>()) {
                 element_type = array_type->element;
+            } else {
+                context.diagnostics.add_error(node.position, "expected array type, got '" +
+                                                                 element_type->to_string() + "'");
             }
 
             for (std::size_t i = required; i < argument_count; ++i) {
@@ -736,10 +736,12 @@ export class TypeChecker : public Visitor<void> {
             return;
         }
 
-        if (index_type->kind != Type::Kind::Type::Integer) {
+        auto* integer_type = index_type->as<IntegerType>();
+        if (integer_type == nullptr) {
             context.diagnostics.add_error(node.index->position,
                                           "array index must be an integer, got '" +
                                               index_type->to_string() + "'");
+            return;
         }
 
         node.set_type(array_type->element);
@@ -784,11 +786,7 @@ export class TypeChecker : public Visitor<void> {
         auto target_type = node.target->get_type();
         auto value_type = node.value->get_type();
 
-        if (!target_type || !value_type) {
-            return;
-        }
-
-        if (!Type::compatible(target_type, value_type)) {
+        if (!Type::compatible(value_type, target_type)) {
             context.diagnostics.add_error(node.position, "type mismatch in assignment: expected '" +
                                                              target_type->to_string() + "', got '" +
                                                              value_type->to_string() + "'");
@@ -826,14 +824,18 @@ export class TypeChecker : public Visitor<void> {
                                               "duplicate field '" + literal_field->name + "'");
                 continue;
             }
+
             provided_fields[literal_field->name] = true;
 
             bool found = false;
+
             for (const auto& declared_field : struct_type->fields) {
                 if (declared_field->name == literal_field->name) {
                     found = true;
+
                     auto expected_type = type_context.resolve_type(declared_field->type);
                     auto actual_type = literal_field->value->get_type();
+
                     if (!Type::compatible(actual_type, expected_type)) {
                         context.diagnostics.add_error(literal_field->position,
                                                       "field '" + literal_field->name +
@@ -907,10 +909,6 @@ export class TypeChecker : public Visitor<void> {
             auto then_type = node.then_branch->get_type();
             auto else_type = node.else_branch->get_type();
 
-            if (!then_type || !else_type) {
-                return;
-            }
-
             if (!Type::compatible(then_type, else_type)) {
                 context.diagnostics.add_error(node.position,
                                               "if/else branches have different types: '" +
@@ -938,9 +936,6 @@ export class TypeChecker : public Visitor<void> {
             visit_expression(*node.value);
 
             auto type = node.value->get_type();
-            if (!type) {
-                return;
-            }
 
             if (!Type::compatible(type, expected)) {
                 context.diagnostics.add_error(
@@ -975,6 +970,7 @@ export class TypeChecker : public Visitor<void> {
 
         if (node.type && node.initializer && var_type) {
             auto init_type = node.initializer->get_type();
+
             if (init_type && !Type::compatible(var_type, init_type)) {
                 context.diagnostics.add_error(node.position,
                                               "type mismatch in variable declaration: declared '" +
