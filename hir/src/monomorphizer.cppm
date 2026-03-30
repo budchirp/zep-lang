@@ -11,6 +11,7 @@ export module zep.hir.monomorphizer;
 import zep.frontend.sema.type;
 import zep.frontend.ast;
 import zep.frontend.sema.mangler;
+import zep.hir.ir;
 
 export class MonoCacheResult {
   public:
@@ -26,7 +27,7 @@ export class MonomorphizationCache {
     std::unordered_set<std::string> specializations;
     std::unordered_map<std::string, StructDeclaration*> structs;
     std::unordered_map<std::string, FunctionDeclaration*> functions;
-    std::unordered_set<std::string> generated;
+    std::vector<std::unique_ptr<HIRFunctionDeclaration>> pending_specializations;
 
   public:
     void register_function(const std::string& name, FunctionDeclaration* statement) {
@@ -55,7 +56,19 @@ export class MonomorphizationCache {
         return iterator != structs.end() ? iterator->second : nullptr;
     }
 
-    void mark_generated(const std::string& name) { generated.insert(name); }
+    void clear_pending_specializations() { pending_specializations.clear(); }
+
+    void enqueue_specialization(std::unique_ptr<HIRFunctionDeclaration> function) {
+        pending_specializations.push_back(std::move(function));
+    }
+
+    void drain_pending_specializations_into(
+        std::vector<std::unique_ptr<HIRFunctionDeclaration>>& destination) {
+        for (auto& item : pending_specializations) {
+            destination.push_back(std::move(item));
+        }
+        pending_specializations.clear();
+    }
 
     MonoCacheResult get_or_create(const std::string& name,
                                   const std::vector<std::shared_ptr<Type>>& types) {

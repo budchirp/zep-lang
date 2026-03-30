@@ -24,7 +24,6 @@ export class HIRBuilder {
     Context& context;
     TypeContext type_context;
     MonomorphizationCache mono_cache;
-    std::vector<std::unique_ptr<HIRFunctionDeclaration>> specialization_buffer;
     HIREnv env;
 
     std::shared_ptr<HIRType> sema_to_hir_type(std::shared_ptr<Type> type) {
@@ -78,7 +77,7 @@ export class HIRBuilder {
                 return std::make_shared<HIRPointerType>(std::move(element));
             }
             return std::make_shared<HIRArrayType>(std::move(element),
-                                                      static_cast<std::size_t>(*array->size));
+                                                  static_cast<std::size_t>(*array->size));
         }
 
         case Type::Kind::Type::Struct: {
@@ -94,8 +93,8 @@ export class HIRBuilder {
                 hir_params.push_back(sema_to_hir_type(param->type));
             }
             auto hir_return = sema_to_hir_type(func_type->return_type);
-            return std::make_shared<HIRFunctionType>(
-                std::move(hir_params), std::move(hir_return), func_type->variadic);
+            return std::make_shared<HIRFunctionType>(std::move(hir_params), std::move(hir_return),
+                                                     func_type->variadic);
         }
         }
 
@@ -143,9 +142,8 @@ export class HIRBuilder {
         if (!cache_result.is_generated) {
             FunctionDeclaration* declaration = mono_cache.get_function(identifier.name);
             if (declaration != nullptr) {
-                specialization_buffer.push_back(lower_monomorphized_function(
+                mono_cache.enqueue_specialization(lower_monomorphized_function(
                     *declaration, cache_result.name, generic_arguments));
-                mono_cache.mark_generated(cache_result.name);
             }
         }
 
@@ -204,8 +202,8 @@ export class HIRBuilder {
             auto hir_left = lower_expression(*node->left);
             auto hir_right = lower_expression(*node->right);
             auto op = static_cast<HIRBinaryOperator::Type>(static_cast<std::uint8_t>(node->op));
-            auto result = std::make_unique<HIRBinaryExpression>(
-                node->position, std::move(hir_left), op, std::move(hir_right));
+            auto result = std::make_unique<HIRBinaryExpression>(node->position, std::move(hir_left),
+                                                                op, std::move(hir_right));
             result->set_type(sema_to_hir_type(node->get_type()));
             return result;
         }
@@ -213,8 +211,8 @@ export class HIRBuilder {
         if (auto* node = expression.as<UnaryExpression>()) {
             auto hir_operand = lower_expression(*node->operand);
             auto op = static_cast<HIRUnaryOperator::Type>(static_cast<std::uint8_t>(node->op));
-            auto result = std::make_unique<HIRUnaryExpression>(node->position, op,
-                                                                   std::move(hir_operand));
+            auto result =
+                std::make_unique<HIRUnaryExpression>(node->position, op, std::move(hir_operand));
             result->set_type(sema_to_hir_type(node->get_type()));
             return result;
         }
@@ -261,8 +259,7 @@ export class HIRBuilder {
                 hir_else = lower_statement(*node->else_branch);
             }
             auto result = std::make_unique<HIRIfExpression>(
-                node->position, std::move(hir_condition), std::move(hir_then),
-                std::move(hir_else));
+                node->position, std::move(hir_condition), std::move(hir_then), std::move(hir_else));
             result->set_type(sema_to_hir_type(node->get_type()));
             return result;
         }
@@ -296,8 +293,8 @@ export class HIRBuilder {
                 callee_name = identifier->name;
             }
 
-            auto hir_identifier = std::make_unique<HIRIdentifierExpression>(
-                identifier->position, std::move(callee_name));
+            auto hir_identifier = std::make_unique<HIRIdentifierExpression>(identifier->position,
+                                                                            std::move(callee_name));
             hir_identifier->set_type(sema_to_hir_type(callee_type_to_convert));
             hir_callee = std::move(hir_identifier);
         } else {
@@ -331,7 +328,6 @@ export class HIRBuilder {
                 }
 
                 lower_struct_definition(*declaration, cache_result.name, *env.global_scope);
-                mono_cache.mark_generated(cache_result.name);
             }
         }
 
@@ -339,7 +335,7 @@ export class HIRBuilder {
     }
 
     std::unique_ptr<HIRStructLiteralExpression> lower_struct(StructLiteralExpression& literal,
-                                                                 std::string resolved_name) {
+                                                             std::string resolved_name) {
         std::vector<HIRStructLiteralField> hir_fields;
         hir_fields.reserve(literal.fields.size());
         for (auto& field : literal.fields) {
@@ -372,8 +368,8 @@ export class HIRBuilder {
 
         if (auto* node = statement.as<ExpressionStatement>()) {
             auto hir_expression = lower_expression(*node->expression);
-            auto result = std::make_unique<HIRExpressionStatement>(
-                node->position, std::move(hir_expression));
+            auto result =
+                std::make_unique<HIRExpressionStatement>(node->position, std::move(hir_expression));
             result->set_type(sema_to_hir_type(node->get_type()));
             return result;
         }
@@ -397,10 +393,10 @@ export class HIRBuilder {
             auto var_type = sema_to_hir_type(type_context.resolve_type(node->get_type()));
             env.current_scope->define_var(
                 node->name, std::make_unique<HIRVarSymbol>(node->name, Linkage::Type::Internal,
-                                                               node->visibility, var_type));
-            auto result = std::make_unique<HIRVarDeclaration>(
-                node->position, node->visibility, node->storage_kind, node->name, var_type,
-                std::move(hir_initializer));
+                                                           node->visibility, var_type));
+            auto result = std::make_unique<HIRVarDeclaration>(node->position, node->visibility,
+                                                              node->storage_kind, node->name,
+                                                              var_type, std::move(hir_initializer));
             result->set_type(var_type);
             return result;
         }
@@ -437,10 +433,11 @@ export class HIRBuilder {
         return false;
     }
 
-    std::unique_ptr<HIRFunctionDeclaration>
-    lower_function(FunctionDeclaration& declaration, std::string mangled_name,
-                   std::vector<HIRParameter> hir_parameters,
-                   std::shared_ptr<HIRType> hir_return, bool variadic) {
+    std::unique_ptr<HIRFunctionDeclaration> lower_function(FunctionDeclaration& declaration,
+                                                           std::string mangled_name,
+                                                           std::vector<HIRParameter> hir_parameters,
+                                                           std::shared_ptr<HIRType> hir_return,
+                                                           bool variadic) {
         std::vector<std::shared_ptr<HIRType>> param_types;
         param_types.reserve(hir_parameters.size());
         for (const auto& param : hir_parameters) {
@@ -448,7 +445,7 @@ export class HIRBuilder {
         }
 
         auto func_type = std::make_shared<HIRFunctionType>(std::move(param_types),
-                                                               std::move(hir_return), variadic);
+                                                           std::move(hir_return), variadic);
         auto return_for_decl = func_type->return_type;
         auto symbol = std::make_unique<HIRFunctionSymbol>(
             mangled_name, Linkage::Type::Internal, declaration.visibility, std::move(func_type));
@@ -456,9 +453,9 @@ export class HIRBuilder {
 
         env.push_scope(env.current_scope->name + "." + mangled_name);
         for (const auto& param : hir_parameters) {
-            env.current_scope->define_var(param.name, std::make_unique<HIRVarSymbol>(
-                                                          param.name, Linkage::Type::Internal,
-                                                          Visibility::Type::Private, param.type));
+            env.current_scope->define_var(
+                param.name, std::make_unique<HIRVarSymbol>(param.name, Linkage::Type::Internal,
+                                                           Visibility::Type::Private, param.type));
         }
 
         auto hir_body = lower_block_statement(*declaration.body);
@@ -466,8 +463,7 @@ export class HIRBuilder {
 
         return std::make_unique<HIRFunctionDeclaration>(
             declaration.position, declaration.visibility, std::move(mangled_name),
-            std::move(hir_parameters), std::move(return_for_decl), std::move(hir_body),
-            variadic);
+            std::move(hir_parameters), std::move(return_for_decl), std::move(hir_body), variadic);
     }
 
     std::unique_ptr<HIRFunctionDeclaration>
@@ -501,8 +497,7 @@ export class HIRBuilder {
         std::vector<HIRStructField> hir_fields;
         hir_fields.reserve(declaration.fields.size());
         for (auto& field : declaration.fields) {
-            auto field_type =
-                sema_to_hir_type(type_context.resolve_type(field->type->get_type()));
+            auto field_type = sema_to_hir_type(type_context.resolve_type(field->type->get_type()));
             hir_fields.emplace_back(field->name, std::move(field_type));
         }
         return hir_fields;
@@ -512,8 +507,7 @@ export class HIRBuilder {
                                  HIRScope& into_scope) {
         auto hir_fields = lower_struct_fields(declaration);
 
-        auto struct_type =
-            std::make_shared<HIRStructType>(type_name, std::move(hir_fields));
+        auto struct_type = std::make_shared<HIRStructType>(type_name, std::move(hir_fields));
         auto symbol = std::make_unique<HIRTypeSymbol>(
             type_name, Linkage::Type::Internal, declaration.visibility, std::move(struct_type));
         into_scope.define_type(type_name, std::move(symbol));
@@ -544,7 +538,7 @@ export class HIRBuilder {
             type_context.resolve_type(declaration.prototype->return_type->get_type()));
         bool variadic = prototype_is_variadic(*declaration.prototype);
         auto func_type = std::make_shared<HIRFunctionType>(std::move(hir_params),
-                                                               std::move(return_type), variadic);
+                                                           std::move(return_type), variadic);
 
         std::string mangled_name =
             NameMangler::mangle(declaration.prototype->name, mangling_parameter_types);
@@ -555,10 +549,9 @@ export class HIRBuilder {
     }
 
     void lower_extern_var_declaration(ExternVarDeclaration& declaration) {
-        auto var_type =
-            sema_to_hir_type(type_context.resolve_type(declaration.type->get_type()));
-        auto symbol = std::make_unique<HIRVarSymbol>(
-            declaration.name, Linkage::Type::External, declaration.visibility, std::move(var_type));
+        auto var_type = sema_to_hir_type(type_context.resolve_type(declaration.type->get_type()));
+        auto symbol = std::make_unique<HIRVarSymbol>(declaration.name, Linkage::Type::External,
+                                                     declaration.visibility, std::move(var_type));
         env.current_scope->define_var(declaration.name, std::move(symbol));
     }
 
@@ -602,11 +595,10 @@ export class HIRBuilder {
 
   public:
     explicit HIRBuilder(Context& context)
-        : context(context), type_context(context.env), mono_cache(), specialization_buffer(),
-          env() {}
+        : context(context), type_context(context.env), mono_cache(), env() {}
 
     HIRProgram lower(Program& program) {
-        specialization_buffer.clear();
+        mono_cache.clear_pending_specializations();
 
         std::vector<std::unique_ptr<HIRFunctionDeclaration>> functions;
 
@@ -625,10 +617,7 @@ export class HIRBuilder {
             }
         }
 
-        for (auto& specialized : specialization_buffer) {
-            functions.push_back(std::move(specialized));
-        }
-        specialization_buffer.clear();
+        mono_cache.drain_pending_specializations_into(functions);
 
         return HIRProgram(std::move(env.global_scope), std::move(functions));
     }
