@@ -1,5 +1,6 @@
 module;
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -19,30 +20,86 @@ export class Scope {
     std::unordered_map<std::string, std::unique_ptr<VarSymbol>> vars;
     std::unordered_map<std::string, std::vector<std::unique_ptr<FunctionSymbol>>> functions;
 
-    static bool has_matching_signature(const FunctionType* first, const FunctionType* second) {
-        if (first == nullptr || second == nullptr) {
-            return first == nullptr && second == nullptr;
-        }
-
-        if (first->parameters.size() != second->parameters.size()) {
-            return false;
-        }
-
-        for (std::size_t i = 0; i < first->parameters.size(); ++i) {
-            if (!Type::compatible(first->parameters[i]->type, second->parameters[i]->type)) {
-                return false;
+    void dump_types(int depth) const {
+        Logger::print_indent(depth + 1);
+        Logger::print("types: [");
+        if (types.empty()) {
+            Logger::print("],\n");
+        } else {
+            Logger::print("\n");
+            std::size_t type_index = 0;
+            for (const auto& [type_name, type] : types) {
+                ParameterType binding(type_name, type);
+                binding.dump(depth + 2, true, false);
+                Logger::print((++type_index < types.size() ? ",\n" : "\n"));
             }
+            Logger::print_indent(depth + 1);
+            Logger::print("],\n");
         }
+    }
 
-        return true;
+    void dump_vars(int depth) const {
+        Logger::print_indent(depth + 1);
+        Logger::print("vars: [");
+        if (vars.empty()) {
+            Logger::print("],\n");
+        } else {
+            Logger::print("\n");
+            std::size_t var_index = 0;
+            for (const auto& entry : vars) {
+                entry.second->dump(depth + 2, true, false);
+                Logger::print((++var_index < vars.size() ? ",\n" : "\n"));
+            }
+            Logger::print_indent(depth + 1);
+            Logger::print("],\n");
+        }
+    }
+
+    void dump_functions(int depth) const {
+        Logger::print_indent(depth + 1);
+        Logger::print("functions: [");
+        std::size_t function_total = 0;
+        for (const auto& entry : functions) {
+            function_total += entry.second.size();
+        }
+        if (function_total == 0) {
+            Logger::print("],\n");
+        } else {
+            Logger::print("\n");
+            std::size_t function_index = 0;
+            for (const auto& entry : functions) {
+                for (const auto& func : entry.second) {
+                    func->dump(depth + 2, true, false);
+                    Logger::print((++function_index < function_total ? ",\n" : "\n"));
+                }
+            }
+            Logger::print_indent(depth + 1);
+            Logger::print("],\n");
+        }
+    }
+
+    void dump_children(int depth) const {
+        Logger::print_indent(depth + 1);
+        Logger::print("children: [");
+        if (children.empty()) {
+            Logger::print("]\n");
+        } else {
+            Logger::print("\n");
+            for (std::size_t child_index = 0; child_index < children.size(); ++child_index) {
+                children[child_index]->dump(depth + 2, true, false);
+                Logger::print((child_index + 1 < children.size() ? ",\n" : "\n"));
+            }
+            Logger::print_indent(depth + 1);
+            Logger::print("]\n");
+        }
     }
 
   public:
     std::string name;
     Scope* parent;
 
-    Scope(std::string scope_name, Scope* scope_parent)
-        : name(std::move(scope_name)), parent(scope_parent) {}
+    Scope(std::string name, Scope* parent)
+        : name(std::move(name)), parent(parent) {}
 
     [[nodiscard]] std::size_t child_count() const { return children.size(); }
 
@@ -71,7 +128,7 @@ export class Scope {
             auto* existing_type =
                 existing->type != nullptr ? existing->type->as<FunctionType>() : nullptr;
 
-            if (has_matching_signature(new_type, existing_type)) {
+            if (new_type != nullptr && new_type->conflicts_with(existing_type)) {
                 return false;
             }
         }
@@ -139,6 +196,29 @@ export class Scope {
         return result;
     }
 
+    const FunctionSymbol* resolve_overload(const std::string& symbol_name,
+                                           const std::function<bool(const FunctionType*)>& matcher,
+                                           int& match_count) const {
+        auto overloads = lookup_function_overloads(symbol_name);
+        const FunctionSymbol* best_match = nullptr;
+        match_count = 0;
+
+        for (const auto* symbol : overloads) {
+            auto* candidate_type =
+                symbol->type != nullptr ? symbol->type->as<FunctionType>() : nullptr;
+            if (candidate_type == nullptr) {
+                continue;
+            }
+
+            if (matcher(candidate_type)) {
+                best_match = symbol;
+                ++match_count;
+            }
+        }
+
+        return match_count == 1 ? best_match : nullptr;
+    }
+
     Scope* add_child(std::string child_name) {
         auto child = std::make_unique<Scope>(std::move(child_name), this);
         Scope* child_ptr = child.get();
@@ -156,71 +236,10 @@ export class Scope {
         Logger::print_indent(depth + 1);
         Logger::print("name: \"", name, "\",\n");
 
-        Logger::print_indent(depth + 1);
-        Logger::print("types: [");
-        if (types.empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            std::size_t type_index = 0;
-            for (const auto& [type_name, type] : types) {
-                ParameterType binding(type_name, type);
-                binding.dump(depth + 2, true, false);
-                Logger::print((++type_index < types.size() ? ",\n" : "\n"));
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-
-        Logger::print_indent(depth + 1);
-        Logger::print("vars: [");
-        if (vars.empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            std::size_t var_index = 0;
-            for (const auto& entry : vars) {
-                entry.second->dump(depth + 2, true, false);
-                Logger::print((++var_index < vars.size() ? ",\n" : "\n"));
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-
-        Logger::print_indent(depth + 1);
-        Logger::print("functions: [");
-        std::size_t function_total = 0;
-        for (const auto& entry : functions) {
-            function_total += entry.second.size();
-        }
-        if (function_total == 0) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            std::size_t function_index = 0;
-            for (const auto& entry : functions) {
-                for (const auto& func : entry.second) {
-                    func->dump(depth + 2, true, false);
-                    Logger::print((++function_index < function_total ? ",\n" : "\n"));
-                }
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-
-        Logger::print_indent(depth + 1);
-        Logger::print("children: [");
-        if (children.empty()) {
-            Logger::print("]\n");
-        } else {
-            Logger::print("\n");
-            for (std::size_t child_index = 0; child_index < children.size(); ++child_index) {
-                children[child_index]->dump(depth + 2, true, false);
-                Logger::print((child_index + 1 < children.size() ? ",\n" : "\n"));
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("]\n");
-        }
+        dump_types(depth);
+        dump_vars(depth);
+        dump_functions(depth);
+        dump_children(depth);
 
         Logger::print_indent(depth);
         Logger::print(")");

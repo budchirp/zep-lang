@@ -108,32 +108,19 @@ export class CallResolver {
     explicit CallResolver(Context& context, TypeContext& type_context, Visitor<void>& visitor)
         : context(context), type_context(type_context), visitor(visitor) {}
 
-    const FunctionType* resolve_overload(const std::string& name,
-                                         const std::vector<const FunctionSymbol*>& overloads,
-                                         CallExpression& node) {
-        const FunctionSymbol* best_match = nullptr;
-
-        int match_count = 0;
-
+    const FunctionType* resolve_overload(const std::string& name, CallExpression& node) {
         for (auto& generic_argument : node.generic_arguments) {
             visitor.visit(*generic_argument);
         }
 
-        for (const auto* symbol : overloads) {
-            auto* candidate_type =
-                symbol->type != nullptr ? symbol->type->as<FunctionType>() : nullptr;
-            if (candidate_type == nullptr) {
-                continue;
-            }
-
-            {
+        int match_count = 0;
+        const auto* best_match = context.env.current_scope->resolve_overload(
+            name,
+            [this, &node](const FunctionType* candidate_type) {
                 auto scope = type_context.scoped_substitutions();
-                if (is_valid(candidate_type, node, false)) {
-                    best_match = symbol;
-                    ++match_count;
-                }
-            }
-        }
+                return is_valid(candidate_type, node, false);
+            },
+            match_count);
 
         if (match_count > 1) {
             context.diagnostics.add_error(node.position, "ambiguous call to '" + name + "'");

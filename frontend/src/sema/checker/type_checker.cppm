@@ -53,9 +53,9 @@ export class TypeChecker : public Visitor<void> {
                 node.prototype->name,
                 std::make_unique<FunctionSymbol>(node.prototype->name, node.position,
                                                  node.visibility, type))) {
-            context.diagnostics.add_error(node.position,
-                                          "redefinition of function '" + node.prototype->name +
-                                              "' with same parameter types");
+            context.diagnostics.add_error(node.position, "redefinition of function '" +
+                                                             node.prototype->name +
+                                                             "' with same parameter types");
         }
     }
 
@@ -69,9 +69,8 @@ export class TypeChecker : public Visitor<void> {
         node.set_type(type);
 
         context.env.current_scope->define_function(
-            node.prototype->name,
-            std::make_unique<FunctionSymbol>(node.prototype->name, node.position, node.visibility,
-                                             type));
+            node.prototype->name, std::make_unique<FunctionSymbol>(
+                                      node.prototype->name, node.position, node.visibility, type));
     }
 
     void define_variable(VarDeclaration& node) {
@@ -470,7 +469,7 @@ export class TypeChecker : public Visitor<void> {
 
         if (overloads.size() > 1) {
             const auto* resolved_type =
-                call_resolver.resolve_overload(function_type->name, overloads, node);
+                call_resolver.resolve_overload(function_type->name, node);
             if (resolved_type == nullptr) {
                 return;
             }
@@ -666,9 +665,7 @@ export class TypeChecker : public Visitor<void> {
         }
     }
 
-    void visit(StructDeclaration& node) override {
-        define_struct(node);
-    }
+    void visit(StructDeclaration& node) override { define_struct(node); }
 
     void visit(VarDeclaration& node) override {
         if (node.type) {
@@ -709,7 +706,7 @@ export class TypeChecker : public Visitor<void> {
                 context.diagnostics.add_error(node.position, "redefinition of '" + node.name + "'");
             }
         }
-        
+
         node.set_type(var_type);
     }
 
@@ -747,13 +744,9 @@ export class TypeChecker : public Visitor<void> {
         current_function = previous_function_type;
     }
 
-    void visit(ExternFunctionDeclaration& node) override {
-        define_extern_function(node);
-    }
+    void visit(ExternFunctionDeclaration& node) override { define_extern_function(node); }
 
-    void visit(ExternVarDeclaration& node) override {
-        define_extern_variable(node);
-    }
+    void visit(ExternVarDeclaration& node) override { define_extern_variable(node); }
 
     void visit(ImportStatement& node [[maybe_unused]]) override {}
 };

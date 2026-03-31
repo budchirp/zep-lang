@@ -593,6 +593,24 @@ export class FunctionType : public Type {
           parameters(std::move(parameters)), generic_parameters(std::move(generic_parameters)),
           variadic(variadic) {}
 
+    bool conflicts_with(const FunctionType* other) const {
+        if (other == nullptr) {
+            return false;
+        }
+
+        if (parameters.size() != other->parameters.size()) {
+            return false;
+        }
+
+        for (std::size_t i = 0; i < parameters.size(); ++i) {
+            if (!Type::compatible(parameters[i]->type, other->parameters[i]->type)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
         if (with_indent) {
             Logger::print_indent(depth);
