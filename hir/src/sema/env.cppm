@@ -5,8 +5,7 @@ module;
 
 export module zep.hir.sema.env;
 
-import zep.common.logger;
-export import zep.hir.sema.scope;
+import zep.hir.sema.scope;
 
 export class HIREnv {
   public:
@@ -25,17 +24,5 @@ export class HIREnv {
         if (current_scope->parent != nullptr) {
             current_scope = current_scope->parent;
         }
-    }
-
-    void dump(int depth = 0) const {
-        Logger::print_indent(depth);
-        Logger::print("Env(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("global_scope: ");
-        global_scope->dump(depth + 1, false, true);
-
-        Logger::print_indent(depth);
-        Logger::print(")\n");
     }
 };

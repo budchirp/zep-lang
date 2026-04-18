@@ -7,13 +7,12 @@ module;
 
 export module zep.hir.sema.type;
 
-import zep.common.logger;
-
 export class HIRType {
   public:
     class Kind {
       public:
         enum class Type : std::uint8_t {
+            Any,
             Void,
             Boolean,
             String,
@@ -39,7 +38,6 @@ export class HIRType {
 
     virtual ~HIRType() = default;
 
-    virtual void dump(int depth, bool with_indent = true, bool trailing_newline = true) const = 0;
     virtual std::string to_string() const = 0;
 
     template <typename T>
@@ -59,21 +57,20 @@ export class HIRType {
     }
 };
 
+export class HIRAnyType : public HIRType {
+  public:
+    static constexpr Kind::Type static_kind = Kind::Type::Any;
+
+    HIRAnyType() : HIRType(static_kind) {}
+
+    std::string to_string() const override { return "any"; }
+};
+
 export class HIRVoidType : public HIRType {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Void;
 
     HIRVoidType() : HIRType(static_kind) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-        Logger::print("HIRVoidType()");
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 
     std::string to_string() const override { return "void"; }
 };
@@ -84,16 +81,6 @@ export class HIRBooleanType : public HIRType {
 
     HIRBooleanType() : HIRType(static_kind) {}
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-        Logger::print("HIRBooleanType()");
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
-
     std::string to_string() const override { return "bool"; }
 };
 
@@ -102,16 +89,6 @@ export class HIRStringType : public HIRType {
     static constexpr Kind::Type static_kind = Kind::Type::String;
 
     HIRStringType() : HIRType(static_kind) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-        Logger::print("HIRStringType()");
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 
     std::string to_string() const override { return "string"; }
 };
@@ -126,17 +103,6 @@ export class HIRIntegerType : public HIRType {
     HIRIntegerType(std::uint8_t bits, bool is_signed)
         : HIRType(static_kind), bits(bits), is_signed(is_signed) {}
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-        Logger::print("HIRIntegerType(bits: ", static_cast<int>(bits),
-                      ", is_signed: ", (is_signed ? "true" : "false"), ")");
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
-
     std::string to_string() const override {
         return (is_signed ? "i" : "u") + std::to_string(bits);
     }
@@ -150,16 +116,6 @@ export class HIRFloatType : public HIRType {
 
     explicit HIRFloatType(std::uint8_t bits = 64) : HIRType(static_kind), bits(bits) {}
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-        Logger::print("HIRFloatType(bits: ", static_cast<int>(bits), ")");
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
-
     std::string to_string() const override { return "f" + std::to_string(bits); }
 };
 
@@ -171,16 +127,6 @@ export class HIRPointerType : public HIRType {
 
     explicit HIRPointerType(std::shared_ptr<HIRType> base)
         : HIRType(static_kind), base(std::move(base)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-        Logger::print("HIRPointerType(base: ", (base != nullptr ? base->to_string() : "null"), ")");
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 
     std::string to_string() const override {
         return "*" + (base != nullptr ? base->to_string() : "void");
@@ -196,17 +142,6 @@ export class HIRArrayType : public HIRType {
 
     HIRArrayType(std::shared_ptr<HIRType> element, std::size_t size)
         : HIRType(static_kind), element(std::move(element)), size(size) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-        Logger::print("HIRArrayType(element: ",
-                      (element != nullptr ? element->to_string() : "null"), ", size: ", size, ")");
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 
     std::string to_string() const override {
         return (element != nullptr ? element->to_string() : "void") + "[" + std::to_string(size) +
@@ -230,18 +165,8 @@ export class HIRStructType : public HIRType {
     std::string name;
     std::vector<HIRStructField> fields;
 
-    HIRStructType(std::string name, std::vector<HIRStructField> fields = {})
+    HIRStructType(std::string name, std::vector<HIRStructField> fields)
         : HIRType(static_kind), name(std::move(name)), fields(std::move(fields)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-        Logger::print("HIRStructType(name: \"", name, "\", fields: ", fields.size(), ")");
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 
     std::string to_string() const override { return name; }
 };
@@ -258,24 +183,6 @@ export class HIRFunctionType : public HIRType {
                     std::shared_ptr<HIRType> return_type, bool variadic = false)
         : HIRType(static_kind), parameters(std::move(parameters)),
           return_type(std::move(return_type)), variadic(variadic) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-        Logger::print("HIRFunctionType(return: ",
-                      (return_type != nullptr ? return_type->to_string() : "null"), ", params: [");
-        for (std::size_t i = 0; i < parameters.size(); ++i) {
-            if (i > 0) {
-                Logger::print(", ");
-            }
-            Logger::print((parameters[i] != nullptr ? parameters[i]->to_string() : "null"));
-        }
-        Logger::print("], variadic: ", (variadic ? "true" : "false"), ")");
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 
     std::string to_string() const override {
         return "function( -> " + (return_type != nullptr ? return_type->to_string() : "void") + ")";

@@ -18,23 +18,23 @@ export class MonoCacheResult {
     std::string name;
     bool is_generated;
 
-    MonoCacheResult(std::string name_in, bool is_generated_in)
-        : name(std::move(name_in)), is_generated(is_generated_in) {}
+    MonoCacheResult(std::string name, bool is_generated)
+        : name(std::move(name)), is_generated(is_generated) {}
 };
 
 export class MonomorphizationCache {
   private:
     std::unordered_set<std::string> specializations;
-    std::unordered_map<std::string, StructDeclaration*> structs;
-    std::unordered_map<std::string, FunctionDeclaration*> functions;
+    std::unordered_map<std::string, const StructDeclaration*> structs;
+    std::unordered_map<std::string, const FunctionDeclaration*> functions;
     std::vector<std::unique_ptr<HIRFunctionDeclaration>> pending_specializations;
 
   public:
-    void register_function(const std::string& name, FunctionDeclaration* statement) {
+    void register_function(const std::string& name, const FunctionDeclaration* statement) {
         functions[name] = statement;
     }
 
-    void register_struct(const std::string& name, StructDeclaration* statement) {
+    void register_struct(const std::string& name, const StructDeclaration* statement) {
         structs[name] = statement;
     }
 
@@ -46,12 +46,12 @@ export class MonomorphizationCache {
         return structs.find(name) != structs.end();
     }
 
-    FunctionDeclaration* get_function(const std::string& name) const {
+    const FunctionDeclaration* get_function(const std::string& name) const {
         auto iterator = functions.find(name);
         return iterator != functions.end() ? iterator->second : nullptr;
     }
 
-    StructDeclaration* get_struct(const std::string& name) const {
+    const StructDeclaration* get_struct(const std::string& name) const {
         auto iterator = structs.find(name);
         return iterator != structs.end() ? iterator->second : nullptr;
     }
@@ -73,9 +73,11 @@ export class MonomorphizationCache {
     MonoCacheResult get_or_create(const std::string& name,
                                   const std::vector<std::shared_ptr<Type>>& types) {
         std::string full = NameMangler::mangle(name, types);
+
         if (specializations.contains(full)) {
             return MonoCacheResult(full, true);
         }
+
         specializations.insert(full);
         return MonoCacheResult(std::move(full), false);
     }

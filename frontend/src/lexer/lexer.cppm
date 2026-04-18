@@ -11,6 +11,7 @@ export module zep.frontend.lexer;
 import zep.frontend.token;
 import zep.frontend.token.keywords;
 import zep.common.position;
+import zep.common.span;
 import zep.common.source;
 
 export class Lexer {
@@ -137,9 +138,18 @@ export class Lexer {
     explicit Lexer(std::string_view input) : input(input) { read_char(); }
 
     Token next_token() {
-        skip_whitespace();
+        while (true) {
+            skip_whitespace();
 
-        auto token_position = position;
+            if (ch == '/' && peek_char() == '/') {
+                skip_comment();
+                continue;
+            }
+
+            break;
+        }
+
+        auto start_position = position;
 
         Token::Type token_type{};
         std::string_view value;
@@ -173,10 +183,6 @@ export class Lexer {
             read_char();
             break;
         case '/':
-            if (peek_char() == '/') {
-                skip_comment();
-                return next_token();
-            }
             value = "/";
             token_type = Token::Type::Divide;
             read_char();
@@ -335,6 +341,6 @@ export class Lexer {
             break;
         }
 
-        return Token(token_type, token_position, value);
+        return Token(token_type, Span(start_position, position), value);
     }
 };

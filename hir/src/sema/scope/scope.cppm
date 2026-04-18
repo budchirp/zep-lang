@@ -7,19 +7,17 @@ module;
 
 export module zep.hir.sema.scope;
 
-import zep.common.logger;
 import zep.hir.sema.scope.symbol;
 import zep.hir.sema.type;
 
 export class HIRScope {
-  private:
+  public:
     std::vector<std::unique_ptr<HIRScope>> children;
 
     std::unordered_map<std::string, std::unique_ptr<HIRTypeSymbol>> types;
     std::unordered_map<std::string, std::unique_ptr<HIRVarSymbol>> vars;
     std::unordered_map<std::string, std::unique_ptr<HIRFunctionSymbol>> functions;
 
-  public:
     std::string name;
     HIRScope* parent;
 
@@ -95,82 +93,5 @@ export class HIRScope {
         HIRScope* child_ptr = child.get();
         children.push_back(std::move(child));
         return child_ptr;
-    }
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("Scope(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("types: [");
-        if (types.empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            std::size_t type_index = 0;
-            for (const auto& entry : types) {
-                entry.second->dump(depth + 2, true, false);
-                Logger::print((++type_index < types.size() ? ",\n" : "\n"));
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-
-        Logger::print_indent(depth + 1);
-        Logger::print("vars: [");
-        if (vars.empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            std::size_t var_index = 0;
-            for (const auto& entry : vars) {
-                entry.second->dump(depth + 2, true, false);
-                Logger::print((++var_index < vars.size() ? ",\n" : "\n"));
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-
-        Logger::print_indent(depth + 1);
-        Logger::print("functions: [");
-        if (functions.empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            std::size_t function_index = 0;
-            for (const auto& entry : functions) {
-                entry.second->dump(depth + 2, true, false);
-                Logger::print((++function_index < functions.size() ? ",\n" : "\n"));
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-
-        Logger::print_indent(depth + 1);
-        Logger::print("children: [");
-        if (children.empty()) {
-            Logger::print("]\n");
-        } else {
-            Logger::print("\n");
-            for (std::size_t child_index = 0; child_index < children.size(); ++child_index) {
-                children[child_index]->dump(depth + 2, true, false);
-                Logger::print((child_index + 1 < children.size() ? ",\n" : "\n"));
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("]\n");
-        }
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
     }
 };

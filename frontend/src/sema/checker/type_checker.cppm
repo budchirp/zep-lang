@@ -7,7 +7,6 @@ module;
 
 export module zep.frontend.sema.checker.type_checker;
 
-import zep.common.position;
 import zep.frontend.sema.type;
 import zep.frontend.ast;
 import zep.frontend.ast.program;
@@ -51,9 +50,9 @@ export class TypeChecker : public Visitor<void> {
 
         if (!context.env.current_scope->define_function(
                 node.prototype->name,
-                std::make_unique<FunctionSymbol>(node.prototype->name, node.position,
+                std::make_unique<FunctionSymbol>(node.prototype->name, node.span,
                                                  node.visibility, type))) {
-            context.diagnostics.add_error(node.position, "redefinition of function '" +
+            context.diagnostics.add_error(node.span, "redefinition of function '" +
                                                              node.prototype->name +
                                                              "' with same parameter types");
         }
@@ -70,7 +69,7 @@ export class TypeChecker : public Visitor<void> {
 
         context.env.current_scope->define_function(
             node.prototype->name, std::make_unique<FunctionSymbol>(
-                                      node.prototype->name, node.position, node.visibility, type));
+                                      node.prototype->name, node.span, node.visibility, type));
     }
 
     void define_variable(VarDeclaration& node) {
@@ -86,7 +85,7 @@ export class TypeChecker : public Visitor<void> {
         node.set_type(type);
 
         context.env.current_scope->define_var(
-            node.name, std::make_unique<VarSymbol>(node.name, node.position, node.visibility,
+            node.name, std::make_unique<VarSymbol>(node.name, node.span, node.visibility,
                                                    node.storage_kind, type));
     }
 
@@ -103,7 +102,7 @@ export class TypeChecker : public Visitor<void> {
         node.set_type(type);
 
         context.env.current_scope->define_var(
-            node.name, std::make_unique<VarSymbol>(node.name, node.position, node.visibility,
+            node.name, std::make_unique<VarSymbol>(node.name, node.span, node.visibility,
                                                    StorageKind::Type::Var, type));
     }
 
@@ -135,7 +134,7 @@ export class TypeChecker : public Visitor<void> {
             return false;
         }
         case Expression::Kind::Type::UnaryExpression: {
-            if (expression.as<UnaryExpression>()->op == UnaryOperator::Type::Dereference) {
+            if (expression.as<UnaryExpression>()->op == UnaryExpression::Operator::Type::Dereference) {
                 auto type = expression.as<UnaryExpression>()->operand->get_type();
                 if (type != nullptr) {
                     if (auto* pointer = type->as<PointerType>()) {
@@ -156,54 +155,6 @@ export class TypeChecker : public Visitor<void> {
             return false;
         }
         }
-    }
-
-    template <typename T>
-    bool try_visit_expression(Expression& expression) {
-        if (auto* node = expression.as<T>()) {
-            visit(*node);
-            return true;
-        }
-
-        return false;
-    }
-
-    void visit_expression(Expression& expression) {
-        try_visit_expression<NumberLiteral>(expression) ||
-            try_visit_expression<FloatLiteral>(expression) ||
-            try_visit_expression<StringLiteral>(expression) ||
-            try_visit_expression<BooleanLiteral>(expression) ||
-            try_visit_expression<IdentifierExpression>(expression) ||
-            try_visit_expression<BinaryExpression>(expression) ||
-            try_visit_expression<UnaryExpression>(expression) ||
-            try_visit_expression<CallExpression>(expression) ||
-            try_visit_expression<IndexExpression>(expression) ||
-            try_visit_expression<MemberExpression>(expression) ||
-            try_visit_expression<AssignExpression>(expression) ||
-            try_visit_expression<StructLiteralExpression>(expression) ||
-            try_visit_expression<IfExpression>(expression);
-    }
-
-    template <typename T>
-    bool try_visit_statement(Statement& statement) {
-        if (auto* node = statement.as<T>()) {
-            visit(*node);
-            return true;
-        }
-
-        return false;
-    }
-
-    void visit_statement(Statement& statement) {
-        try_visit_statement<BlockStatement>(statement) ||
-            try_visit_statement<ExpressionStatement>(statement) ||
-            try_visit_statement<ReturnStatement>(statement) ||
-            try_visit_statement<StructDeclaration>(statement) ||
-            try_visit_statement<VarDeclaration>(statement) ||
-            try_visit_statement<FunctionDeclaration>(statement) ||
-            try_visit_statement<ExternFunctionDeclaration>(statement) ||
-            try_visit_statement<ExternVarDeclaration>(statement) ||
-            try_visit_statement<ImportStatement>(statement);
     }
 
   public:
@@ -278,12 +229,12 @@ export class TypeChecker : public Visitor<void> {
             return;
         }
 
-        context.diagnostics.add_error(node.position,
+        context.diagnostics.add_error(node.span,
                                       "use of undeclared symbol '" + node.name + "'");
     }
 
     void visit(BinaryExpression& node) override {
-        using Op = BinaryOperator::Type;
+        using Op = BinaryExpression::Operator::Type;
 
         switch (node.op) {
         case Op::As:
@@ -318,7 +269,7 @@ export class TypeChecker : public Visitor<void> {
             case Op::Modulo: {
                 if (!left_type->is_numeric()) {
                     context.diagnostics.add_error(
-                        node.left->position,
+                        node.left->span,
                         "left operand of arithmetic operator must be numeric, got '" +
                             left_type->to_string() + "'");
                     return;
@@ -326,7 +277,7 @@ export class TypeChecker : public Visitor<void> {
 
                 if (!right_type->is_numeric()) {
                     context.diagnostics.add_error(
-                        node.right->position,
+                        node.right->span,
                         "right operand of arithmetic operator must be numeric, got '" +
                             right_type->to_string() + "'");
                     return;
@@ -334,7 +285,7 @@ export class TypeChecker : public Visitor<void> {
 
                 if (!Type::compatible(left_type, right_type)) {
                     context.diagnostics.add_error(
-                        node.position, "type mismatch in arithmetic: '" + left_type->to_string() +
+                        node.span, "type mismatch in arithmetic: '" + left_type->to_string() +
                                            "' and '" + right_type->to_string() + "'");
                     return;
                 }
@@ -351,7 +302,7 @@ export class TypeChecker : public Visitor<void> {
             case Op::GreaterEqual: {
                 if (!Type::compatible(left_type, right_type)) {
                     context.diagnostics.add_error(
-                        node.position, "type mismatch in comparison: '" + left_type->to_string() +
+                        node.span, "type mismatch in comparison: '" + left_type->to_string() +
                                            "' and '" + right_type->to_string() + "'");
                     return;
                 }
@@ -364,7 +315,7 @@ export class TypeChecker : public Visitor<void> {
             case Op::Or: {
                 if (left_type->kind != Type::Kind::Type::Boolean) {
                     context.diagnostics.add_error(
-                        node.left->position,
+                        node.left->span,
                         "left operand of logical operator must be boolean, got '" +
                             left_type->to_string() + "'");
                     return;
@@ -372,7 +323,7 @@ export class TypeChecker : public Visitor<void> {
 
                 if (right_type->kind != Type::Kind::Type::Boolean) {
                     context.diagnostics.add_error(
-                        node.right->position,
+                        node.right->span,
                         "right operand of logical operator must be boolean, got '" +
                             right_type->to_string() + "'");
                     return;
@@ -390,7 +341,7 @@ export class TypeChecker : public Visitor<void> {
     }
 
     void visit(UnaryExpression& node) override {
-        using Op = UnaryOperator::Type;
+        using Op = UnaryExpression::Operator::Type;
 
         visit_expression(*node.operand);
 
@@ -403,7 +354,7 @@ export class TypeChecker : public Visitor<void> {
         case Op::Plus:
         case Op::Minus: {
             if (!operand_type->is_numeric()) {
-                context.diagnostics.add_error(node.position,
+                context.diagnostics.add_error(node.span,
                                               "operand of unary +/- must be numeric, got '" +
                                                   operand_type->to_string() + "'");
                 return;
@@ -415,7 +366,7 @@ export class TypeChecker : public Visitor<void> {
         }
         case Op::Not: {
             if (operand_type->kind != Type::Kind::Type::Boolean) {
-                context.diagnostics.add_error(node.position,
+                context.diagnostics.add_error(node.span,
                                               "operand of '!' must be boolean, got '" +
                                                   operand_type->to_string() + "'");
                 return;
@@ -429,7 +380,7 @@ export class TypeChecker : public Visitor<void> {
             if (auto* pointer = operand_type->as<PointerType>()) {
                 node.set_type(pointer->element);
             } else {
-                context.diagnostics.add_error(node.position,
+                context.diagnostics.add_error(node.span,
                                               "cannot dereference non-pointer type '" +
                                                   operand_type->to_string() + "'");
             }
@@ -458,7 +409,7 @@ export class TypeChecker : public Visitor<void> {
 
         const auto* function_type = callee_type->as<FunctionType>();
         if (function_type == nullptr) {
-            context.diagnostics.add_error(node.position, "cannot call non-function type '" +
+            context.diagnostics.add_error(node.span, "cannot call non-function type '" +
                                                              callee_type->to_string() + "'");
             return;
         }
@@ -493,7 +444,7 @@ export class TypeChecker : public Visitor<void> {
 
         auto* array_type = value_type->as<ArrayType>();
         if (array_type == nullptr) {
-            context.diagnostics.add_error(node.position, "cannot index non-array type '" +
+            context.diagnostics.add_error(node.span, "cannot index non-array type '" +
                                                              value_type->to_string() + "'");
             return;
         }
@@ -505,7 +456,7 @@ export class TypeChecker : public Visitor<void> {
 
         auto* integer_type = index_type->as<IntegerType>();
         if (integer_type == nullptr) {
-            context.diagnostics.add_error(node.index->position,
+            context.diagnostics.add_error(node.index->span,
                                           "array index must be an integer, got '" +
                                               index_type->to_string() + "'");
             return;
@@ -524,7 +475,7 @@ export class TypeChecker : public Visitor<void> {
 
         auto* struct_type = value_type->as<StructType>();
         if (struct_type == nullptr) {
-            context.diagnostics.add_error(node.position,
+            context.diagnostics.add_error(node.span,
                                           "cannot access member of non-struct type '" +
                                               value_type->to_string() + "'");
             return;
@@ -537,7 +488,7 @@ export class TypeChecker : public Visitor<void> {
             }
         }
 
-        context.diagnostics.add_error(node.position, "struct '" + struct_type->name +
+        context.diagnostics.add_error(node.span, "struct '" + struct_type->name +
                                                          "' has no member '" + node.member + "'");
     }
 
@@ -546,7 +497,7 @@ export class TypeChecker : public Visitor<void> {
         visit_expression(*node.value);
 
         if (!is_mutable(*node.target)) {
-            context.diagnostics.add_error(node.target->position,
+            context.diagnostics.add_error(node.target->span,
                                           "cannot assign to immutable target");
         }
 
@@ -554,7 +505,7 @@ export class TypeChecker : public Visitor<void> {
         auto value_type = node.value->get_type();
 
         if (!Type::compatible(value_type, target_type)) {
-            context.diagnostics.add_error(node.position, "type mismatch in assignment: expected '" +
+            context.diagnostics.add_error(node.span, "type mismatch in assignment: expected '" +
                                                              target_type->to_string() + "', got '" +
                                                              value_type->to_string() + "'");
         }
@@ -572,7 +523,7 @@ export class TypeChecker : public Visitor<void> {
 
         auto* struct_type = name_type->as<StructType>();
         if (struct_type == nullptr) {
-            context.diagnostics.add_error(node.position, "cannot construct non-struct type '" +
+            context.diagnostics.add_error(node.span, "cannot construct non-struct type '" +
                                                              name_type->to_string() + "'");
             return;
         }
@@ -614,7 +565,7 @@ export class TypeChecker : public Visitor<void> {
         }
 
         if (condition_type->kind != Type::Kind::Type::Boolean) {
-            context.diagnostics.add_error(node.condition->position,
+            context.diagnostics.add_error(node.condition->span,
                                           "if condition must be boolean, got '" +
                                               condition_type->to_string() + "'");
         }
@@ -628,7 +579,7 @@ export class TypeChecker : public Visitor<void> {
             auto else_type = node.else_branch->get_type();
 
             if (!Type::compatible(then_type, else_type)) {
-                context.diagnostics.add_error(node.position,
+                context.diagnostics.add_error(node.span,
                                               "if/else branches have different types: '" +
                                                   then_type->to_string() + "' and '" +
                                                   else_type->to_string() + "'");
@@ -642,7 +593,7 @@ export class TypeChecker : public Visitor<void> {
 
     void visit(ReturnStatement& node) override {
         if (!current_function) {
-            context.diagnostics.add_error(node.position, "return statement outside of function");
+            context.diagnostics.add_error(node.span, "return statement outside of function");
         }
 
         auto expected = type_context.resolve_type(current_function->return_type);
@@ -657,11 +608,11 @@ export class TypeChecker : public Visitor<void> {
 
             if (!Type::compatible(type, expected)) {
                 context.diagnostics.add_error(
-                    node.position, "return type mismatch: expected '" + expected->to_string() +
+                    node.span, "return type mismatch: expected '" + expected->to_string() +
                                        "', got '" + type->to_string() + "'");
             }
         } else if (expected->kind != Type::Kind::Type::Void) {
-            context.diagnostics.add_error(node.position, "non-void function must return a value");
+            context.diagnostics.add_error(node.span, "non-void function must return a value");
         }
     }
 
@@ -685,7 +636,7 @@ export class TypeChecker : public Visitor<void> {
             auto init_type = node.initializer->get_type();
 
             if (init_type && !Type::compatible(var_type, init_type)) {
-                context.diagnostics.add_error(node.position,
+                context.diagnostics.add_error(node.span,
                                               "type mismatch in variable declaration: declared '" +
                                                   var_type->to_string() + "', initializer is '" +
                                                   init_type->to_string() + "'");
@@ -693,7 +644,7 @@ export class TypeChecker : public Visitor<void> {
         }
 
         if (!var_type) {
-            context.diagnostics.add_error(node.position,
+            context.diagnostics.add_error(node.span,
                                           "cannot determine type of variable '" + node.name + "'");
             var_type = std::make_shared<UnknownType>();
         }
@@ -701,9 +652,9 @@ export class TypeChecker : public Visitor<void> {
         if (node.get_type() == nullptr) {
             if (!context.env.current_scope->define_var(
                     node.name,
-                    std::make_unique<VarSymbol>(node.name, node.position, node.visibility,
+                    std::make_unique<VarSymbol>(node.name, node.span, node.visibility,
                                                 node.storage_kind, var_type))) {
-                context.diagnostics.add_error(node.position, "redefinition of '" + node.name + "'");
+                context.diagnostics.add_error(node.span, "redefinition of '" + node.name + "'");
             }
         }
 
@@ -712,7 +663,7 @@ export class TypeChecker : public Visitor<void> {
 
     void visit(FunctionDeclaration& node) override {
         if (context.env.current_scope != context.env.global_scope.get()) {
-            context.diagnostics.add_error(node.position,
+            context.diagnostics.add_error(node.span,
                                           "functions can only be declared in global scope");
             return;
         }
@@ -732,7 +683,7 @@ export class TypeChecker : public Visitor<void> {
         for (const auto& parameter : function_type->parameters) {
             auto param_type = type_context.resolve_type(parameter->type);
             context.env.current_scope->define_var(
-                parameter->name, std::make_unique<VarSymbol>(parameter->name, node.position,
+                parameter->name, std::make_unique<VarSymbol>(parameter->name, node.span,
                                                              Visibility::Type::Private,
                                                              StorageKind::Type::Var, param_type));
         }

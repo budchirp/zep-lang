@@ -8,9 +8,9 @@ module;
 export module zep.frontend.ast;
 
 import zep.common.position;
-import zep.common.logger;
+import zep.common.span;
 import zep.frontend.sema.type;
-export import zep.frontend.sema.kinds;
+import zep.frontend.sema.kinds;
 
 export template <typename T>
 class Visitor;
@@ -56,7 +56,7 @@ export class Node {
     };
 
   protected:
-    explicit Node(Kind::Type kind, Position position) : kind(kind), position(position) {}
+    explicit Node(Kind::Type kind, Span span) : kind(kind), span(span) {}
 
     Node(const Node&) = delete;
     Node& operator=(const Node&) = delete;
@@ -65,11 +65,9 @@ export class Node {
 
   public:
     Kind::Type kind;
-    Position position;
+    Span span;
 
     virtual ~Node() = default;
-
-    virtual void dump(int depth, bool with_indent = true, bool trailing_newline = true) const = 0;
 
     template <typename T>
     T* as() {
@@ -118,26 +116,8 @@ export class TypeExpression : public Node {
 
     std::shared_ptr<Type> type;
 
-    TypeExpression(Position position, std::shared_ptr<Type> type)
-        : Node(static_kind, position), type(std::move(type)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("TypeExpression(type: ");
-        if (type) {
-            type->dump(depth, false, false);
-        } else {
-            Logger::print("null");
-        }
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    TypeExpression(Span span, std::shared_ptr<Type> type)
+        : Node(static_kind, span), type(std::move(type)) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -155,36 +135,9 @@ export class GenericParameter : public Node {
     std::string name;
     std::unique_ptr<TypeExpression> constraint;
 
-    GenericParameter(Position position, std::string name,
+    GenericParameter(Span span, std::string name,
                      std::unique_ptr<TypeExpression> constraint)
-        : Node(static_kind, position), name(std::move(name)), constraint(std::move(constraint)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("GenericParameter(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("constraint: ");
-        if (constraint) {
-            constraint->dump(depth + 1, false, false);
-        } else {
-            Logger::print("null");
-        }
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+        : Node(static_kind, span), name(std::move(name)), constraint(std::move(constraint)) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -202,35 +155,8 @@ export class GenericArgument : public Node {
     std::string name;
     std::unique_ptr<TypeExpression> type;
 
-    GenericArgument(Position position, std::string name, std::unique_ptr<TypeExpression> type)
-        : Node(static_kind, position), name(std::move(name)), type(std::move(type)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("GenericArgument(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("type: ");
-        if (type) {
-            type->dump(depth + 1, false, false);
-        } else {
-            Logger::print("null");
-        }
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    GenericArgument(Span span, std::string name, std::unique_ptr<TypeExpression> type)
+        : Node(static_kind, span), name(std::move(name)), type(std::move(type)) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -247,40 +173,10 @@ export class Parameter : public Node {
     std::string name;
     std::unique_ptr<TypeExpression> type;
 
-    Parameter(Position position, bool is_variadic, std::string name,
+    Parameter(Span span, bool is_variadic, std::string name,
               std::unique_ptr<TypeExpression> type)
-        : Node(static_kind, position), is_variadic(is_variadic), name(std::move(name)),
+        : Node(static_kind, span), is_variadic(is_variadic), name(std::move(name)),
           type(std::move(type)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("Parameter(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("is_variadic: ", (is_variadic ? "true" : "false"), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("type: ");
-        if (type) {
-            type->dump(depth + 1, false, false);
-        } else {
-            Logger::print("null");
-        }
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -295,31 +191,8 @@ export class Argument : public Node {
     std::string name;
     std::unique_ptr<Expression> value;
 
-    Argument(Position position, std::string name, std::unique_ptr<Expression> value)
-        : Node(static_kind, position), name(std::move(name)), value(std::move(value)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("Argument(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("value: ");
-        value->dump(depth + 1, false, false);
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    Argument(Span span, std::string name, std::unique_ptr<Expression> value)
+        : Node(static_kind, span), name(std::move(name)), value(std::move(value)) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -338,70 +211,13 @@ export class FunctionPrototype : public Node {
 
     std::unique_ptr<TypeExpression> return_type;
 
-    FunctionPrototype(Position position, std::string name,
+    FunctionPrototype(Span span, std::string name,
                       std::vector<std::unique_ptr<GenericParameter>> generic_parameters,
                       std::vector<std::unique_ptr<Parameter>> parameters,
                       std::unique_ptr<TypeExpression> return_type)
-        : Node(static_kind, position), name(std::move(name)),
+        : Node(static_kind, span), name(std::move(name)),
           generic_parameters(std::move(generic_parameters)), parameters(std::move(parameters)),
           return_type(std::move(return_type)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("FunctionPrototype(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("generic_parameters: [");
-        if (generic_parameters.empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            for (std::size_t i = 0; i < generic_parameters.size(); ++i) {
-                generic_parameters[i]->dump(depth + 2, true, false);
-                Logger::print((i + 1 < generic_parameters.size() ? ",\n" : "\n"));
-            }
-
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-
-        Logger::print_indent(depth + 1);
-        Logger::print("parameters: [");
-        if (parameters.empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            for (std::size_t i = 0; i < parameters.size(); ++i) {
-                parameters[i]->dump(depth + 2, true, false);
-                Logger::print((i + 1 < parameters.size() ? ",\n" : "\n"));
-            }
-
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-
-        Logger::print_indent(depth + 1);
-        Logger::print("return_type: ");
-        if (return_type) {
-            return_type->dump(depth + 1, false, false);
-        } else {
-            Logger::print("null");
-        }
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -418,40 +234,10 @@ export class StructField : public Node {
     std::string name;
     std::unique_ptr<TypeExpression> type;
 
-    StructField(Position position, Visibility::Type visibility, std::string name,
+    StructField(Span span, Visibility::Type visibility, std::string name,
                 std::unique_ptr<TypeExpression> type)
-        : Node(static_kind, position), visibility(visibility), name(std::move(name)),
+        : Node(static_kind, span), visibility(visibility), name(std::move(name)),
           type(std::move(type)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("StructField(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("type: ");
-        if (type) {
-            type->dump(depth + 1, false, false);
-        } else {
-            Logger::print("null");
-        }
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -466,31 +252,8 @@ export class StructLiteralField : public Node {
     std::string name;
     std::unique_ptr<Expression> value;
 
-    StructLiteralField(Position position, std::string name, std::unique_ptr<Expression> value)
-        : Node(static_kind, position), name(std::move(name)), value(std::move(value)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("StructLiteralField(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("value: ");
-        value->dump(depth + 1, false, false);
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    StructLiteralField(Span span, std::string name, std::unique_ptr<Expression> value)
+        : Node(static_kind, span), name(std::move(name)), value(std::move(value)) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -504,20 +267,8 @@ export class NumberLiteral : public Expression {
 
     std::string value;
 
-    NumberLiteral(Position position, std::string value)
-        : Expression(static_kind, position), value(std::move(value)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("NumberLiteral(value: \"", value, "\")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    NumberLiteral(Span span, std::string value)
+        : Expression(static_kind, span), value(std::move(value)) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -531,20 +282,8 @@ export class FloatLiteral : public Expression {
 
     std::string value;
 
-    FloatLiteral(Position position, std::string value)
-        : Expression(static_kind, position), value(std::move(value)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("FloatLiteral(value: \"", value, "\")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    FloatLiteral(Span span, std::string value)
+        : Expression(static_kind, span), value(std::move(value)) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -558,20 +297,8 @@ export class StringLiteral : public Expression {
 
     std::string value;
 
-    StringLiteral(Position position, std::string value)
-        : Expression(static_kind, position), value(std::move(value)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("StringLiteral(value: \"", value, "\")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    StringLiteral(Span span, std::string value)
+        : Expression(static_kind, span), value(std::move(value)) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -585,20 +312,8 @@ export class BooleanLiteral : public Expression {
 
     bool value;
 
-    BooleanLiteral(Position position, bool value)
-        : Expression(static_kind, position), value(value) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("BooleanLiteral(value: ", (value ? "true" : "false"), ")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    BooleanLiteral(Span span, bool value)
+        : Expression(static_kind, span), value(value) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -612,20 +327,8 @@ export class IdentifierExpression : public Expression {
 
     std::string name;
 
-    IdentifierExpression(Position position, std::string name)
-        : Expression(static_kind, position), name(std::move(name)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("IdentifierExpression(name: \"", name, "\")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    IdentifierExpression(Span span, std::string name)
+        : Expression(static_kind, span), name(std::move(name)) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -633,116 +336,75 @@ export class IdentifierExpression : public Expression {
     }
 };
 
-export class BinaryOperator {
-  public:
-    enum class Type : std::uint8_t {
-        Plus,
-        Minus,
-        Asterisk,
-        Divide,
-        Modulo,
-        Equals,
-        NotEquals,
-        LessThan,
-        GreaterThan,
-        LessEqual,
-        GreaterEqual,
-        And,
-        Or,
-        As,
-        Is
-    };
-};
-
-export class UnaryOperator {
-  public:
-    enum class Type : std::uint8_t {
-        Plus,
-        Minus,
-        Not,
-        Dereference,
-        AddressOf,
-    };
-};
-
 export class BinaryExpression : public Expression {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::BinaryExpression;
 
-  private:
-    static std::string operator_string(BinaryOperator::Type op) {
-        switch (op) {
-        case BinaryOperator::Type::Plus:
-            return "+";
-        case BinaryOperator::Type::Minus:
-            return "-";
-        case BinaryOperator::Type::Asterisk:
-            return "*";
-        case BinaryOperator::Type::Divide:
-            return "/";
-        case BinaryOperator::Type::Modulo:
-            return "%";
-        case BinaryOperator::Type::Equals:
-            return "==";
-        case BinaryOperator::Type::NotEquals:
-            return "!=";
-        case BinaryOperator::Type::LessThan:
-            return "<";
-        case BinaryOperator::Type::GreaterThan:
-            return ">";
-        case BinaryOperator::Type::LessEqual:
-            return "<=";
-        case BinaryOperator::Type::GreaterEqual:
-            return ">=";
-        case BinaryOperator::Type::And:
-            return "&&";
-        case BinaryOperator::Type::Or:
-            return "||";
-        case BinaryOperator::Type::As:
-            return "as";
-        case BinaryOperator::Type::Is:
-            return "is";
-        }
-        return "?";
-    }
+    class Operator {
+      public:
+        enum class Type : std::uint8_t {
+            Plus,
+            Minus,
+            Asterisk,
+            Divide,
+            Modulo,
+            Equals,
+            NotEquals,
+            LessThan,
+            GreaterThan,
+            LessEqual,
+            GreaterEqual,
+            And,
+            Or,
+            As,
+            Is
+        };
 
-  public:
+        static std::string to_string(Type op) {
+            switch (op) {
+            case Type::Plus:
+                return "+";
+            case Type::Minus:
+                return "-";
+            case Type::Asterisk:
+                return "*";
+            case Type::Divide:
+                return "/";
+            case Type::Modulo:
+                return "%";
+            case Type::Equals:
+                return "==";
+            case Type::NotEquals:
+                return "!=";
+            case Type::LessThan:
+                return "<";
+            case Type::GreaterThan:
+                return ">";
+            case Type::LessEqual:
+                return "<=";
+            case Type::GreaterEqual:
+                return ">=";
+            case Type::And:
+                return "&&";
+            case Type::Or:
+                return "||";
+            case Type::As:
+                return "as";
+            case Type::Is:
+                return "is";
+            }
+            return "?";
+        }
+    };
+
     std::unique_ptr<Expression> left;
-    BinaryOperator::Type op;
+    Operator::Type op;
     std::unique_ptr<Expression> right;
 
-    BinaryExpression(Position position, std::unique_ptr<Expression> left, BinaryOperator::Type op,
+    BinaryExpression(Span span, std::unique_ptr<Expression> left, Operator::Type op,
                      std::unique_ptr<Expression> right)
-        : Expression(static_kind, position), left(std::move(left)), op(op),
+        : Expression(static_kind, span), left(std::move(left)), op(op),
           right(std::move(right)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("BinaryExpression(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("left: ");
-        left->dump(depth + 1, false, false);
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("op: ", operator_string(op), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("right: ");
-        right->dump(depth + 1, false, false);
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -754,52 +416,38 @@ export class UnaryExpression : public Expression {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::UnaryExpression;
 
-  private:
-    static std::string operator_string(UnaryOperator::Type op) {
-        switch (op) {
-        case UnaryOperator::Type::Plus:
-            return "+";
-        case UnaryOperator::Type::Minus:
-            return "-";
-        case UnaryOperator::Type::Not:
-            return "!";
-        case UnaryOperator::Type::Dereference:
-            return "*";
-        case UnaryOperator::Type::AddressOf:
-            return "&";
-        }
-        return "?";
-    }
+    class Operator {
+      public:
+        enum class Type : std::uint8_t {
+            Plus,
+            Minus,
+            Not,
+            Dereference,
+            AddressOf,
+        };
 
-  public:
-    UnaryOperator::Type op;
+        static std::string to_string(Type op) {
+            switch (op) {
+            case Type::Plus:
+                return "+";
+            case Type::Minus:
+                return "-";
+            case Type::Not:
+                return "!";
+            case Type::Dereference:
+                return "*";
+            case Type::AddressOf:
+                return "&";
+            }
+            return "?";
+        }
+    };
+
+    Operator::Type op;
     std::unique_ptr<Expression> operand;
 
-    UnaryExpression(Position position, UnaryOperator::Type op, std::unique_ptr<Expression> operand)
-        : Expression(static_kind, position), op(op), operand(std::move(operand)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("UnaryExpression(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("op: ", operator_string(op), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("operand: ");
-        operand->dump(depth + 1, false, false);
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    UnaryExpression(Span span, Operator::Type op, std::unique_ptr<Expression> operand)
+        : Expression(static_kind, span), op(op), operand(std::move(operand)) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -817,61 +465,11 @@ export class CallExpression : public Expression {
 
     std::vector<std::unique_ptr<Argument>> arguments;
 
-    CallExpression(Position position, std::unique_ptr<Expression> callee,
+    CallExpression(Span span, std::unique_ptr<Expression> callee,
                    std::vector<std::unique_ptr<GenericArgument>> generic_arguments,
                    std::vector<std::unique_ptr<Argument>> arguments)
-        : Expression(static_kind, position), callee(std::move(callee)),
+        : Expression(static_kind, span), callee(std::move(callee)),
           generic_arguments(std::move(generic_arguments)), arguments(std::move(arguments)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("CallExpression(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("callee: ");
-        callee->dump(depth + 1, false, false);
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("generic_arguments: [");
-        if (generic_arguments.empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            for (std::size_t i = 0; i < generic_arguments.size(); ++i) {
-                generic_arguments[i]->dump(depth + 2, true, false);
-                Logger::print((i + 1 < generic_arguments.size() ? ",\n" : "\n"));
-            }
-
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-
-        Logger::print_indent(depth + 1);
-        Logger::print("arguments: [");
-        if (arguments.empty()) {
-            Logger::print("]\n");
-        } else {
-            Logger::print("\n");
-            for (std::size_t i = 0; i < arguments.size(); ++i) {
-                arguments[i]->dump(depth + 2, true, false);
-                Logger::print((i + 1 < arguments.size() ? ",\n" : "\n"));
-            }
-
-            Logger::print_indent(depth + 1);
-            Logger::print("]\n");
-        }
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -886,34 +484,9 @@ export class IndexExpression : public Expression {
     std::unique_ptr<Expression> value;
     std::unique_ptr<Expression> index;
 
-    IndexExpression(Position position, std::unique_ptr<Expression> value,
+    IndexExpression(Span span, std::unique_ptr<Expression> value,
                     std::unique_ptr<Expression> index)
-        : Expression(static_kind, position), value(std::move(value)), index(std::move(index)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("IndexExpression(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("value: ");
-        value->dump(depth + 1, false, false);
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("index: ");
-        index->dump(depth + 1, false, false);
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+        : Expression(static_kind, span), value(std::move(value)), index(std::move(index)) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -928,31 +501,8 @@ export class MemberExpression : public Expression {
     std::unique_ptr<Expression> value;
     std::string member;
 
-    MemberExpression(Position position, std::unique_ptr<Expression> value, std::string member)
-        : Expression(static_kind, position), value(std::move(value)), member(std::move(member)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("MemberExpression(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("value: ");
-        value->dump(depth + 1, false, false);
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("member: \"", member, "\"\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    MemberExpression(Span span, std::unique_ptr<Expression> value, std::string member)
+        : Expression(static_kind, span), value(std::move(value)), member(std::move(member)) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -967,34 +517,9 @@ export class AssignExpression : public Expression {
     std::unique_ptr<Expression> target;
     std::unique_ptr<Expression> value;
 
-    AssignExpression(Position position, std::unique_ptr<Expression> target,
+    AssignExpression(Span span, std::unique_ptr<Expression> target,
                      std::unique_ptr<Expression> value)
-        : Expression(static_kind, position), target(std::move(target)), value(std::move(value)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("AssignExpression(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("target: ");
-        target->dump(depth + 1, false, false);
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("value: ");
-        value->dump(depth + 1, false, false);
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+        : Expression(static_kind, span), target(std::move(target)), value(std::move(value)) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -1012,61 +537,11 @@ export class StructLiteralExpression : public Expression {
 
     std::vector<std::unique_ptr<StructLiteralField>> fields;
 
-    StructLiteralExpression(Position position, std::unique_ptr<IdentifierExpression> name,
+    StructLiteralExpression(Span span, std::unique_ptr<IdentifierExpression> name,
                             std::vector<std::unique_ptr<GenericArgument>> generic_arguments,
                             std::vector<std::unique_ptr<StructLiteralField>> fields)
-        : Expression(static_kind, position), name(std::move(name)),
+        : Expression(static_kind, span), name(std::move(name)),
           generic_arguments(std::move(generic_arguments)), fields(std::move(fields)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("StructLiteralExpression(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: ");
-        name->dump(depth + 1, false, false);
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("generic_arguments: [");
-        if (generic_arguments.empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            for (std::size_t i = 0; i < generic_arguments.size(); ++i) {
-                generic_arguments[i]->dump(depth + 2, true, false);
-                Logger::print((i + 1 < generic_arguments.size() ? ",\n" : "\n"));
-            }
-
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-
-        Logger::print_indent(depth + 1);
-        Logger::print("fields: [");
-        if (fields.empty()) {
-            Logger::print("]\n");
-        } else {
-            Logger::print("\n");
-            for (std::size_t i = 0; i < fields.size(); ++i) {
-                fields[i]->dump(depth + 2, true, false);
-                Logger::print((i + 1 < fields.size() ? ",\n" : "\n"));
-            }
-
-            Logger::print_indent(depth + 1);
-            Logger::print("]\n");
-        }
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -1080,32 +555,8 @@ export class BlockStatement : public Statement {
 
     std::vector<std::unique_ptr<Statement>> statements;
 
-    BlockStatement(Position position, std::vector<std::unique_ptr<Statement>> statements)
-        : Statement(static_kind, position), statements(std::move(statements)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("BlockStatement(statements: [");
-        if (statements.empty()) {
-            Logger::print("])");
-        } else {
-            Logger::print("\n");
-            for (std::size_t i = 0; i < statements.size(); ++i) {
-                statements[i]->dump(depth + 1, true, false);
-                Logger::print((i + 1 < statements.size() ? ",\n" : "\n"));
-            }
-
-            Logger::print_indent(depth);
-            Logger::print("])");
-        }
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    BlockStatement(Span span, std::vector<std::unique_ptr<Statement>> statements)
+        : Statement(static_kind, span), statements(std::move(statements)) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -1120,21 +571,7 @@ export class ExpressionStatement : public Statement {
     std::unique_ptr<Expression> expression;
 
     explicit ExpressionStatement(std::unique_ptr<Expression> expression)
-        : Statement(static_kind, expression->position), expression(std::move(expression)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("ExpressionStatement(expression: ");
-        expression->dump(depth, false, false);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+        : Statement(static_kind, expression->span), expression(std::move(expression)) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -1150,44 +587,10 @@ export class IfExpression : public Expression {
     std::unique_ptr<Statement> then_branch;
     std::unique_ptr<Statement> else_branch;
 
-    IfExpression(Position position, std::unique_ptr<Expression> condition,
+    IfExpression(Span span, std::unique_ptr<Expression> condition,
                  std::unique_ptr<Statement> then_branch, std::unique_ptr<Statement> else_branch)
-        : Expression(static_kind, position), condition(std::move(condition)),
+        : Expression(static_kind, span), condition(std::move(condition)),
           then_branch(std::move(then_branch)), else_branch(std::move(else_branch)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("IfStatement(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("condition: ");
-        condition->dump(depth + 1, false, false);
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("then_branch: ");
-        then_branch->dump(depth + 1, false, false);
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("else_branch: ");
-        if (else_branch) {
-            else_branch->dump(depth + 1, false, false);
-        } else {
-            Logger::print("null");
-        }
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -1201,26 +604,8 @@ export class ReturnStatement : public Statement {
 
     std::unique_ptr<Expression> value;
 
-    ReturnStatement(Position position, std::unique_ptr<Expression> value)
-        : Statement(static_kind, position), value(std::move(value)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("ReturnStatement(value: ");
-        if (value) {
-            value->dump(depth, false, false);
-        } else {
-            Logger::print("null");
-        }
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    ReturnStatement(Span span, std::unique_ptr<Expression> value)
+        : Statement(static_kind, span), value(std::move(value)) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -1240,62 +625,11 @@ export class StructDeclaration : public Statement {
 
     std::vector<std::unique_ptr<StructField>> fields;
 
-    StructDeclaration(Position position, Visibility::Type visibility, std::string name,
+    StructDeclaration(Span span, Visibility::Type visibility, std::string name,
                       std::vector<std::unique_ptr<GenericParameter>> generic_parameters,
                       std::vector<std::unique_ptr<StructField>> fields)
-        : Statement(static_kind, position), visibility(visibility), name(std::move(name)),
+        : Statement(static_kind, span), visibility(visibility), name(std::move(name)),
           generic_parameters(std::move(generic_parameters)), fields(std::move(fields)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("StructDeclaration(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("generic_parameters: [");
-        if (generic_parameters.empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            for (std::size_t i = 0; i < generic_parameters.size(); ++i) {
-                generic_parameters[i]->dump(depth + 2, true, false);
-                Logger::print((i + 1 < generic_parameters.size() ? ",\n" : "\n"));
-            }
-
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-
-        Logger::print_indent(depth + 1);
-        Logger::print("fields: [");
-        if (fields.empty()) {
-            Logger::print("]\n");
-        } else {
-            Logger::print("\n");
-            for (std::size_t i = 0; i < fields.size(); ++i) {
-                fields[i]->dump(depth + 2, true, false);
-                Logger::print((i + 1 < fields.size() ? ",\n" : "\n"));
-            }
-
-            Logger::print_indent(depth + 1);
-            Logger::print("]\n");
-        }
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -1314,53 +648,11 @@ export class VarDeclaration : public Statement {
     std::unique_ptr<TypeExpression> type;
     std::unique_ptr<Expression> initializer;
 
-    VarDeclaration(Position position, Visibility::Type visibility, StorageKind::Type storage_kind,
+    VarDeclaration(Span span, Visibility::Type visibility, StorageKind::Type storage_kind,
                    std::string name, std::unique_ptr<TypeExpression> type,
                    std::unique_ptr<Expression> initializer)
-        : Statement(static_kind, position), visibility(visibility), storage_kind(storage_kind),
+        : Statement(static_kind, span), visibility(visibility), storage_kind(storage_kind),
           name(std::move(name)), type(std::move(type)), initializer(std::move(initializer)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("VarDeclaration(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("storage_kind: ", StorageKind::to_string(storage_kind), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("type: ");
-        if (type) {
-            type->dump(depth + 1, false, false);
-        } else {
-            Logger::print("null");
-        }
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("initializer: ");
-        if (initializer) {
-            initializer->dump(depth + 1, false, false);
-        } else {
-            Logger::print("null");
-        }
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -1377,39 +669,11 @@ export class FunctionDeclaration : public Statement {
     std::unique_ptr<FunctionPrototype> prototype;
     std::unique_ptr<BlockStatement> body;
 
-    FunctionDeclaration(Position position, Visibility::Type visibility,
+    FunctionDeclaration(Span span, Visibility::Type visibility,
                         std::unique_ptr<FunctionPrototype> prototype,
                         std::unique_ptr<BlockStatement> body)
-        : Statement(static_kind, position), visibility(visibility), prototype(std::move(prototype)),
+        : Statement(static_kind, span), visibility(visibility), prototype(std::move(prototype)),
           body(std::move(body)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("FunctionDeclaration(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("prototype: ");
-        prototype->dump(depth + 1, false, false);
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("body: ");
-        body->dump(depth + 1, false, false);
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -1425,33 +689,10 @@ export class ExternFunctionDeclaration : public Statement {
 
     std::unique_ptr<FunctionPrototype> prototype;
 
-    ExternFunctionDeclaration(Position position, Visibility::Type visibility,
+    ExternFunctionDeclaration(Span span, Visibility::Type visibility,
                               std::unique_ptr<FunctionPrototype> prototype)
-        : Statement(static_kind, position), visibility(visibility),
+        : Statement(static_kind, span), visibility(visibility),
           prototype(std::move(prototype)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("ExternFunctionDeclaration(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("prototype: ");
-        prototype->dump(depth + 1, false, false);
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -1468,36 +709,10 @@ export class ExternVarDeclaration : public Statement {
     std::string name;
     std::unique_ptr<TypeExpression> type;
 
-    ExternVarDeclaration(Position position, Visibility::Type visibility, std::string name,
+    ExternVarDeclaration(Span span, Visibility::Type visibility, std::string name,
                          std::unique_ptr<TypeExpression> type)
-        : Statement(static_kind, position), visibility(visibility), name(std::move(name)),
+        : Statement(static_kind, span), visibility(visibility), name(std::move(name)),
           type(std::move(type)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("ExternVarDeclaration(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("type: ");
-        type->dump(depth + 1, false, false);
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -1511,32 +726,8 @@ export class ImportStatement : public Statement {
 
     std::vector<std::unique_ptr<IdentifierExpression>> path;
 
-    ImportStatement(Position position, std::vector<std::unique_ptr<IdentifierExpression>> path)
-        : Statement(static_kind, position), path(std::move(path)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("ImportStatement(path: [");
-        if (path.empty()) {
-            Logger::print("])");
-        } else {
-            Logger::print("\n");
-            for (std::size_t i = 0; i < path.size(); ++i) {
-                path[i]->dump(depth + 1, true, false);
-                Logger::print((i + 1 < path.size() ? ",\n" : "\n"));
-            }
-
-            Logger::print_indent(depth);
-            Logger::print("])");
-        }
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    ImportStatement(Span span, std::vector<std::unique_ptr<IdentifierExpression>> path)
+        : Statement(static_kind, span), path(std::move(path)) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -1581,4 +772,67 @@ class Visitor {
     virtual T visit(ExternFunctionDeclaration& node) = 0;
     virtual T visit(ExternVarDeclaration& node) = 0;
     virtual T visit(ImportStatement& node) = 0;
+
+    void visit_expression(Expression& expression) {
+        if (auto* n = expression.as<NumberLiteral>()) { visit(*n); return; }
+        if (auto* n = expression.as<FloatLiteral>()) { visit(*n); return; }
+        if (auto* n = expression.as<StringLiteral>()) { visit(*n); return; }
+        if (auto* n = expression.as<BooleanLiteral>()) { visit(*n); return; }
+        if (auto* n = expression.as<IdentifierExpression>()) { visit(*n); return; }
+        if (auto* n = expression.as<BinaryExpression>()) { visit(*n); return; }
+        if (auto* n = expression.as<UnaryExpression>()) { visit(*n); return; }
+        if (auto* n = expression.as<CallExpression>()) { visit(*n); return; }
+        if (auto* n = expression.as<IndexExpression>()) { visit(*n); return; }
+        if (auto* n = expression.as<MemberExpression>()) { visit(*n); return; }
+        if (auto* n = expression.as<AssignExpression>()) { visit(*n); return; }
+        if (auto* n = expression.as<StructLiteralExpression>()) { visit(*n); return; }
+        if (auto* n = expression.as<IfExpression>()) { visit(*n); return; }
+    }
+
+    void visit_statement(Statement& statement) {
+        if (auto* n = statement.as<BlockStatement>()) { visit(*n); return; }
+        if (auto* n = statement.as<ExpressionStatement>()) { visit(*n); return; }
+        if (auto* n = statement.as<ReturnStatement>()) { visit(*n); return; }
+        if (auto* n = statement.as<StructDeclaration>()) { visit(*n); return; }
+        if (auto* n = statement.as<VarDeclaration>()) { visit(*n); return; }
+        if (auto* n = statement.as<FunctionDeclaration>()) { visit(*n); return; }
+        if (auto* n = statement.as<ExternFunctionDeclaration>()) { visit(*n); return; }
+        if (auto* n = statement.as<ExternVarDeclaration>()) { visit(*n); return; }
+        if (auto* n = statement.as<ImportStatement>()) { visit(*n); return; }
+    }
+
+    void visit_node(Node& node) {
+        if (auto* n = node.as<TypeExpression>()) { visit(*n); return; }
+        if (auto* n = node.as<GenericParameter>()) { visit(*n); return; }
+        if (auto* n = node.as<GenericArgument>()) { visit(*n); return; }
+        if (auto* n = node.as<Parameter>()) { visit(*n); return; }
+        if (auto* n = node.as<Argument>()) { visit(*n); return; }
+        if (auto* n = node.as<FunctionPrototype>()) { visit(*n); return; }
+        if (auto* n = node.as<StructField>()) { visit(*n); return; }
+        if (auto* n = node.as<StructLiteralField>()) { visit(*n); return; }
+
+        if (auto* n = node.as<NumberLiteral>()) { visit(*n); return; }
+        if (auto* n = node.as<FloatLiteral>()) { visit(*n); return; }
+        if (auto* n = node.as<StringLiteral>()) { visit(*n); return; }
+        if (auto* n = node.as<BooleanLiteral>()) { visit(*n); return; }
+        if (auto* n = node.as<IdentifierExpression>()) { visit(*n); return; }
+        if (auto* n = node.as<BinaryExpression>()) { visit(*n); return; }
+        if (auto* n = node.as<UnaryExpression>()) { visit(*n); return; }
+        if (auto* n = node.as<CallExpression>()) { visit(*n); return; }
+        if (auto* n = node.as<IndexExpression>()) { visit(*n); return; }
+        if (auto* n = node.as<MemberExpression>()) { visit(*n); return; }
+        if (auto* n = node.as<AssignExpression>()) { visit(*n); return; }
+        if (auto* n = node.as<StructLiteralExpression>()) { visit(*n); return; }
+        if (auto* n = node.as<IfExpression>()) { visit(*n); return; }
+
+        if (auto* n = node.as<BlockStatement>()) { visit(*n); return; }
+        if (auto* n = node.as<ExpressionStatement>()) { visit(*n); return; }
+        if (auto* n = node.as<ReturnStatement>()) { visit(*n); return; }
+        if (auto* n = node.as<StructDeclaration>()) { visit(*n); return; }
+        if (auto* n = node.as<VarDeclaration>()) { visit(*n); return; }
+        if (auto* n = node.as<FunctionDeclaration>()) { visit(*n); return; }
+        if (auto* n = node.as<ExternFunctionDeclaration>()) { visit(*n); return; }
+        if (auto* n = node.as<ExternVarDeclaration>()) { visit(*n); return; }
+        if (auto* n = node.as<ImportStatement>()) { visit(*n); return; }
+    }
 };

@@ -8,8 +8,6 @@ module;
 
 export module zep.frontend.sema.type;
 
-import zep.common.logger;
-
 export class Type {
   public:
     class Kind {
@@ -43,7 +41,6 @@ export class Type {
 
     virtual ~Type() = default;
 
-    virtual void dump(int depth, bool with_indent = true, bool trailing_newline = true) const = 0;
     virtual std::string to_string() const = 0;
 
     bool is_numeric() const {
@@ -78,17 +75,6 @@ export class AnyType : public Type {
 
     AnyType() : Type(static_kind) {}
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("AnyType()");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
     std::string to_string() const override { return "any"; }
 };
 
@@ -98,17 +84,6 @@ export class UnknownType : public Type {
 
     UnknownType() : Type(static_kind) {}
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("UnknownType()");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
     std::string to_string() const override { return "unknown"; }
 };
 
@@ -118,17 +93,6 @@ export class VoidType : public Type {
 
     VoidType() : Type(static_kind) {}
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("VoidType()");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
     std::string to_string() const override { return "void"; }
 };
 
@@ -138,17 +102,6 @@ export class StringType : public Type {
 
     StringType() : Type(static_kind) {}
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("StringType()");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
     std::string to_string() const override { return "string"; }
 };
 
@@ -158,17 +111,6 @@ export class BooleanType : public Type {
 
     BooleanType() : Type(static_kind) {}
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("BooleanType()");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
     std::string to_string() const override { return "bool"; }
 };
 
@@ -182,26 +124,6 @@ export class IntegerType : public Type {
     IntegerType(bool is_unsigned = false, std::uint8_t size = 32)
         : Type(static_kind), is_unsigned(is_unsigned), size(size) {}
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("IntegerType(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("is_unsigned: ", (is_unsigned ? "true" : "false"), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("size: ", size, "\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
     std::string to_string() const override {
         return (is_unsigned ? "u" : "i") + std::to_string(size);
     }
@@ -215,17 +137,6 @@ export class FloatType : public Type {
 
     explicit FloatType(std::uint8_t size = 64) : Type(static_kind), size(size) {}
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("FloatType(size: ", size, ")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
     std::string to_string() const override { return "f" + std::to_string(size); }
 };
 
@@ -237,32 +148,6 @@ export class GenericParameterType {
     GenericParameterType(std::string name, std::shared_ptr<Type> constraint = nullptr)
         : name(std::move(name)), constraint(std::move(constraint)) {}
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("GenericParameterType(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("constraint: ");
-        if (constraint) {
-            constraint->dump(depth + 1, false, false);
-        } else {
-            Logger::print("null");
-        }
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
     std::string to_string() const {
         if (constraint != nullptr) {
             return name + ": " + constraint->to_string();
@@ -279,32 +164,6 @@ export class GenericArgumentType {
     GenericArgumentType(std::shared_ptr<Type> type, std::string name = "")
         : name(std::move(name)), type(std::move(type)) {}
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("GenericArgumentType(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("type: ");
-        if (type) {
-            type->dump(depth + 1, false, false);
-        } else {
-            Logger::print("null");
-        }
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
     std::string to_string() const {
         if (!name.empty()) {
             return name + " = " + type->to_string();
@@ -321,32 +180,6 @@ export class ParameterType {
     ParameterType(std::string name, std::shared_ptr<Type> type)
         : name(std::move(name)), type(std::move(type)) {}
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("ParameterType(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("type: ");
-        if (type) {
-            type->dump(depth + 1, false, false);
-        } else {
-            Logger::print("null");
-        }
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
     std::string to_string() const { return name + ": " + type->to_string(); }
 };
 
@@ -358,32 +191,6 @@ export class StructFieldType {
     StructFieldType(std::string name, std::shared_ptr<Type> type)
         : name(std::move(name)), type(std::move(type)) {}
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("StructFieldType(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("type: ");
-        if (type) {
-            type->dump(depth + 1, false, false);
-        } else {
-            Logger::print("null");
-        }
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
     std::string to_string() const { return name + ": " + type->to_string(); }
 };
 
@@ -399,37 +206,6 @@ export class NamedType : public Type {
         : Type(static_kind), name(std::move(name)),
           generic_arguments(std::move(generic_arguments)) {}
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("NamedType(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("generic_arguments: [");
-        if (generic_arguments.empty()) {
-            Logger::print("]\n");
-        } else {
-            Logger::print("\n");
-            for (std::size_t i = 0; i < generic_arguments.size(); ++i) {
-                generic_arguments[i]->dump(depth + 2, true, false);
-                Logger::print((i + 1 < generic_arguments.size() ? ",\n" : "\n"));
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("]\n");
-        }
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
     std::string to_string() const override { return name; }
 };
 
@@ -438,33 +214,11 @@ export class ArrayType : public Type {
     static constexpr Kind::Type static_kind = Kind::Type::Array;
 
     std::shared_ptr<Type> element;
-    std::optional<std::uint8_t> size;
+    std::optional<std::size_t> size;
 
-    ArrayType(std::shared_ptr<Type> element, std::optional<std::uint8_t> size = std::nullopt)
+    ArrayType(std::shared_ptr<Type> element, std::optional<std::size_t> size = std::nullopt)
         : Type(static_kind), element(std::move(element)), size(size) {}
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("ArrayType(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("element: ");
-        element->dump(depth + 1, false, false);
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("size: ", (size.has_value() ? std::to_string(*size) : "null"), "\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
     std::string to_string() const override {
         return element->to_string() + "[" + (size.has_value() ? std::to_string(*size) : "") + "]";
     }
@@ -480,28 +234,6 @@ export class PointerType : public Type {
     explicit PointerType(std::shared_ptr<Type> element, bool is_mutable = false)
         : Type(static_kind), is_mutable(is_mutable), element(std::move(element)) {}
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("PointerType(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("is_mutable: ", (is_mutable ? "true" : "false"), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("element: ");
-        element->dump(depth + 1, false, false);
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
     std::string to_string() const override {
         return is_mutable ? "*mut " + element->to_string() : "*" + element->to_string();
     }
@@ -522,53 +254,6 @@ export class StructType : public Type {
         : Type(static_kind), name(std::move(name)),
           generic_parameters(std::move(generic_parameters)), fields(std::move(fields)) {}
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("StructType(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("generic_parameters: [");
-        if (generic_parameters.empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            for (std::size_t i = 0; i < generic_parameters.size(); ++i) {
-                generic_parameters[i]->dump(depth + 2, true, false);
-                Logger::print((i + 1 < generic_parameters.size() ? ",\n" : "\n"));
-            }
-
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-        Logger::print_indent(depth + 1);
-
-        Logger::print("fields: [");
-        if (fields.empty()) {
-            Logger::print("]\n");
-        } else {
-            Logger::print("\n");
-            for (std::size_t i = 0; i < fields.size(); ++i) {
-                fields[i]->dump(depth + 2, true, false);
-                Logger::print((i + 1 < fields.size() ? ",\n" : "\n"));
-            }
-
-            Logger::print_indent(depth + 1);
-            Logger::print("]\n");
-        }
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
     std::string to_string() const override { return name; }
 };
 
@@ -611,65 +296,6 @@ export class FunctionType : public Type {
         return true;
     }
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("FunctionType(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("return_type: ");
-        if (return_type) {
-            return_type->dump(depth + 1, false, false);
-        } else {
-            Logger::print("null");
-        }
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("parameters: [");
-        if (parameters.empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            for (std::size_t i = 0; i < parameters.size(); ++i) {
-                parameters[i]->dump(depth + 2, true, false);
-                Logger::print((i + 1 < parameters.size() ? ",\n" : "\n"));
-            }
-
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-
-        Logger::print_indent(depth + 1);
-        Logger::print("generics: [");
-        if (generic_parameters.empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            for (std::size_t i = 0; i < generic_parameters.size(); ++i) {
-                generic_parameters[i]->dump(depth + 2, true, false);
-                Logger::print((i + 1 < generic_parameters.size() ? ",\n" : "\n"));
-            }
-
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-
-        Logger::print_indent(depth + 1);
-        Logger::print("variadic: ", (variadic ? "true" : "false"), "\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
     std::string to_string() const override {
         return "function( -> " + return_type->to_string() + ")";
     }
@@ -677,8 +303,8 @@ export class FunctionType : public Type {
 
 inline bool Type::compatible(const std::shared_ptr<Type>& left,
                              const std::shared_ptr<Type>& right) {
-    if (!left || !right) {
-        return true;
+    if (left == nullptr || right == nullptr) {
+        return false;
     }
 
     if (left->kind == Kind::Type::Any || right->kind == Kind::Type::Any) {

@@ -7,7 +7,6 @@ module;
 
 export module zep.frontend.sema.checker.struct_resolver;
 
-import zep.common.position;
 import zep.frontend.sema.type;
 import zep.frontend.ast;
 import zep.common.logger.diagnostic;
@@ -28,7 +27,7 @@ export class StructResolver {
             visitor.visit(*literal_field);
 
             if (provided_fields.contains(literal_field->name)) {
-                context.diagnostics.add_error(literal_field->position,
+                context.diagnostics.add_error(literal_field->span,
                                               "duplicate field '" + literal_field->name + "'");
                 continue;
             }
@@ -45,7 +44,7 @@ export class StructResolver {
                     auto actual_type = literal_field->value->get_type();
 
                     if (!Type::compatible(actual_type, expected_type)) {
-                        context.diagnostics.add_error(literal_field->position,
+                        context.diagnostics.add_error(literal_field->span,
                                                       "field '" + literal_field->name +
                                                           "' type mismatch: expected '" +
                                                           expected_type->to_string() + "', got '" +
@@ -56,7 +55,7 @@ export class StructResolver {
             }
 
             if (!found) {
-                context.diagnostics.add_error(literal_field->position,
+                context.diagnostics.add_error(literal_field->span,
                                               "struct '" + struct_type->name + "' has no field '" +
                                                   literal_field->name + "'");
             }
@@ -65,7 +64,7 @@ export class StructResolver {
         for (const auto& declared_field : struct_type->fields) {
             if (!provided_fields.contains(declared_field->name)) {
                 context.diagnostics.add_error(
-                    node.position, "missing field '" + declared_field->name + "' in struct '" +
+                    node.span, "missing field '" + declared_field->name + "' in struct '" +
                                        struct_type->name + "' literal");
             }
         }
@@ -78,7 +77,7 @@ export class StructResolver {
     void is_valid(const StructType* struct_type, StructLiteralExpression& node) {
         GenericResolver generic_resolver(context, type_context, visitor);
         generic_resolver.check_generic_arguments(
-            node.generic_arguments, struct_type->generic_parameters, node.position, true);
+            node.generic_arguments, struct_type->generic_parameters, node.span, true);
 
         check_fields(struct_type, node);
     }

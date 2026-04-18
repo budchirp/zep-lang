@@ -5,8 +5,7 @@ module;
 
 export module zep.frontend.sema.env;
 
-import zep.common.logger;
-export import zep.frontend.sema.scope;
+import zep.frontend.sema.scope;
 import zep.frontend.sema.builtins;
 
 export class Env {
@@ -31,17 +30,5 @@ export class Env {
         if (current_scope->parent != nullptr) {
             current_scope = current_scope->parent;
         }
-    }
-
-    void dump(int depth = 0) const {
-        Logger::print_indent(depth);
-        Logger::print("Env(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("global_scope: ");
-        global_scope->dump(depth + 1, false, true);
-
-        Logger::print_indent(depth);
-        Logger::print(")\n");
     }
 };

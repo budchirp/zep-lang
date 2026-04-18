@@ -12,8 +12,8 @@ import zep.frontend.lexer;
 import zep.frontend.parser;
 import zep.frontend.sema.checker.type_checker;
 import zep.frontend.sema.context;
+import zep.frontend.ast.dumper;
 import zep.hir;
-
 export class Driver {
   public:
     Driver() = default;
@@ -34,10 +34,11 @@ export class Driver {
             std::exit(1);
         }
 
-        context.env.dump();
+        AstDumper ast_dumper;
+        ast_dumper.dump_program(program);
+        ast_dumper.dump_env(context.env);
 
         HIRBuilder hir_builder(context);
         auto hir_program = hir_builder.lower(program);
-        hir_program.dump();
     }
 };

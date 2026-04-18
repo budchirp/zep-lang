@@ -8,93 +8,17 @@ module;
 
 export module zep.frontend.sema.scope;
 
-import zep.common.logger;
 import zep.frontend.sema.type;
 import zep.frontend.sema.symbol;
 
 export class Scope {
-  private:
+  public:
     std::vector<std::unique_ptr<Scope>> children;
 
     std::unordered_map<std::string, std::shared_ptr<Type>> types;
     std::unordered_map<std::string, std::unique_ptr<VarSymbol>> vars;
     std::unordered_map<std::string, std::vector<std::unique_ptr<FunctionSymbol>>> functions;
 
-    void dump_types(int depth) const {
-        Logger::print_indent(depth + 1);
-        Logger::print("types: [");
-        if (types.empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            std::size_t type_index = 0;
-            for (const auto& [type_name, type] : types) {
-                ParameterType binding(type_name, type);
-                binding.dump(depth + 2, true, false);
-                Logger::print((++type_index < types.size() ? ",\n" : "\n"));
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-    }
-
-    void dump_vars(int depth) const {
-        Logger::print_indent(depth + 1);
-        Logger::print("vars: [");
-        if (vars.empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            std::size_t var_index = 0;
-            for (const auto& entry : vars) {
-                entry.second->dump(depth + 2, true, false);
-                Logger::print((++var_index < vars.size() ? ",\n" : "\n"));
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-    }
-
-    void dump_functions(int depth) const {
-        Logger::print_indent(depth + 1);
-        Logger::print("functions: [");
-        std::size_t function_total = 0;
-        for (const auto& entry : functions) {
-            function_total += entry.second.size();
-        }
-        if (function_total == 0) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            std::size_t function_index = 0;
-            for (const auto& entry : functions) {
-                for (const auto& func : entry.second) {
-                    func->dump(depth + 2, true, false);
-                    Logger::print((++function_index < function_total ? ",\n" : "\n"));
-                }
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-    }
-
-    void dump_children(int depth) const {
-        Logger::print_indent(depth + 1);
-        Logger::print("children: [");
-        if (children.empty()) {
-            Logger::print("]\n");
-        } else {
-            Logger::print("\n");
-            for (std::size_t child_index = 0; child_index < children.size(); ++child_index) {
-                children[child_index]->dump(depth + 2, true, false);
-                Logger::print((child_index + 1 < children.size() ? ",\n" : "\n"));
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("]\n");
-        }
-    }
-
-  public:
     std::string name;
     Scope* parent;
 
@@ -224,28 +148,5 @@ export class Scope {
         Scope* child_ptr = child.get();
         children.push_back(std::move(child));
         return child_ptr;
-    }
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("Scope(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        dump_types(depth);
-        dump_vars(depth);
-        dump_functions(depth);
-        dump_children(depth);
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
     }
 };

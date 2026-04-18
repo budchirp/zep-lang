@@ -8,11 +8,11 @@ module;
 export module zep.hir.ir;
 
 import zep.common.position;
-import zep.common.logger;
+import zep.common.span;
 import zep.frontend.sema.kinds;
-export import zep.hir.sema.type;
-export import zep.hir.sema.scope.symbol;
-export import zep.hir.sema.scope;
+import zep.hir.sema.type;
+import zep.hir.sema.scope.symbol;
+import zep.hir.sema.scope;
 
 export class HIRNodeKind {
   public:
@@ -40,7 +40,7 @@ export class HIRNodeKind {
 export class HIRNode {
   private:
   protected:
-    explicit HIRNode(HIRNodeKind::Type kind, Position position) : kind(kind), position(position) {}
+    explicit HIRNode(HIRNodeKind::Type kind, Span span) : kind(kind), span(span) {}
 
     HIRNode(const HIRNode&) = delete;
     HIRNode& operator=(const HIRNode&) = delete;
@@ -49,11 +49,9 @@ export class HIRNode {
 
   public:
     HIRNodeKind::Type kind;
-    Position position;
+    Span span;
 
     virtual ~HIRNode() = default;
-
-    virtual void dump(int depth, bool with_indent = true, bool trailing_newline = true) const = 0;
 
     template <typename T>
     T* as() {
@@ -100,38 +98,9 @@ export class HIRBlockStatement : public HIRStatement {
 
     std::vector<std::unique_ptr<HIRStatement>> statements;
 
-    explicit HIRBlockStatement(Position position,
+    explicit HIRBlockStatement(Span span,
                                std::vector<std::unique_ptr<HIRStatement>> statements)
-        : HIRStatement(static_kind, position), statements(std::move(statements)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("HIRBlockStatement(\n");
-        Logger::print_indent(depth + 1);
-        Logger::print("statements: [");
-
-        if (statements.empty()) {
-            Logger::print("]\n");
-        } else {
-            Logger::print("\n");
-            for (const auto& stmt : statements) {
-                stmt->dump(depth + 2);
-                Logger::print(",\n");
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("]\n");
-        }
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+        : HIRStatement(static_kind, span), statements(std::move(statements)) {}
 };
 
 export class HIRNumberLiteral : public HIRExpression {
@@ -140,20 +109,8 @@ export class HIRNumberLiteral : public HIRExpression {
 
     std::string value;
 
-    HIRNumberLiteral(Position position, std::string value)
-        : HIRExpression(static_kind, position), value(std::move(value)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("HIRNumberLiteral(value: \"", value, "\")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    HIRNumberLiteral(Span span, std::string value)
+        : HIRExpression(static_kind, span), value(std::move(value)) {}
 };
 
 export class HIRFloatLiteral : public HIRExpression {
@@ -162,20 +119,8 @@ export class HIRFloatLiteral : public HIRExpression {
 
     std::string value;
 
-    HIRFloatLiteral(Position position, std::string value)
-        : HIRExpression(static_kind, position), value(std::move(value)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("HIRFloatLiteral(value: \"", value, "\")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    HIRFloatLiteral(Span span, std::string value)
+        : HIRExpression(static_kind, span), value(std::move(value)) {}
 };
 
 export class HIRStringLiteral : public HIRExpression {
@@ -184,20 +129,8 @@ export class HIRStringLiteral : public HIRExpression {
 
     std::string value;
 
-    HIRStringLiteral(Position position, std::string value)
-        : HIRExpression(static_kind, position), value(std::move(value)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("HIRStringLiteral(value: \"", value, "\")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    HIRStringLiteral(Span span, std::string value)
+        : HIRExpression(static_kind, span), value(std::move(value)) {}
 };
 
 export class HIRBooleanLiteral : public HIRExpression {
@@ -206,20 +139,8 @@ export class HIRBooleanLiteral : public HIRExpression {
 
     bool value;
 
-    HIRBooleanLiteral(Position position, bool value)
-        : HIRExpression(static_kind, position), value(value) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("HIRBooleanLiteral(value: ", (value ? "true" : "false"), ")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    HIRBooleanLiteral(Span span, bool value)
+        : HIRExpression(static_kind, span), value(value) {}
 };
 
 export class HIRIdentifierExpression : public HIRExpression {
@@ -228,183 +149,118 @@ export class HIRIdentifierExpression : public HIRExpression {
 
     std::string name;
 
-    HIRIdentifierExpression(Position position, std::string name)
-        : HIRExpression(static_kind, position), name(std::move(name)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("HIRIdentifierExpression(name: \"", name, "\")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
-};
-
-export class HIRBinaryOperator {
-  public:
-    enum class Type : std::uint8_t {
-        Plus,
-        Minus,
-        Asterisk,
-        Divide,
-        Modulo,
-        Equals,
-        NotEquals,
-        LessThan,
-        GreaterThan,
-        LessEqual,
-        GreaterEqual,
-        And,
-        Or,
-        As,
-        Is,
-    };
+    HIRIdentifierExpression(Span span, std::string name)
+        : HIRExpression(static_kind, span), name(std::move(name)) {}
 };
 
 export class HIRBinaryExpression : public HIRExpression {
   public:
     static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::BinaryExpression;
 
+    class Operator {
+      public:
+        enum class Type : std::uint8_t {
+            Plus,
+            Minus,
+            Asterisk,
+            Divide,
+            Modulo,
+            Equals,
+            NotEquals,
+            LessThan,
+            GreaterThan,
+            LessEqual,
+            GreaterEqual,
+            And,
+            Or,
+            As,
+            Is,
+        };
+
+        static std::string to_string(Type op) {
+            switch (op) {
+            case Type::Plus:
+                return "+";
+            case Type::Minus:
+                return "-";
+            case Type::Asterisk:
+                return "*";
+            case Type::Divide:
+                return "/";
+            case Type::Modulo:
+                return "%";
+            case Type::Equals:
+                return "==";
+            case Type::NotEquals:
+                return "!=";
+            case Type::LessThan:
+                return "<";
+            case Type::GreaterThan:
+                return ">";
+            case Type::LessEqual:
+                return "<=";
+            case Type::GreaterEqual:
+                return ">=";
+            case Type::And:
+                return "&&";
+            case Type::Or:
+                return "||";
+            case Type::As:
+                return "as";
+            case Type::Is:
+                return "is";
+            }
+            return "?";
+        }
+    };
+
     std::unique_ptr<HIRExpression> left;
-    HIRBinaryOperator::Type op;
+    Operator::Type op;
     std::unique_ptr<HIRExpression> right;
 
-    HIRBinaryExpression(Position position, std::unique_ptr<HIRExpression> left,
-                        HIRBinaryOperator::Type op, std::unique_ptr<HIRExpression> right)
-        : HIRExpression(static_kind, position), left(std::move(left)), op(op),
+    HIRBinaryExpression(Span span, std::unique_ptr<HIRExpression> left,
+                        Operator::Type op, std::unique_ptr<HIRExpression> right)
+        : HIRExpression(static_kind, span), left(std::move(left)), op(op),
           right(std::move(right)) {}
-
-  private:
-    static std::string operator_string(HIRBinaryOperator::Type binary_op) {
-        switch (binary_op) {
-        case HIRBinaryOperator::Type::Plus:
-            return "+";
-        case HIRBinaryOperator::Type::Minus:
-            return "-";
-        case HIRBinaryOperator::Type::Asterisk:
-            return "*";
-        case HIRBinaryOperator::Type::Divide:
-            return "/";
-        case HIRBinaryOperator::Type::Modulo:
-            return "%";
-        case HIRBinaryOperator::Type::Equals:
-            return "==";
-        case HIRBinaryOperator::Type::NotEquals:
-            return "!=";
-        case HIRBinaryOperator::Type::LessThan:
-            return "<";
-        case HIRBinaryOperator::Type::GreaterThan:
-            return ">";
-        case HIRBinaryOperator::Type::LessEqual:
-            return "<=";
-        case HIRBinaryOperator::Type::GreaterEqual:
-            return ">=";
-        case HIRBinaryOperator::Type::And:
-            return "&&";
-        case HIRBinaryOperator::Type::Or:
-            return "||";
-        case HIRBinaryOperator::Type::As:
-            return "as";
-        case HIRBinaryOperator::Type::Is:
-            return "is";
-        }
-        return "?";
-    }
-
-  public:
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("HIRBinaryExpression(\n");
-        Logger::print_indent(depth + 1);
-        Logger::print("left: ");
-        left->dump(depth + 1, false, false);
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("op: ", operator_string(op), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("right: ");
-        right->dump(depth + 1, false, false);
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
-};
-
-export class HIRUnaryOperator {
-  public:
-    enum class Type : std::uint8_t {
-        Plus,
-        Minus,
-        Not,
-        Dereference,
-        AddressOf,
-    };
 };
 
 export class HIRUnaryExpression : public HIRExpression {
   public:
     static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::UnaryExpression;
 
-    HIRUnaryOperator::Type op;
+    class Operator {
+      public:
+        enum class Type : std::uint8_t {
+            Plus,
+            Minus,
+            Not,
+            Dereference,
+            AddressOf,
+        };
+
+        static std::string to_string(Type op) {
+            switch (op) {
+            case Type::Plus:
+                return "+";
+            case Type::Minus:
+                return "-";
+            case Type::Not:
+                return "!";
+            case Type::Dereference:
+                return "*";
+            case Type::AddressOf:
+                return "&";
+            }
+            return "?";
+        }
+    };
+
+    Operator::Type op;
     std::unique_ptr<HIRExpression> operand;
 
-    HIRUnaryExpression(Position position, HIRUnaryOperator::Type op,
+    HIRUnaryExpression(Span span, Operator::Type op,
                        std::unique_ptr<HIRExpression> operand)
-        : HIRExpression(static_kind, position), op(op), operand(std::move(operand)) {}
-
-  private:
-    static std::string operator_string(HIRUnaryOperator::Type unary_op) {
-        switch (unary_op) {
-        case HIRUnaryOperator::Type::Plus:
-            return "+";
-        case HIRUnaryOperator::Type::Minus:
-            return "-";
-        case HIRUnaryOperator::Type::Not:
-            return "!";
-        case HIRUnaryOperator::Type::Dereference:
-            return "*";
-        case HIRUnaryOperator::Type::AddressOf:
-            return "&";
-        }
-        return "?";
-    }
-
-  public:
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("HIRUnaryExpression(\n");
-        Logger::print_indent(depth + 1);
-        Logger::print("op: ", operator_string(op), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("operand: ");
-        operand->dump(depth + 1, false, false);
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+        : HIRExpression(static_kind, span), op(op), operand(std::move(operand)) {}
 };
 
 export class HIRCallExpression : public HIRExpression {
@@ -414,44 +270,10 @@ export class HIRCallExpression : public HIRExpression {
     std::unique_ptr<HIRExpression> callee;
     std::vector<std::unique_ptr<HIRExpression>> arguments;
 
-    HIRCallExpression(Position position, std::unique_ptr<HIRExpression> callee,
+    HIRCallExpression(Span span, std::unique_ptr<HIRExpression> callee,
                       std::vector<std::unique_ptr<HIRExpression>> arguments)
-        : HIRExpression(static_kind, position), callee(std::move(callee)),
+        : HIRExpression(static_kind, span), callee(std::move(callee)),
           arguments(std::move(arguments)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("HIRCallExpression(\n");
-        Logger::print_indent(depth + 1);
-        Logger::print("callee: ");
-        callee->dump(depth + 1, false, false);
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("arguments: [");
-
-        if (arguments.empty()) {
-            Logger::print("]\n");
-        } else {
-            Logger::print("\n");
-            for (const auto& argument : arguments) {
-                argument->dump(depth + 2);
-                Logger::print(",\n");
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("]\n");
-        }
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 };
 
 export class HIRIndexExpression : public HIRExpression {
@@ -461,33 +283,9 @@ export class HIRIndexExpression : public HIRExpression {
     std::unique_ptr<HIRExpression> object;
     std::unique_ptr<HIRExpression> index;
 
-    HIRIndexExpression(Position position, std::unique_ptr<HIRExpression> object,
+    HIRIndexExpression(Span span, std::unique_ptr<HIRExpression> object,
                        std::unique_ptr<HIRExpression> index)
-        : HIRExpression(static_kind, position), object(std::move(object)), index(std::move(index)) {
-    }
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("HIRIndexExpression(\n");
-        Logger::print_indent(depth + 1);
-        Logger::print("object: ");
-        object->dump(depth + 1, false, false);
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("index: ");
-        index->dump(depth + 1, false, false);
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
+        : HIRExpression(static_kind, span), object(std::move(object)), index(std::move(index)) {
     }
 };
 
@@ -498,32 +296,10 @@ export class HIRMemberExpression : public HIRExpression {
     std::unique_ptr<HIRExpression> object;
     std::string member;
 
-    HIRMemberExpression(Position position, std::unique_ptr<HIRExpression> object,
+    HIRMemberExpression(Span span, std::unique_ptr<HIRExpression> object,
                         std::string member)
-        : HIRExpression(static_kind, position), object(std::move(object)),
+        : HIRExpression(static_kind, span), object(std::move(object)),
           member(std::move(member)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("HIRMemberExpression(\n");
-        Logger::print_indent(depth + 1);
-        Logger::print("object: ");
-        object->dump(depth + 1, false, false);
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("member: \"", member, "\"\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 };
 
 export class HIRAssignExpression : public HIRExpression {
@@ -533,33 +309,9 @@ export class HIRAssignExpression : public HIRExpression {
     std::unique_ptr<HIRExpression> target;
     std::unique_ptr<HIRExpression> value;
 
-    HIRAssignExpression(Position position, std::unique_ptr<HIRExpression> target,
+    HIRAssignExpression(Span span, std::unique_ptr<HIRExpression> target,
                         std::unique_ptr<HIRExpression> value)
-        : HIRExpression(static_kind, position), target(std::move(target)), value(std::move(value)) {
-    }
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("HIRAssignExpression(\n");
-        Logger::print_indent(depth + 1);
-        Logger::print("target: ");
-        target->dump(depth + 1, false, false);
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("value: ");
-        value->dump(depth + 1, false, false);
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
+        : HIRExpression(static_kind, span), target(std::move(target)), value(std::move(value)) {
     }
 };
 
@@ -579,49 +331,9 @@ export class HIRStructLiteralExpression : public HIRExpression {
     std::string name;
     std::vector<HIRStructLiteralField> fields;
 
-    HIRStructLiteralExpression(Position position, std::string name,
+    HIRStructLiteralExpression(Span span, std::string name,
                                std::vector<HIRStructLiteralField> fields)
-        : HIRExpression(static_kind, position), name(std::move(name)), fields(std::move(fields)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("HIRStructLiteralExpression(\n");
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("fields: [");
-
-        if (fields.empty()) {
-            Logger::print("]\n");
-        } else {
-            Logger::print("\n");
-            for (const auto& field : fields) {
-                Logger::print_indent(depth + 2);
-                Logger::print("HIRStructLiteralField(\n");
-                Logger::print_indent(depth + 3);
-                Logger::print("name: \"", field.name, "\",\n");
-                Logger::print_indent(depth + 3);
-                Logger::print("value: ");
-                field.value->dump(depth + 3, false, false);
-                Logger::print("\n");
-                Logger::print_indent(depth + 2);
-                Logger::print("),\n");
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("]\n");
-        }
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+        : HIRExpression(static_kind, span), name(std::move(name)), fields(std::move(fields)) {}
 };
 
 export class HIRIfExpression : public HIRExpression {
@@ -632,44 +344,11 @@ export class HIRIfExpression : public HIRExpression {
     std::unique_ptr<HIRStatement> then_branch;
     std::unique_ptr<HIRStatement> else_branch;
 
-    HIRIfExpression(Position position, std::unique_ptr<HIRExpression> condition,
+    HIRIfExpression(Span span, std::unique_ptr<HIRExpression> condition,
                     std::unique_ptr<HIRStatement> then_branch,
                     std::unique_ptr<HIRStatement> else_branch)
-        : HIRExpression(static_kind, position), condition(std::move(condition)),
+        : HIRExpression(static_kind, span), condition(std::move(condition)),
           then_branch(std::move(then_branch)), else_branch(std::move(else_branch)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("HIRIfExpression(\n");
-        Logger::print_indent(depth + 1);
-        Logger::print("condition: ");
-        condition->dump(depth + 1, false, false);
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("then_branch: ");
-        then_branch->dump(depth + 1, false, false);
-        Logger::print(",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("else_branch: ");
-        if (else_branch != nullptr) {
-            else_branch->dump(depth + 1, false, false);
-        } else {
-            Logger::print("null");
-        }
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
 };
 
 export class HIRExpressionStatement : public HIRStatement {
@@ -678,27 +357,8 @@ export class HIRExpressionStatement : public HIRStatement {
 
     std::unique_ptr<HIRExpression> expression;
 
-    explicit HIRExpressionStatement(Position position, std::unique_ptr<HIRExpression> expression)
-        : HIRStatement(static_kind, position), expression(std::move(expression)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("HIRExpressionStatement(\n");
-        Logger::print_indent(depth + 1);
-        Logger::print("expression: ");
-        expression->dump(depth + 1, false, false);
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    explicit HIRExpressionStatement(Span span, std::unique_ptr<HIRExpression> expression)
+        : HIRStatement(static_kind, span), expression(std::move(expression)) {}
 };
 
 export class HIRReturnStatement : public HIRStatement {
@@ -707,31 +367,8 @@ export class HIRReturnStatement : public HIRStatement {
 
     std::unique_ptr<HIRExpression> value;
 
-    HIRReturnStatement(Position position, std::unique_ptr<HIRExpression> value)
-        : HIRStatement(static_kind, position), value(std::move(value)) {}
-
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("HIRReturnStatement(\n");
-        Logger::print_indent(depth + 1);
-        Logger::print("value: ");
-        if (value != nullptr) {
-            value->dump(depth + 1, false, false);
-        } else {
-            Logger::print("null");
-        }
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    HIRReturnStatement(Span span, std::unique_ptr<HIRExpression> value)
+        : HIRStatement(static_kind, span), value(std::move(value)) {}
 };
 
 export class HIRVarDeclaration : public HIRStatement {
@@ -744,51 +381,25 @@ export class HIRVarDeclaration : public HIRStatement {
     std::shared_ptr<HIRType> type;
     std::unique_ptr<HIRExpression> initializer;
 
-    HIRVarDeclaration(Position position, Visibility::Type visibility,
+    HIRVarDeclaration(Span span, Visibility::Type visibility,
                       StorageKind::Type storage_kind, std::string name,
                       std::shared_ptr<HIRType> type, std::unique_ptr<HIRExpression> initializer)
-        : HIRStatement(static_kind, position), visibility(visibility), storage_kind(storage_kind),
+        : HIRStatement(static_kind, span), visibility(visibility), storage_kind(storage_kind),
           name(std::move(name)), type(std::move(type)), initializer(std::move(initializer)) {}
+};
 
-    void dump(int depth, bool with_indent = true, bool trailing_newline = true) const override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
+export class HIRParameter {
+  public:
+    std::string name;
+    std::shared_ptr<HIRType> type;
 
-        Logger::print("HIRVarDeclaration(\n");
-        Logger::print_indent(depth + 1);
-        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("storage_kind: ", StorageKind::to_string(storage_kind), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("type: ", (type != nullptr ? type->to_string() : "null"), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("initializer: ");
-        if (initializer != nullptr) {
-            initializer->dump(depth + 1, false, false);
-        } else {
-            Logger::print("null");
-        }
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
+    HIRParameter(std::string name, std::shared_ptr<HIRType> type)
+        : name(std::move(name)), type(std::move(type)) {}
 };
 
 export class HIRFunctionDeclaration {
   private:
-    Position position;
+    Span span;
 
   public:
     Visibility::Type visibility;
@@ -798,52 +409,13 @@ export class HIRFunctionDeclaration {
     std::unique_ptr<HIRBlockStatement> body;
     bool variadic;
 
-    HIRFunctionDeclaration(Position position, Visibility::Type visibility, std::string name,
+    HIRFunctionDeclaration(Span span, Visibility::Type visibility, std::string name,
                            std::vector<HIRParameter> parameters,
                            std::shared_ptr<HIRType> return_type,
                            std::unique_ptr<HIRBlockStatement> body, bool variadic)
-        : position(position), visibility(visibility), name(std::move(name)),
+        : span(span), visibility(visibility), name(std::move(name)),
           parameters(std::move(parameters)), return_type(std::move(return_type)),
           body(std::move(body)), variadic(variadic) {}
-
-    void dump(int depth = 0) const {
-        Logger::print_indent(depth);
-        Logger::print("HIRFunctionDeclaration(\n");
-        Logger::print_indent(depth + 1);
-        Logger::print("visibility: ", Visibility::to_string(visibility), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("parameters: [");
-        if (parameters.empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            for (const auto& parameter : parameters) {
-                parameter.dump(depth + 2);
-                Logger::print(",\n");
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-
-        Logger::print_indent(depth + 1);
-        Logger::print("return_type: ", (return_type != nullptr ? return_type->to_string() : "null"),
-                      ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("variadic: ", (variadic ? "true" : "false"), ",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("body: ");
-        body->dump(depth + 1, false, false);
-        Logger::print("\n");
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-    }
 };
 
 export class HIRProgram {
@@ -854,32 +426,4 @@ export class HIRProgram {
     HIRProgram(std::unique_ptr<HIRScope> global_scope,
                std::vector<std::unique_ptr<HIRFunctionDeclaration>> functions)
         : global_scope(std::move(global_scope)), functions(std::move(functions)) {}
-
-    void dump() const {
-        Logger::print("HIRProgram(\n");
-
-        Logger::print_indent(1);
-        Logger::print("global_scope: ");
-        if (global_scope != nullptr) {
-            global_scope->dump(1, false, true);
-        } else {
-            Logger::print("null\n");
-        }
-
-        Logger::print_indent(1);
-        Logger::print("functions: [");
-        if (functions.empty()) {
-            Logger::print("]\n");
-        } else {
-            Logger::print("\n");
-            for (const auto& function : functions) {
-                function->dump(2);
-                Logger::print(",\n");
-            }
-            Logger::print_indent(1);
-            Logger::print("]\n");
-        }
-
-        Logger::print(")\n");
-    }
 };

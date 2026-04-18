@@ -7,6 +7,7 @@ module;
 export module zep.frontend.sema.checker.generic_resolver;
 
 import zep.common.position;
+import zep.common.span;
 import zep.frontend.sema.type;
 import zep.frontend.ast;
 import zep.common.logger.diagnostic;
@@ -26,11 +27,11 @@ export class GenericResolver {
     bool check_generic_arguments(
         std::vector<std::unique_ptr<GenericArgument>>& generic_arguments,
         const std::vector<std::shared_ptr<GenericParameterType>>& generic_parameters,
-        const Position& position, bool emit_errors = false) {
+        const Span& span, bool emit_errors = false) {
         if (generic_arguments.size() != generic_parameters.size()) {
             if (emit_errors) {
                 context.diagnostics.add_error(
-                    position, "expected " + std::to_string(generic_parameters.size()) +
+                    span, "expected " + std::to_string(generic_parameters.size()) +
                                   " generic argument(s), got " +
                                   std::to_string(generic_arguments.size()));
             }
@@ -59,7 +60,7 @@ export class GenericResolver {
                 if (!Type::compatible(argument_type, generic_parameter->constraint)) {
                     if (emit_errors) {
                         context.diagnostics.add_error(
-                            generic_arguments[i]->position,
+                            generic_arguments[i]->span,
                             "generic argument '" + argument_type->to_string() +
                                 "' does not satisfy constraint '" +
                                 generic_parameter->constraint->to_string() + "'");

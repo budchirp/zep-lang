@@ -6,7 +6,6 @@ module;
 
 export module zep.frontend.sema.checker.call_resolver;
 
-import zep.common.position;
 import zep.frontend.sema.type;
 import zep.frontend.ast;
 import zep.common.logger.diagnostic;
@@ -30,7 +29,7 @@ export class CallResolver {
         if (candidate_type->variadic) {
             if (node.arguments.size() < required) {
                 if (emit_errors) {
-                    context.diagnostics.add_error(node.position,
+                    context.diagnostics.add_error(node.span,
                                                   "expected at least " + std::to_string(required) +
                                                       " argument(s), got " +
                                                       std::to_string(node.arguments.size()));
@@ -39,7 +38,7 @@ export class CallResolver {
             }
         } else if (node.arguments.size() != parameter_count) {
             if (emit_errors) {
-                context.diagnostics.add_error(node.position,
+                context.diagnostics.add_error(node.span,
                                               "expected " + std::to_string(parameter_count) +
                                                   " argument(s), got " +
                                                   std::to_string(node.arguments.size()));
@@ -56,7 +55,7 @@ export class CallResolver {
             if (actual_type == nullptr || !Type::compatible(actual_type, expected_type)) {
                 if (emit_errors) {
                     context.diagnostics.add_error(
-                        node.arguments[i]->position,
+                        node.arguments[i]->span,
                         "argument type mismatch: expected '" + expected_type->to_string() +
                             "', got '" + (actual_type ? actual_type->to_string() : "unknown") +
                             "'");
@@ -75,7 +74,7 @@ export class CallResolver {
                 if (auto* array_type = element_type->as<ArrayType>()) {
                     element_type = array_type->element;
                 } else if (emit_errors) {
-                    context.diagnostics.add_error(node.position, "expected array type, got '" +
+                    context.diagnostics.add_error(node.span, "expected array type, got '" +
                                                                      element_type->to_string() +
                                                                      "'");
                     return false;
@@ -88,7 +87,7 @@ export class CallResolver {
                     if (actual_type == nullptr || !Type::compatible(actual_type, element_type)) {
                         if (emit_errors) {
                             context.diagnostics.add_error(
-                                node.arguments[i]->position,
+                                node.arguments[i]->span,
                                 "argument type mismatch: expected '" + element_type->to_string() +
                                     "', got '" +
                                     (actual_type ? actual_type->to_string() : "unknown") + "'");
@@ -123,7 +122,7 @@ export class CallResolver {
             match_count);
 
         if (match_count > 1) {
-            context.diagnostics.add_error(node.position, "ambiguous call to '" + name + "'");
+            context.diagnostics.add_error(node.span, "ambiguous call to '" + name + "'");
             return nullptr;
         }
 
@@ -139,7 +138,7 @@ export class CallResolver {
         GenericResolver generic_resolver(context, type_context, visitor);
         if (!generic_resolver.check_generic_arguments(node.generic_arguments,
                                                       candidate_type->generic_parameters,
-                                                      node.position, emit_errors)) {
+                                                      node.span, emit_errors)) {
             return false;
         }
 

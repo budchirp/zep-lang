@@ -6,9 +6,9 @@ module;
 export module zep.frontend.token;
 
 import zep.common.position;
+import zep.common.span;
 
 export class Token {
-  private:
   public:
     enum class Type : std::uint8_t {
         Identifier,
@@ -71,9 +71,9 @@ export class Token {
     };
 
     Type type;
-    Position position;
+    Span span;
     std::string_view value;
 
-    Token(Type type, Position position, std::string_view value)
-        : type(type), position(position), value(value) {}
+    Token(Type type, Span span, std::string_view value)
+        : type(type), span(span), value(value) {}
 };

@@ -7,6 +7,7 @@ module;
 export module zep.common.logger.diagnostic;
 
 import zep.common.position;
+import zep.common.span;
 import zep.common.logger;
 
 export class DiagnosticSeverity {
@@ -17,22 +18,22 @@ export class DiagnosticSeverity {
 export class Diagnostic {
   private:
   public:
-    Position position;
+    Span span;
 
     DiagnosticSeverity::Type severity;
 
     std::string message;
 
-    Diagnostic(Position position, DiagnosticSeverity::Type severity, std::string message)
-        : position(position), severity(severity), message(std::move(message)) {}
+    Diagnostic(Span span, DiagnosticSeverity::Type severity, std::string message)
+        : span(span), severity(severity), message(std::move(message)) {}
 
     void print(const Logger& logger) const {
         switch (severity) {
         case DiagnosticSeverity::Type::Error:
-            logger.report_error(position, message);
+            logger.report_error(span, message);
             break;
         case DiagnosticSeverity::Type::Warning:
-            logger.report_warning(position, message);
+            logger.report_warning(span, message);
             break;
         }
     }
@@ -45,12 +46,12 @@ export class DiagnosticList {
   public:
     DiagnosticList() = default;
 
-    void add_error(Position position, std::string message) {
-        diagnostics.emplace_back(position, DiagnosticSeverity::Type::Error, std::move(message));
+    void add_error(Span span, std::string message) {
+        diagnostics.emplace_back(span, DiagnosticSeverity::Type::Error, std::move(message));
     }
 
-    void add_warning(Position position, std::string message) {
-        diagnostics.emplace_back(position, DiagnosticSeverity::Type::Warning, std::move(message));
+    void add_warning(Span span, std::string message) {
+        diagnostics.emplace_back(span, DiagnosticSeverity::Type::Warning, std::move(message));
     }
 
     bool has_errors() const {
