@@ -5,6 +5,8 @@ module;
 export module zep.common.source;
 
 export class Source {
+  private:
+
   public:
     std::string name;
     std::string content;

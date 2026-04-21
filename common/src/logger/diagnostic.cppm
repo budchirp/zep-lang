@@ -11,6 +11,8 @@ import zep.common.span;
 import zep.common.logger;
 
 export class DiagnosticSeverity {
+  private:
+
   public:
     enum class Type : std::uint8_t { Error, Warning };
 };

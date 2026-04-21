@@ -6,7 +6,7 @@ module;
 export module zep.hir.sema.scope.symbol;
 
 import zep.hir.sema.type;
-import zep.frontend.sema.kinds;
+import zep.frontend.sema.kind;
 
 export class HIRSymbol {
   public:

@@ -12,6 +12,7 @@ import zep.common.source;
 import zep.driver;
 
 export class CompileCommand : public argman::Command {
+  private:
   public:
     argman::Command::Info info() override {
         return {.name = "compile",
@@ -27,17 +28,18 @@ export class CompileCommand : public argman::Command {
             throw std::invalid_argument("no input file specified (use --input <file>)");
         }
 
-        auto file = std::ifstream(filename);
+        std::ifstream file(filename);
         if (!file.is_open()) {
             throw std::runtime_error("could not open file '" + filename + "'");
         }
 
-        auto buffer = std::ostringstream();
+        std::ostringstream buffer;
         buffer << file.rdbuf();
         auto content = buffer.str();
 
-        auto source = Source(filename, content);
-        auto driver = Driver();
+        Source source(filename, content);
+
+        Driver driver;
         driver.run(source);
     }
 };

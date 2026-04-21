@@ -9,6 +9,8 @@ import zep.common.position;
 import zep.common.span;
 
 export class Token {
+  private:
+
   public:
     enum class Type : std::uint8_t {
         Identifier,

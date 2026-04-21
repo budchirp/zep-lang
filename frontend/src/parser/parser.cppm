@@ -9,17 +9,28 @@ module;
 
 export module zep.frontend.parser;
 
+import zep.common.span;
 import zep.frontend.ast;
 import zep.frontend.ast.program;
+import zep.frontend.arena.node;
+import zep.frontend.arena.type;
 import zep.frontend.token;
 import zep.frontend.lexer;
 import zep.frontend.parser.precedence;
 import zep.common.logger;
+import zep.frontend.sema.context;
 import zep.frontend.sema.type;
-import zep.frontend.sema.kinds;
+import zep.frontend.sema.type.type_id;
+import zep.frontend.sema.type.type_helper;
+import zep.frontend.sema.kind;
 
 export class Parser {
   private:
+    Context& context;
+
+    NodeArena* nodes;
+    TypeArena& types;
+
     Lexer lexer;
 
     const Logger& logger;
@@ -78,7 +89,38 @@ export class Parser {
         }
     }
 
-    std::unique_ptr<Statement> parse_statement() {
+    TypeId resolve_type_name(const std::string& name) {
+        if (name == "void") {
+            return context.env.global_scope->lookup_type("void");
+        }
+
+        if (name == "string") {
+            return context.env.global_scope->lookup_type("string");
+        }
+
+        if (name == "boolean" || name == "bool") {
+            return context.env.global_scope->lookup_type("bool");
+        }
+
+        if (name.size() >= 2 && (name[0] == 'i' || name[0] == 'u')) {
+            auto is_unsigned = name[0] == 'u';
+            try {
+                auto size = std::stoi(name.substr(1));
+                return types.create<IntegerType>(is_unsigned, static_cast<std::uint8_t>(size));
+            } catch (...) {}
+        }
+
+        if (name.size() >= 2 && name[0] == 'f') {
+            try {
+                auto size = std::stoi(name.substr(1));
+                return types.create<FloatType>(static_cast<std::uint8_t>(size));
+            } catch (...) {}
+        }
+
+        return types.create<NamedType>(name, std::vector<GenericArgumentType>{});
+    }
+
+    Statement* parse_statement() {
         auto visibility = parse_visibility(false);
 
         switch (current_token.type) {
@@ -101,22 +143,21 @@ export class Parser {
         }
     }
 
-    std::unique_ptr<ExpressionStatement> parse_expression_statement() {
-        auto expression = parse_expression();
-        return std::make_unique<ExpressionStatement>(std::move(expression));
+    ExpressionStatement* parse_expression_statement() {
+        auto* expression = parse_expression();
+        return nodes->create<ExpressionStatement>(expression);
     }
 
-    std::unique_ptr<Expression>
-    parse_expression(Precedence::Type precedence = Precedence::Type::None) {
-        auto left = parse_prefix();
+    Expression* parse_expression(Precedence::Type precedence = Precedence::Type::None) {
+        auto* left = parse_prefix();
         while (get_precedence(current_token.type) > precedence) {
-            left = parse_infix(std::move(left));
+            left = parse_infix(left);
         }
 
         return left;
     }
 
-    std::unique_ptr<Expression> parse_prefix() {
+    Expression* parse_prefix() {
         switch (current_token.type) {
         case Token::Type::Minus:
         case Token::Type::Plus:
@@ -129,10 +170,10 @@ export class Parser {
         }
     }
 
-    std::unique_ptr<Expression> parse_unary_expression() {
+    Expression* parse_unary_expression() {
         auto span = current_token.span;
 
-        UnaryExpression::Operator::Type op;
+        auto op = UnaryExpression::Operator::Type::Minus;
 
         switch (current_token.type) {
         case Token::Type::Minus:
@@ -152,16 +193,16 @@ export class Parser {
             break;
         default:
             logger.error(span, "unexpected token '" + std::string(current_token.value) +
-                                       "' in unary expression");
+                                   "' in unary expression");
         }
 
         advance();
 
-        auto operand = parse_expression(Precedence::Type::Unary);
-        return std::make_unique<UnaryExpression>(span, op, std::move(operand));
+        auto* operand = parse_expression(Precedence::Type::Unary);
+        return nodes->create<UnaryExpression>(span, op, operand);
     }
 
-    std::unique_ptr<Expression> parse_primary() {
+    Expression* parse_primary() {
         auto span = current_token.span;
 
         switch (current_token.type) {
@@ -170,25 +211,25 @@ export class Parser {
             auto value = std::string(current_token.value);
             advance();
 
-            return std::make_unique<StringLiteral>(span, std::move(value));
+            return nodes->create<StringLiteral>(span, std::move(value));
         }
         case Token::Type::Number: {
             auto value = std::string(current_token.value);
             advance();
 
-            return std::make_unique<NumberLiteral>(span, std::move(value));
+            return nodes->create<NumberLiteral>(span, std::move(value));
         }
         case Token::Type::Float: {
             auto value = std::string(current_token.value);
             advance();
 
-            return std::make_unique<FloatLiteral>(span, std::move(value));
+            return nodes->create<FloatLiteral>(span, std::move(value));
         }
         case Token::Type::Boolean: {
             auto value = current_token.value == "true";
             advance();
 
-            return std::make_unique<BooleanLiteral>(span, value);
+            return nodes->create<BooleanLiteral>(span, value);
         }
         case Token::Type::Identifier: {
             auto name = std::string(current_token.value);
@@ -198,30 +239,29 @@ export class Parser {
                 auto generic_arguments = parse_generic_arguments();
 
                 if (check(Token::Type::LeftParen)) {
-                    auto callee = std::make_unique<IdentifierExpression>(span, std::move(name));
-                    return parse_call_expression(std::move(callee), std::move(generic_arguments));
+                    auto* callee = nodes->create<IdentifierExpression>(span, std::move(name));
+                    return parse_call_expression(callee, std::move(generic_arguments));
                 }
 
                 if (check(Token::Type::LeftBrace)) {
-                    auto type_name =
-                        std::make_unique<IdentifierExpression>(span, std::move(name));
-                    return parse_struct_literal(std::move(type_name), std::move(generic_arguments));
+                    auto* type_name = nodes->create<IdentifierExpression>(span, std::move(name));
+                    return parse_struct_literal(type_name, std::move(generic_arguments));
                 }
 
                 logger.error(current_token.span, "expected '(' or '{' after generic arguments");
             }
 
             if (check(Token::Type::LeftBrace)) {
-                auto type_name = std::make_unique<IdentifierExpression>(span, std::move(name));
-                return parse_struct_literal(std::move(type_name), {});
+                auto* type_name = nodes->create<IdentifierExpression>(span, std::move(name));
+                return parse_struct_literal(type_name, {});
             }
 
-            return std::make_unique<IdentifierExpression>(span, std::move(name));
+            return nodes->create<IdentifierExpression>(span, std::move(name));
         }
         case Token::Type::LeftParen: {
             advance();
 
-            auto expression = parse_expression();
+            auto* expression = parse_expression();
             expect(Token::Type::RightParen);
 
             return expression;
@@ -231,11 +271,11 @@ export class Parser {
         }
         default:
             logger.error(span, "unexpected token '" + std::string(current_token.value) +
-                                       "' in expression");
+                                   "' in expression");
         }
     }
 
-    std::unique_ptr<Expression> parse_infix(std::unique_ptr<Expression> left) {
+    Expression* parse_infix(Expression* left) {
         switch (current_token.type) {
         case Token::Type::Plus:
         case Token::Type::Minus:
@@ -252,44 +292,44 @@ export class Parser {
         case Token::Type::Or:
         case Token::Type::As:
         case Token::Type::Is:
-            return parse_binary_expression(std::move(left));
+            return parse_binary_expression(left);
         case Token::Type::Assign: {
             auto span = current_token.span;
 
             advance();
 
-            auto right = parse_expression(
+            auto* right = parse_expression(
                 static_cast<Precedence::Type>(static_cast<int>(Precedence::Type::Assignment) - 1));
-            return std::make_unique<AssignExpression>(span, std::move(left), std::move(right));
+            return nodes->create<AssignExpression>(span, left, right);
         }
         case Token::Type::LeftParen:
         case Token::Type::LeftBracket:
         case Token::Type::Dot:
-            return parse_postfix(std::move(left));
+            return parse_postfix(left);
         default:
             logger.error(current_token.span,
                          "unexpected token '" + std::string(current_token.value) + "'");
         }
     }
 
-    std::unique_ptr<Expression> parse_postfix(std::unique_ptr<Expression> left) {
+    Expression* parse_postfix(Expression* left) {
         switch (current_token.type) {
         case Token::Type::LeftParen:
-            return parse_call_expression(std::move(left));
+            return parse_call_expression(left);
         case Token::Type::LeftBracket:
-            return parse_index_expression(std::move(left));
+            return parse_index_expression(left);
         case Token::Type::Dot:
-            return parse_member_expression(std::move(left));
+            return parse_member_expression(left);
         default:
             logger.error(current_token.span,
                          "unexpected token '" + std::string(current_token.value) + "'");
         }
     }
 
-    std::unique_ptr<Expression> parse_binary_expression(std::unique_ptr<Expression> left) {
+    Expression* parse_binary_expression(Expression* left) {
         auto span = current_token.span;
 
-        BinaryExpression::Operator::Type op;
+        auto op = BinaryExpression::Operator::Type::Plus;
 
         switch (current_token.type) {
         case Token::Type::Plus:
@@ -339,28 +379,28 @@ export class Parser {
             break;
         default:
             logger.error(span, "unexpected token '" + std::string(current_token.value) +
-                                       "' in binary expression");
+                                   "' in binary expression");
         }
 
         auto precedence = get_precedence(current_token.type);
 
         advance();
 
-        if (op == BinaryExpression::Operator::Type::As || op == BinaryExpression::Operator::Type::Is) {
-            auto type_expression = parse_type_expression();
-            auto right = std::make_unique<IdentifierExpression>(
-                span, type_expression->get_type()->to_string());
-            right->set_type(type_expression->get_type());
-            return std::make_unique<BinaryExpression>(span, std::move(left), op,
-                                                      std::move(right));
+        if (op == BinaryExpression::Operator::Type::As ||
+            op == BinaryExpression::Operator::Type::Is) {
+            auto* type_expression = parse_type_expression();
+            auto label = context.type_helper.type_to_string(type_expression->type);
+            auto* right = nodes->create<IdentifierExpression>(span, std::move(label));
+            right->type = type_expression->type;
+            return nodes->create<BinaryExpression>(span, left, op, right);
         }
 
-        auto right = parse_expression(precedence);
-        return std::make_unique<BinaryExpression>(span, std::move(left), op, std::move(right));
+        auto* right = parse_expression(precedence);
+        return nodes->create<BinaryExpression>(span, left, op, right);
     }
 
-    std::vector<std::unique_ptr<Parameter>> parse_parameters() {
-        std::vector<std::unique_ptr<Parameter>> parameters;
+    std::vector<Parameter*> parse_parameters() {
+        auto parameters = std::vector<Parameter*>{};
 
         while (!check(Token::Type::RightParen) && !check(Token::Type::Eof)) {
             auto span = current_token.span;
@@ -372,10 +412,10 @@ export class Parser {
 
             auto name = std::string(expect(Token::Type::Identifier).value);
             expect(Token::Type::Colon);
-            auto type = parse_type_expression();
+            auto* type_expression = parse_type_expression();
 
-            parameters.push_back(std::make_unique<Parameter>(span, is_variadic, std::move(name),
-                                                             std::move(type)));
+            parameters.push_back(
+                nodes->create<Parameter>(span, is_variadic, std::move(name), type_expression));
 
             if (!check(Token::Type::RightParen)) {
                 expect(Token::Type::Comma);
@@ -385,14 +425,14 @@ export class Parser {
         return parameters;
     }
 
-    std::vector<std::unique_ptr<Argument>> parse_arguments() {
-        std::vector<std::unique_ptr<Argument>> arguments;
+    std::vector<Argument*> parse_arguments() {
+        auto arguments = std::vector<Argument*>{};
 
         while (!check(Token::Type::RightParen) && !check(Token::Type::Eof)) {
             auto span = current_token.span;
-            auto value = parse_expression();
+            auto* value = parse_expression();
 
-            arguments.push_back(std::make_unique<Argument>(span, "", std::move(value)));
+            arguments.push_back(nodes->create<Argument>(span, "", value));
 
             if (!check(Token::Type::RightParen)) {
                 expect(Token::Type::Comma);
@@ -402,8 +442,8 @@ export class Parser {
         return arguments;
     }
 
-    std::vector<std::unique_ptr<GenericParameter>> parse_generic_parameters() {
-        std::vector<std::unique_ptr<GenericParameter>> generic_parameters;
+    std::vector<GenericParameter*> parse_generic_parameters() {
+        auto generic_parameters = std::vector<GenericParameter*>{};
 
         expect(Token::Type::LessThan);
         while (!check(Token::Type::GreaterThan) && !check(Token::Type::Eof)) {
@@ -411,13 +451,13 @@ export class Parser {
 
             auto name = std::string(expect(Token::Type::Identifier).value);
 
-            std::unique_ptr<TypeExpression> constraint;
+            auto* constraint = static_cast<TypeExpression*>(nullptr);
             if (match(Token::Type::Colon)) {
                 constraint = parse_type_expression();
             }
 
-            generic_parameters.push_back(std::make_unique<GenericParameter>(
-                span, std::move(name), std::move(constraint)));
+            generic_parameters.push_back(
+                nodes->create<GenericParameter>(span, std::move(name), constraint));
 
             if (!check(Token::Type::GreaterThan)) {
                 expect(Token::Type::Comma);
@@ -428,17 +468,16 @@ export class Parser {
         return generic_parameters;
     }
 
-    std::vector<std::unique_ptr<GenericArgument>> parse_generic_arguments() {
-        std::vector<std::unique_ptr<GenericArgument>> generic_arguments;
+    std::vector<GenericArgument*> parse_generic_arguments() {
+        auto generic_arguments = std::vector<GenericArgument*>{};
 
         expect(Token::Type::LessThan);
         while (!check(Token::Type::GreaterThan) && !check(Token::Type::Eof)) {
             auto span = current_token.span;
 
-            auto type = parse_type_expression();
+            auto* type_expression = parse_type_expression();
 
-            generic_arguments.push_back(
-                std::make_unique<GenericArgument>(span, "", std::move(type)));
+            generic_arguments.push_back(nodes->create<GenericArgument>(span, "", type_expression));
 
             if (!check(Token::Type::GreaterThan)) {
                 expect(Token::Type::Comma);
@@ -449,76 +488,48 @@ export class Parser {
         return generic_arguments;
     }
 
-    std::shared_ptr<Type> resolve_type(const std::string& name) {
-        if (name == "void") {
-            return std::make_shared<VoidType>();
-        }
-
-        if (name == "string") {
-            return std::make_shared<StringType>();
-        }
-
-        if (name == "boolean") {
-            return std::make_shared<BooleanType>();
-        }
-
-        if (name.size() >= 2 && (name[0] == 'i' || name[0] == 'u')) {
-            auto is_unsigned = name[0] == 'u';
-            try {
-                auto size = std::stoi(name.substr(1));
-                return std::make_shared<IntegerType>(is_unsigned, static_cast<std::uint16_t>(size));
-            } catch (...) {}
-        }
-
-        if (name.size() >= 2 && name[0] == 'f') {
-            try {
-                auto size = std::stoi(name.substr(1));
-                return std::make_shared<FloatType>(static_cast<std::uint16_t>(size));
-            } catch (...) {}
-        }
-
-        return std::make_shared<NamedType>(name);
-    }
-
-    std::unique_ptr<TypeExpression> parse_type_expression() {
+    TypeExpression* parse_type_expression() {
         auto span = current_token.span;
 
         if (check(Token::Type::Asterisk)) {
             advance();
 
-            bool is_mutable = false;
+            auto is_mutable = false;
             if (check(Token::Type::Mut)) {
                 is_mutable = true;
                 advance();
             }
 
-            auto element = parse_type_expression();
+            auto* element = parse_type_expression();
 
-            auto type = std::make_shared<PointerType>(element->get_type(), is_mutable);
-            return std::make_unique<TypeExpression>(span, std::move(type));
+            auto element_id = element->type;
+            auto pointer_id = types.create<PointerType>(element_id, is_mutable);
+            return nodes->create<TypeExpression>(span, pointer_id);
         }
 
         auto name = std::string(expect(Token::Type::Identifier).value);
-        auto type = resolve_type(name);
+        auto type_id = resolve_type_name(name);
 
-        if (check(Token::Type::LessThan) && type->kind == Type::Kind::Type::Named) {
-            auto generic_arguments = parse_generic_arguments();
+        if (check(Token::Type::LessThan)) {
+            auto* base_type = types.get(type_id);
+            if (base_type != nullptr && base_type->kind == Type::Kind::Type::Named) {
+                auto generic_arguments = parse_generic_arguments();
 
-            std::vector<std::shared_ptr<GenericArgumentType>> generic_argument_types;
-            generic_argument_types.reserve(generic_arguments.size());
+                auto generic_argument_types = std::vector<GenericArgumentType>{};
+                generic_argument_types.reserve(generic_arguments.size());
 
-            for (auto& generic_argument : generic_arguments) {
-                generic_argument_types.emplace_back(
-                    std::make_shared<GenericArgumentType>(generic_argument->type->get_type()));
+                for (auto* generic_argument : generic_arguments) {
+                    generic_argument_types.emplace_back("", generic_argument->type->type);
+                }
+
+                type_id = types.create<NamedType>(name, std::move(generic_argument_types));
             }
-
-            type = std::make_shared<NamedType>(name, std::move(generic_argument_types));
         }
 
         while (check(Token::Type::LeftBracket)) {
             advance();
 
-            std::optional<std::size_t> size;
+            auto size = std::optional<std::size_t>{};
             if (check(Token::Type::Number)) {
                 size = std::stoull(std::string(current_token.value));
                 advance();
@@ -526,49 +537,48 @@ export class Parser {
 
             expect(Token::Type::RightBracket);
 
-            type = std::make_shared<ArrayType>(std::move(type), size);
+            type_id = types.create<ArrayType>(type_id, size);
         }
 
-        return std::make_unique<TypeExpression>(span, std::move(type));
+        return nodes->create<TypeExpression>(span, type_id);
     }
 
-    std::unique_ptr<IfExpression> parse_if_expression() {
+    IfExpression* parse_if_expression() {
         auto span = current_token.span;
 
         expect(Token::Type::If);
 
         expect(Token::Type::LeftParen);
-        auto condition = parse_expression();
+        auto* condition = parse_expression();
         expect(Token::Type::RightParen);
 
-        auto then_branch = parse_block_statement();
+        auto* then_branch = parse_block_statement();
 
-        std::unique_ptr<Statement> else_branch;
+        auto* else_branch = static_cast<Statement*>(nullptr);
         if (match(Token::Type::Else)) {
             else_branch = parse_block_statement();
         }
 
-        return std::make_unique<IfExpression>(span, std::move(condition),
-                                              std::move(then_branch), std::move(else_branch));
+        return nodes->create<IfExpression>(span, condition, then_branch, else_branch);
     }
 
-    std::unique_ptr<StructLiteralExpression>
-    parse_struct_literal(std::unique_ptr<IdentifierExpression> name,
-                         std::vector<std::unique_ptr<GenericArgument>> generic_arguments = {}) {
-        auto span = name->span;
+    StructLiteralExpression*
+    parse_struct_literal(IdentifierExpression* name,
+                         std::vector<GenericArgument*> generic_arguments = {}) {
+        auto struct_span = name->span;
 
         expect(Token::Type::LeftBrace);
 
-        std::vector<std::unique_ptr<StructLiteralField>> fields;
+        auto fields = std::vector<StructLiteralField*>{};
         while (!check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
-            auto span = current_token.span;
+            auto field_span = current_token.span;
 
-            auto name = std::string(expect(Token::Type::Identifier).value);
+            auto field_name = std::string(expect(Token::Type::Identifier).value);
             expect(Token::Type::Colon);
-            auto value = parse_expression();
+            auto* value = parse_expression();
 
             fields.push_back(
-                std::make_unique<StructLiteralField>(span, std::move(name), std::move(value)));
+                nodes->create<StructLiteralField>(field_span, std::move(field_name), value));
 
             if (!check(Token::Type::RightBrace)) {
                 expect(Token::Type::Comma);
@@ -577,106 +587,102 @@ export class Parser {
 
         expect(Token::Type::RightBrace);
 
-        return std::make_unique<StructLiteralExpression>(
-            span, std::move(name), std::move(generic_arguments), std::move(fields));
+        return nodes->create<StructLiteralExpression>(
+            struct_span, name, std::move(generic_arguments), std::move(fields));
     }
 
-    std::unique_ptr<CallExpression>
-    parse_call_expression(std::unique_ptr<Expression> callee,
-                          std::vector<std::unique_ptr<GenericArgument>> generic_arguments = {}) {
+    CallExpression* parse_call_expression(Expression* callee,
+                                          std::vector<GenericArgument*> generic_arguments = {}) {
         auto span = current_token.span;
 
         expect(Token::Type::LeftParen);
         auto arguments = parse_arguments();
         expect(Token::Type::RightParen);
 
-        return std::make_unique<CallExpression>(span, std::move(callee),
-                                                std::move(generic_arguments), std::move(arguments));
+        return nodes->create<CallExpression>(span, callee, std::move(generic_arguments),
+                                             std::move(arguments));
     }
 
-    std::unique_ptr<IndexExpression> parse_index_expression(std::unique_ptr<Expression> value) {
+    IndexExpression* parse_index_expression(Expression* value) {
         auto span = current_token.span;
 
         expect(Token::Type::LeftBracket);
-        auto index = parse_expression();
+        auto* index = parse_expression();
         expect(Token::Type::RightBracket);
 
-        return std::make_unique<IndexExpression>(span, std::move(value), std::move(index));
+        return nodes->create<IndexExpression>(span, value, index);
     }
 
-    std::unique_ptr<MemberExpression> parse_member_expression(std::unique_ptr<Expression> value) {
+    MemberExpression* parse_member_expression(Expression* value) {
         auto span = current_token.span;
 
         expect(Token::Type::Dot);
         auto member = std::string(expect(Token::Type::Identifier).value);
 
-        return std::make_unique<MemberExpression>(span, std::move(value), std::move(member));
+        return nodes->create<MemberExpression>(span, value, std::move(member));
     }
 
-    std::unique_ptr<ImportStatement> parse_import_statement() {
+    ImportStatement* parse_import_statement() {
         auto span = current_token.span;
 
         expect(Token::Type::Import);
 
-        std::vector<std::unique_ptr<IdentifierExpression>> path;
+        auto path = std::vector<IdentifierExpression*>{};
 
         auto first = expect(Token::Type::Identifier);
-        path.push_back(
-            std::make_unique<IdentifierExpression>(first.span, std::string(first.value)));
+        path.push_back(nodes->create<IdentifierExpression>(first.span, std::string(first.value)));
 
         while (match(Token::Type::Dot)) {
             auto part = expect(Token::Type::Identifier);
-            path.push_back(
-                std::make_unique<IdentifierExpression>(part.span, std::string(part.value)));
+            path.push_back(nodes->create<IdentifierExpression>(part.span, std::string(part.value)));
         }
 
-        return std::make_unique<ImportStatement>(span, std::move(path));
+        return nodes->create<ImportStatement>(span, std::move(path));
     }
 
-    std::unique_ptr<StructDeclaration> parse_struct_declaration(Visibility::Type visibility) {
+    StructDeclaration* parse_struct_declaration(Visibility::Type visibility) {
         auto span = current_token.span;
 
         expect(Token::Type::Struct);
 
         auto name = std::string(expect(Token::Type::Identifier).value);
 
-        std::vector<std::unique_ptr<GenericParameter>> generic_parameters;
+        auto generic_parameters = std::vector<GenericParameter*>{};
         if (check(Token::Type::LessThan)) {
             generic_parameters = parse_generic_parameters();
         }
 
         expect(Token::Type::LeftBrace);
 
-        std::vector<std::unique_ptr<StructField>> fields;
+        auto fields = std::vector<StructField*>{};
         while (!check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
-            auto span = current_token.span;
+            auto field_span = current_token.span;
 
             auto field_visibility = Visibility::Type::Public;
             if (check(Token::Type::Public) || check(Token::Type::Private)) {
                 field_visibility = parse_visibility();
             }
 
-            auto name = std::string(expect(Token::Type::Identifier).value);
+            auto field_name = std::string(expect(Token::Type::Identifier).value);
             expect(Token::Type::Colon);
-            auto type = parse_type_expression();
+            auto* type_expression = parse_type_expression();
 
-            fields.push_back(std::make_unique<StructField>(span, field_visibility,
-                                                           std::move(name), std::move(type)));
+            fields.push_back(nodes->create<StructField>(field_span, field_visibility,
+                                                        std::move(field_name), type_expression));
         }
 
         expect(Token::Type::RightBrace);
 
-        return std::make_unique<StructDeclaration>(span, visibility, std::move(name),
-                                                   std::move(generic_parameters),
-                                                   std::move(fields));
+        return nodes->create<StructDeclaration>(span, visibility, std::move(name),
+                                                std::move(generic_parameters), std::move(fields));
     }
 
-    std::unique_ptr<FunctionPrototype> parse_function_prototype() {
+    FunctionPrototype* parse_function_prototype() {
         auto span = current_token.span;
 
         auto name = std::string(expect(Token::Type::Identifier).value);
 
-        std::vector<std::unique_ptr<GenericParameter>> generic_parameters;
+        auto generic_parameters = std::vector<GenericParameter*>{};
         if (check(Token::Type::LessThan)) {
             generic_parameters = parse_generic_parameters();
         }
@@ -686,26 +692,25 @@ export class Parser {
         expect(Token::Type::RightParen);
 
         expect(Token::Type::Colon);
-        auto return_type = parse_type_expression();
+        auto* return_type = parse_type_expression();
 
-        return std::make_unique<FunctionPrototype>(span, std::move(name),
-                                                   std::move(generic_parameters),
-                                                   std::move(parameters), std::move(return_type));
+        return nodes->create<FunctionPrototype>(span, std::move(name),
+                                                std::move(generic_parameters),
+                                                std::move(parameters), return_type);
     }
 
-    std::unique_ptr<FunctionDeclaration> parse_function_declaration(Visibility::Type visibility) {
+    FunctionDeclaration* parse_function_declaration(Visibility::Type visibility) {
         auto span = current_token.span;
 
         expect(Token::Type::Fn);
 
-        auto prototype = parse_function_prototype();
-        auto body = parse_block_statement();
+        auto* prototype = parse_function_prototype();
+        auto* body = parse_block_statement();
 
-        return std::make_unique<FunctionDeclaration>(span, visibility, std::move(prototype),
-                                                     std::move(body));
+        return nodes->create<FunctionDeclaration>(span, visibility, prototype, body);
     }
 
-    std::unique_ptr<VarDeclaration> parse_var_declaration(Visibility::Type visibility) {
+    VarDeclaration* parse_var_declaration(Visibility::Type visibility) {
         auto span = current_token.span;
 
         auto storage_kind = StorageKind::Type::Var;
@@ -721,39 +726,39 @@ export class Parser {
 
         auto name = std::string(expect(Token::Type::Identifier).value);
 
-        std::unique_ptr<TypeExpression> type;
+        auto* type_expression = static_cast<TypeExpression*>(nullptr);
         if (match(Token::Type::Colon)) {
-            type = parse_type_expression();
+            type_expression = parse_type_expression();
         }
 
-        std::unique_ptr<Expression> initializer;
+        auto* initializer = static_cast<Expression*>(nullptr);
         if (match(Token::Type::Assign)) {
             initializer = parse_expression();
         }
 
-        return std::make_unique<VarDeclaration>(span, visibility, storage_kind, std::move(name),
-                                                std::move(type), std::move(initializer));
+        return nodes->create<VarDeclaration>(span, visibility, storage_kind, std::move(name),
+                                             type_expression, initializer);
     }
 
-    std::unique_ptr<ReturnStatement> parse_return_statement() {
+    ReturnStatement* parse_return_statement() {
         auto span = current_token.span;
 
         expect(Token::Type::Return);
 
-        std::unique_ptr<Expression> value;
+        auto* value = static_cast<Expression*>(nullptr);
         if (!check(Token::Type::Eof) && !check(Token::Type::Semicolon)) {
             value = parse_expression();
         }
 
-        return std::make_unique<ReturnStatement>(span, std::move(value));
+        return nodes->create<ReturnStatement>(span, value);
     }
 
-    std::unique_ptr<BlockStatement> parse_block_statement() {
+    BlockStatement* parse_block_statement() {
         auto span = current_token.span;
 
         expect(Token::Type::LeftBrace);
 
-        std::vector<std::unique_ptr<Statement>> statements;
+        auto statements = std::vector<Statement*>{};
         while (!check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
             statements.push_back(parse_statement());
 
@@ -764,10 +769,10 @@ export class Parser {
 
         expect(Token::Type::RightBrace);
 
-        return std::make_unique<BlockStatement>(span, std::move(statements));
+        return nodes->create<BlockStatement>(span, std::move(statements));
     }
 
-    std::unique_ptr<Statement> parse_extern_declaration(Visibility::Type visibility) {
+    Statement* parse_extern_declaration(Visibility::Type visibility) {
         auto span = current_token.span;
 
         expect(Token::Type::Extern);
@@ -776,19 +781,18 @@ export class Parser {
         case Token::Type::Fn: {
             advance();
 
-            auto prototype = parse_function_prototype();
-            return std::make_unique<ExternFunctionDeclaration>(span, visibility,
-                                                               std::move(prototype));
+            auto* prototype = parse_function_prototype();
+            return nodes->create<ExternFunctionDeclaration>(span, visibility, prototype);
         }
         case Token::Type::Var: {
             advance();
 
             auto name = std::string(expect(Token::Type::Identifier).value);
             expect(Token::Type::Colon);
-            auto type = parse_type_expression();
+            auto* type_expression = parse_type_expression();
 
-            return std::make_unique<ExternVarDeclaration>(span, visibility, std::move(name),
-                                                          std::move(type));
+            return nodes->create<ExternVarDeclaration>(span, visibility, std::move(name),
+                                                       type_expression);
         }
         default:
             logger.error(span, "expected 'fn' or 'var' after 'extern'");
@@ -797,20 +801,24 @@ export class Parser {
     }
 
   public:
-    Parser(Lexer lexer, const Logger& logger)
-        : lexer(std::move(lexer)), logger(logger), current_token(this->lexer.next_token()),
+    Parser(Context& context, Lexer lexer)
+        : context(context), nodes(nullptr), types(context.types), lexer(std::move(lexer)),
+          logger(context.logger), current_token(this->lexer.next_token()),
           peek_token(this->lexer.next_token()) {}
 
-    Program parse() {
-        std::vector<std::unique_ptr<Statement>> statements;
+    std::unique_ptr<Program> parse() {
+        std::unique_ptr<Program> result = std::make_unique<Program>();
+        nodes = &result->nodes;
+
         while (!check(Token::Type::Eof)) {
-            statements.push_back(parse_statement());
+            result->statements.push_back(parse_statement());
 
             if (check(Token::Type::Semicolon)) {
                 advance();
             }
         }
 
-        return Program(std::move(statements));
+        nodes = nullptr;
+        return result;
     }
 };

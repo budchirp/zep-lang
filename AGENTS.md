@@ -30,7 +30,7 @@ cmake --build cmake-build-release
 
 - C++26 with modules (`.cppm` extension)
 - Build dir: `cmake-build-debug` (debug) or `cmake-build-release` (release)
-- Subdirs: `common`, `frontend`, `checker`, `hir`, `codegen`, `driver`, `cli`
+- Subdirs: `common`, `frontend` (with `ast/`, `lexer/`, `parser/`, `token/`, `arena/`, `sema/{checker,builder,resolver,type,scope}`, `debug/`), `hir` (sources only; not built by default), `codegen`, `driver`, `cli`
 
 ## Code Standards
 
@@ -44,11 +44,12 @@ cmake --build cmake-build-release
 
 ### Code Style
 
-- DO NOT add comments to code
-- ALWAYS write explicit `private:` and `public:` sections in classes, with `private:` first
+- DO NOT add comments to code.
+- DO NOT add explicit types. use `auto` whenever you can. Function return types MUST be explicit no `auto` allowed there.
+- 1. `private`, 2. `protected` and 3. `public` class order should be like this. DO NOT create methods like `get_x` and `set_x` if it just returns the field or just assigns it. make the field public instead.
 - Use `auto` when the type can be deduced; DO NOT use `auto` when creating instances (e.g., `Parser parser`)
 - DO NOT use shortcut names (e.g., `ty` for type, `ctx` for context)
-- ALWAYS use classes (never structs); use explicit constructors to ensure all members are initialized
+- ALWAYS use classes (never structs); use explicit constructors to ensure all members are initialized.
 - ALWAYS ASK QUESTIONS. Do not change code for unrelated issues; ask and I will guide you.
 - Use modern C++ features. Use `Logger::print` / `Logger::print_stderr` for console output; do not use `std::print` or `std::println` outside the logger module.
 - DO NOT use get_private_field and etc. If its gonna be used externally, make it public, if its used only within the class make it private.
@@ -56,3 +57,4 @@ cmake --build cmake-build-release
 - DO NOT use implicit conversions. Use explicit casts (e.g. `static_cast`, `explicit` constructors).
 - ALWAYS check pointers explicitly with `== nullptr` or `!= nullptr`; do not rely on truthiness.
 - KEEP CODE SPACIOUS: add blank lines between logical blocks.
+- Add code examples to the plans that you make for lower intelligence model to understand

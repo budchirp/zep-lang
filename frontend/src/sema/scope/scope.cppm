@@ -1,152 +1,171 @@
 module;
 
-#include <functional>
-#include <memory>
+#include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 export module zep.frontend.sema.scope;
 
 import zep.frontend.sema.type;
+import zep.frontend.sema.type.type_id;
 import zep.frontend.sema.symbol;
 
 export class Scope {
+  private:
+    std::uint64_t block_counter;
+
+    std::unordered_map<std::string, TypeSymbol*> types;
+    std::unordered_map<std::string, VarSymbol*> vars;
+    std::unordered_map<std::string, std::vector<FunctionSymbol*>> functions;
+
   public:
-    std::vector<std::unique_ptr<Scope>> children;
-
-    std::unordered_map<std::string, std::shared_ptr<Type>> types;
-    std::unordered_map<std::string, std::unique_ptr<VarSymbol>> vars;
-    std::unordered_map<std::string, std::vector<std::unique_ptr<FunctionSymbol>>> functions;
-
     std::string name;
     Scope* parent;
 
+    Scope(const Scope&) = delete;
+    Scope& operator=(const Scope&) = delete;
+    Scope(Scope&&) = delete;
+    Scope& operator=(Scope&&) = delete;
+
     Scope(std::string name, Scope* parent)
-        : name(std::move(name)), parent(parent) {}
+        : block_counter(0), name(std::move(name)), parent(parent) {}
 
-    [[nodiscard]] std::size_t child_count() const { return children.size(); }
+    std::uint64_t next_block_index() { return block_counter++; }
 
-    bool define_type(const std::string& symbol_name, std::shared_ptr<Type> type) {
-        if (types.contains(symbol_name)) {
-            return false;
-        }
+    bool local_types_empty() const { return types.empty(); }
 
-        types[symbol_name] = std::move(type);
-        return true;
-    }
+    bool local_vars_empty() const { return vars.empty(); }
 
-    bool define_var(const std::string& symbol_name, std::unique_ptr<VarSymbol> symbol) {
-        if (vars.contains(symbol_name)) {
-            return false;
-        }
+    bool local_functions_empty() const { return functions.empty(); }
 
-        vars[symbol_name] = std::move(symbol);
-        return true;
-    }
+    std::vector<std::pair<std::string, TypeId>> list_local_types() const {
+        std::vector<std::pair<std::string, TypeId>> result;
+        result.reserve(types.size());
 
-    bool define_function(const std::string& symbol_name, std::unique_ptr<FunctionSymbol> symbol) {
-        auto* new_type = symbol->type != nullptr ? symbol->type->as<FunctionType>() : nullptr;
-
-        for (const auto& existing : functions[symbol_name]) {
-            auto* existing_type =
-                existing->type != nullptr ? existing->type->as<FunctionType>() : nullptr;
-
-            if (new_type != nullptr && new_type->conflicts_with(existing_type)) {
-                return false;
-            }
-        }
-
-        functions[symbol_name].push_back(std::move(symbol));
-        return true;
-    }
-
-    std::shared_ptr<Type> lookup_type(const std::string& symbol_name) const {
-        auto iterator = types.find(symbol_name);
-        if (iterator != types.end()) {
-            return iterator->second;
-        }
-
-        if (parent != nullptr) {
-            return parent->lookup_type(symbol_name);
-        }
-
-        return nullptr;
-    }
-
-    const VarSymbol* lookup_var(const std::string& symbol_name) const {
-        auto iterator = vars.find(symbol_name);
-        if (iterator != vars.end()) {
-            return iterator->second.get();
-        }
-
-        if (parent != nullptr) {
-            return parent->lookup_var(symbol_name);
-        }
-
-        return nullptr;
-    }
-
-    const FunctionSymbol* lookup_function(const std::string& symbol_name) const {
-        auto iterator = functions.find(symbol_name);
-        if (iterator != functions.end() && !iterator->second.empty()) {
-            return iterator->second.front().get();
-        }
-
-        if (parent != nullptr) {
-            return parent->lookup_function(symbol_name);
-        }
-
-        return nullptr;
-    }
-
-    std::vector<const FunctionSymbol*>
-    lookup_function_overloads(const std::string& symbol_name) const {
-        std::vector<const FunctionSymbol*> result;
-
-        auto iterator = functions.find(symbol_name);
-        if (iterator != functions.end()) {
-            result.reserve(iterator->second.size());
-            for (const auto& symbol : iterator->second) {
-                result.push_back(symbol.get());
-            }
-        }
-
-        if (parent != nullptr) {
-            auto parent_overloads = parent->lookup_function_overloads(symbol_name);
-            result.insert(result.end(), parent_overloads.begin(), parent_overloads.end());
+        for (const auto& entry : types) {
+            result.emplace_back(entry.first, entry.second->type);
         }
 
         return result;
     }
 
-    const FunctionSymbol* resolve_overload(const std::string& symbol_name,
-                                           const std::function<bool(const FunctionType*)>& matcher,
-                                           int& match_count) const {
-        auto overloads = lookup_function_overloads(symbol_name);
-        const FunctionSymbol* best_match = nullptr;
-        match_count = 0;
+    std::vector<std::pair<std::string, const VarSymbol*>> list_local_vars() const {
+        std::vector<std::pair<std::string, const VarSymbol*>> result;
+        result.reserve(vars.size());
 
-        for (const auto* symbol : overloads) {
-            auto* candidate_type =
-                symbol->type != nullptr ? symbol->type->as<FunctionType>() : nullptr;
-            if (candidate_type == nullptr) {
-                continue;
-            }
+        for (const auto& entry : vars) {
+            result.emplace_back(entry.first, entry.second);
+        }
 
-            if (matcher(candidate_type)) {
-                best_match = symbol;
-                ++match_count;
+        return result;
+    }
+
+    std::vector<std::pair<std::string, const FunctionSymbol*>> list_local_functions() const {
+        std::vector<std::pair<std::string, const FunctionSymbol*>> result;
+
+        for (const auto& entry : functions) {
+            for (FunctionSymbol* symbol : entry.second) {
+                result.emplace_back(entry.first, symbol);
             }
         }
 
-        return match_count == 1 ? best_match : nullptr;
+        return result;
     }
 
-    Scope* add_child(std::string child_name) {
-        auto child = std::make_unique<Scope>(std::move(child_name), this);
-        Scope* child_ptr = child.get();
-        children.push_back(std::move(child));
-        return child_ptr;
+    bool define_type(const std::string& key, TypeSymbol* symbol) {
+        if (types.contains(key)) {
+            return false;
+        }
+
+        types[key] = symbol;
+        return true;
+    }
+
+    bool define_var(const std::string& key, VarSymbol* symbol) {
+        if (vars.contains(key)) {
+            return false;
+        }
+
+        vars[key] = symbol;
+        return true;
+    }
+
+    void add_function(const std::string& key, FunctionSymbol* symbol) {
+        functions[key].push_back(symbol);
+    }
+
+    bool has_local_var(const std::string& key) const { return vars.contains(key); }
+
+    TypeId lookup_type(const std::string& key) const {
+        auto iterator = types.find(key);
+        if (iterator != types.end()) {
+            return iterator->second->type;
+        }
+
+        if (parent != nullptr) {
+            return parent->lookup_type(key);
+        }
+
+        return TypeId{};
+    }
+
+    const TypeSymbol* lookup_type_symbol(const std::string& key) const {
+        auto iterator = types.find(key);
+        if (iterator != types.end()) {
+            return iterator->second;
+        }
+
+        if (parent != nullptr) {
+            return parent->lookup_type_symbol(key);
+        }
+
+        return nullptr;
+    }
+
+    const VarSymbol* lookup_var(const std::string& key) const {
+        auto iterator = vars.find(key);
+        if (iterator != vars.end()) {
+            return iterator->second;
+        }
+
+        if (parent != nullptr) {
+            return parent->lookup_var(key);
+        }
+
+        return nullptr;
+    }
+
+    std::vector<const FunctionSymbol*> local_function_overloads(const std::string& key) const {
+        auto iterator = functions.find(key);
+        if (iterator == functions.end()) {
+            return {};
+        }
+
+        std::vector<const FunctionSymbol*> result;
+        result.reserve(iterator->second.size());
+
+        for (FunctionSymbol* symbol : iterator->second) {
+            result.push_back(symbol);
+        }
+
+        return result;
+    }
+
+    std::vector<const FunctionSymbol*> lookup_function_overloads(const std::string& key) const {
+        std::vector<const FunctionSymbol*> result;
+
+        const Scope* scope = this;
+        while (scope != nullptr) {
+            auto iterator = scope->functions.find(key);
+            if (iterator != scope->functions.end()) {
+                result.insert(result.end(), iterator->second.begin(), iterator->second.end());
+            }
+
+            scope = scope->parent;
+        }
+
+        return result;
     }
 };

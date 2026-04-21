@@ -12,7 +12,7 @@ import zep.frontend.sema.type.type_context;
 import zep.frontend.ast;
 import zep.frontend.ast.program;
 import zep.frontend.sema.type;
-import zep.frontend.sema.kinds;
+import zep.frontend.sema.kind;
 import zep.hir.ir;
 import zep.hir.sema.type;
 import zep.hir.sema.scope;

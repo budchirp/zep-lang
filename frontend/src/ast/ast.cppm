@@ -1,23 +1,27 @@
 module;
 
 #include <cstdint>
-#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 export module zep.frontend.ast;
 
 import zep.common.position;
 import zep.common.span;
-import zep.frontend.sema.type;
-import zep.frontend.sema.kinds;
+import zep.frontend.sema.type.type_id;
+import zep.frontend.sema.kind;
 
 export template <typename T>
 class Visitor;
 
 export class Node {
+  private:
+
   public:
     class Kind {
+      private:
+
       public:
         enum class Type : std::uint8_t {
             TypeExpression,
@@ -60,12 +64,12 @@ export class Node {
 
     Node(const Node&) = delete;
     Node& operator=(const Node&) = delete;
-    Node(Node&&) = default;
-    Node& operator=(Node&&) = default;
+    Node(Node&&) = delete;
+    Node& operator=(Node&&) = delete;
 
   public:
-    Kind::Type kind;
-    Span span;
+    const Kind::Type kind;
+    const Span span;
 
     virtual ~Node() = default;
 
@@ -90,73 +94,67 @@ export class Node {
 
 export class Expression : public Node {
   private:
-    std::shared_ptr<Type> type;
 
   public:
-    using Node::Node;
+    TypeId type;
 
-    void set_type(std::shared_ptr<Type> type) { this->type = std::move(type); }
-    std::shared_ptr<Type> get_type() const { return type; }
+    using Node::Node;
 };
 
 export class Statement : public Node {
   private:
-    std::shared_ptr<Type> type;
 
   public:
-    using Node::Node;
+    TypeId type;
 
-    void set_type(std::shared_ptr<Type> type) { this->type = std::move(type); }
-    std::shared_ptr<Type> get_type() const { return type; }
+    using Node::Node;
 };
 
 export class TypeExpression : public Node {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::TypeExpression;
 
-    std::shared_ptr<Type> type;
+    TypeId type;
 
-    TypeExpression(Span span, std::shared_ptr<Type> type)
-        : Node(static_kind, span), type(std::move(type)) {}
+    TypeExpression(Span span, TypeId type) : Node(static_kind, span), type(type) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
         return visitor.visit(*this);
     }
-
-    void set_type(std::shared_ptr<Type> type) { this->type = std::move(type); }
-    std::shared_ptr<Type> get_type() const { return type; }
 };
 
 export class GenericParameter : public Node {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::GenericParameter;
 
     std::string name;
-    std::unique_ptr<TypeExpression> constraint;
+    TypeExpression* constraint;
 
-    GenericParameter(Span span, std::string name,
-                     std::unique_ptr<TypeExpression> constraint)
-        : Node(static_kind, span), name(std::move(name)), constraint(std::move(constraint)) {}
+    GenericParameter(Span span, std::string name, TypeExpression* constraint)
+        : Node(static_kind, span), name(std::move(name)), constraint(constraint) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
         return visitor.visit(*this);
     }
-
-    const std::string& get_name() const { return name; }
-    TypeExpression* get_constraint() const { return constraint.get(); }
 };
 
 export class GenericArgument : public Node {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::GenericArgument;
 
     std::string name;
-    std::unique_ptr<TypeExpression> type;
+    TypeExpression* type;
 
-    GenericArgument(Span span, std::string name, std::unique_ptr<TypeExpression> type)
-        : Node(static_kind, span), name(std::move(name)), type(std::move(type)) {}
+    GenericArgument(Span span, std::string name, TypeExpression* type_expression)
+        : Node(static_kind, span), name(std::move(name)), type(type_expression) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -165,18 +163,19 @@ export class GenericArgument : public Node {
 };
 
 export class Parameter : public Node {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Parameter;
 
     bool is_variadic;
 
     std::string name;
-    std::unique_ptr<TypeExpression> type;
+    TypeExpression* type;
 
-    Parameter(Span span, bool is_variadic, std::string name,
-              std::unique_ptr<TypeExpression> type)
+    Parameter(Span span, bool is_variadic, std::string name, TypeExpression* type_expression)
         : Node(static_kind, span), is_variadic(is_variadic), name(std::move(name)),
-          type(std::move(type)) {}
+          type(type_expression) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -185,14 +184,16 @@ export class Parameter : public Node {
 };
 
 export class Argument : public Node {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Argument;
 
     std::string name;
-    std::unique_ptr<Expression> value;
+    Expression* value;
 
-    Argument(Span span, std::string name, std::unique_ptr<Expression> value)
-        : Node(static_kind, span), name(std::move(name)), value(std::move(value)) {}
+    Argument(Span span, std::string name, Expression* value)
+        : Node(static_kind, span), name(std::move(name)), value(value) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -201,23 +202,24 @@ export class Argument : public Node {
 };
 
 export class FunctionPrototype : public Node {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::FunctionPrototype;
 
     std::string name;
 
-    std::vector<std::unique_ptr<GenericParameter>> generic_parameters;
-    std::vector<std::unique_ptr<Parameter>> parameters;
+    std::vector<GenericParameter*> generic_parameters;
+    std::vector<Parameter*> parameters;
 
-    std::unique_ptr<TypeExpression> return_type;
+    TypeExpression* return_type;
 
     FunctionPrototype(Span span, std::string name,
-                      std::vector<std::unique_ptr<GenericParameter>> generic_parameters,
-                      std::vector<std::unique_ptr<Parameter>> parameters,
-                      std::unique_ptr<TypeExpression> return_type)
+                      std::vector<GenericParameter*> generic_parameters,
+                      std::vector<Parameter*> parameters, TypeExpression* return_type)
         : Node(static_kind, span), name(std::move(name)),
           generic_parameters(std::move(generic_parameters)), parameters(std::move(parameters)),
-          return_type(std::move(return_type)) {}
+          return_type(return_type) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -226,18 +228,20 @@ export class FunctionPrototype : public Node {
 };
 
 export class StructField : public Node {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::StructField;
 
     Visibility::Type visibility;
 
     std::string name;
-    std::unique_ptr<TypeExpression> type;
+    TypeExpression* type;
 
     StructField(Span span, Visibility::Type visibility, std::string name,
-                std::unique_ptr<TypeExpression> type)
+                TypeExpression* type_expression)
         : Node(static_kind, span), visibility(visibility), name(std::move(name)),
-          type(std::move(type)) {}
+          type(type_expression) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -246,14 +250,16 @@ export class StructField : public Node {
 };
 
 export class StructLiteralField : public Node {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::StructLiteralField;
 
     std::string name;
-    std::unique_ptr<Expression> value;
+    Expression* value;
 
-    StructLiteralField(Span span, std::string name, std::unique_ptr<Expression> value)
-        : Node(static_kind, span), name(std::move(name)), value(std::move(value)) {}
+    StructLiteralField(Span span, std::string name, Expression* value)
+        : Node(static_kind, span), name(std::move(name)), value(value) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -262,6 +268,8 @@ export class StructLiteralField : public Node {
 };
 
 export class NumberLiteral : public Expression {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::NumberLiteral;
 
@@ -277,6 +285,8 @@ export class NumberLiteral : public Expression {
 };
 
 export class FloatLiteral : public Expression {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::FloatLiteral;
 
@@ -292,6 +302,8 @@ export class FloatLiteral : public Expression {
 };
 
 export class StringLiteral : public Expression {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::StringLiteral;
 
@@ -307,13 +319,14 @@ export class StringLiteral : public Expression {
 };
 
 export class BooleanLiteral : public Expression {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::BooleanLiteral;
 
     bool value;
 
-    BooleanLiteral(Span span, bool value)
-        : Expression(static_kind, span), value(value) {}
+    BooleanLiteral(Span span, bool value) : Expression(static_kind, span), value(value) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -322,6 +335,8 @@ export class BooleanLiteral : public Expression {
 };
 
 export class IdentifierExpression : public Expression {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::IdentifierExpression;
 
@@ -337,10 +352,14 @@ export class IdentifierExpression : public Expression {
 };
 
 export class BinaryExpression : public Expression {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::BinaryExpression;
 
     class Operator {
+      private:
+
       public:
         enum class Type : std::uint8_t {
             Plus,
@@ -397,14 +416,12 @@ export class BinaryExpression : public Expression {
         }
     };
 
-    std::unique_ptr<Expression> left;
+    Expression* left;
     Operator::Type op;
-    std::unique_ptr<Expression> right;
+    Expression* right;
 
-    BinaryExpression(Span span, std::unique_ptr<Expression> left, Operator::Type op,
-                     std::unique_ptr<Expression> right)
-        : Expression(static_kind, span), left(std::move(left)), op(op),
-          right(std::move(right)) {}
+    BinaryExpression(Span span, Expression* left, Operator::Type op, Expression* right)
+        : Expression(static_kind, span), left(left), op(op), right(right) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -413,10 +430,14 @@ export class BinaryExpression : public Expression {
 };
 
 export class UnaryExpression : public Expression {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::UnaryExpression;
 
     class Operator {
+      private:
+
       public:
         enum class Type : std::uint8_t {
             Plus,
@@ -444,10 +465,10 @@ export class UnaryExpression : public Expression {
     };
 
     Operator::Type op;
-    std::unique_ptr<Expression> operand;
+    Expression* operand;
 
-    UnaryExpression(Span span, Operator::Type op, std::unique_ptr<Expression> operand)
-        : Expression(static_kind, span), op(op), operand(std::move(operand)) {}
+    UnaryExpression(Span span, Operator::Type op, Expression* operand)
+        : Expression(static_kind, span), op(op), operand(operand) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -456,19 +477,21 @@ export class UnaryExpression : public Expression {
 };
 
 export class CallExpression : public Expression {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::CallExpression;
 
-    std::unique_ptr<Expression> callee;
+    Expression* callee;
 
-    std::vector<std::unique_ptr<GenericArgument>> generic_arguments;
+    std::vector<GenericArgument*> generic_arguments;
 
-    std::vector<std::unique_ptr<Argument>> arguments;
+    std::vector<Argument*> arguments;
 
-    CallExpression(Span span, std::unique_ptr<Expression> callee,
-                   std::vector<std::unique_ptr<GenericArgument>> generic_arguments,
-                   std::vector<std::unique_ptr<Argument>> arguments)
-        : Expression(static_kind, span), callee(std::move(callee)),
+    CallExpression(Span span, Expression* callee,
+                   std::vector<GenericArgument*> generic_arguments,
+                   std::vector<Argument*> arguments)
+        : Expression(static_kind, span), callee(callee),
           generic_arguments(std::move(generic_arguments)), arguments(std::move(arguments)) {}
 
     template <typename T>
@@ -478,15 +501,16 @@ export class CallExpression : public Expression {
 };
 
 export class IndexExpression : public Expression {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::IndexExpression;
 
-    std::unique_ptr<Expression> value;
-    std::unique_ptr<Expression> index;
+    Expression* value;
+    Expression* index;
 
-    IndexExpression(Span span, std::unique_ptr<Expression> value,
-                    std::unique_ptr<Expression> index)
-        : Expression(static_kind, span), value(std::move(value)), index(std::move(index)) {}
+    IndexExpression(Span span, Expression* value, Expression* index)
+        : Expression(static_kind, span), value(value), index(index) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -495,14 +519,16 @@ export class IndexExpression : public Expression {
 };
 
 export class MemberExpression : public Expression {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::MemberExpression;
 
-    std::unique_ptr<Expression> value;
+    Expression* value;
     std::string member;
 
-    MemberExpression(Span span, std::unique_ptr<Expression> value, std::string member)
-        : Expression(static_kind, span), value(std::move(value)), member(std::move(member)) {}
+    MemberExpression(Span span, Expression* value, std::string member)
+        : Expression(static_kind, span), value(value), member(std::move(member)) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -511,15 +537,16 @@ export class MemberExpression : public Expression {
 };
 
 export class AssignExpression : public Expression {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::AssignExpression;
 
-    std::unique_ptr<Expression> target;
-    std::unique_ptr<Expression> value;
+    Expression* target;
+    Expression* value;
 
-    AssignExpression(Span span, std::unique_ptr<Expression> target,
-                     std::unique_ptr<Expression> value)
-        : Expression(static_kind, span), target(std::move(target)), value(std::move(value)) {}
+    AssignExpression(Span span, Expression* target, Expression* value)
+        : Expression(static_kind, span), target(target), value(value) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -528,19 +555,21 @@ export class AssignExpression : public Expression {
 };
 
 export class StructLiteralExpression : public Expression {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::StructLiteralExpression;
 
-    std::unique_ptr<IdentifierExpression> name;
+    IdentifierExpression* name;
 
-    std::vector<std::unique_ptr<GenericArgument>> generic_arguments;
+    std::vector<GenericArgument*> generic_arguments;
 
-    std::vector<std::unique_ptr<StructLiteralField>> fields;
+    std::vector<StructLiteralField*> fields;
 
-    StructLiteralExpression(Span span, std::unique_ptr<IdentifierExpression> name,
-                            std::vector<std::unique_ptr<GenericArgument>> generic_arguments,
-                            std::vector<std::unique_ptr<StructLiteralField>> fields)
-        : Expression(static_kind, span), name(std::move(name)),
+    StructLiteralExpression(Span span, IdentifierExpression* name,
+                            std::vector<GenericArgument*> generic_arguments,
+                            std::vector<StructLiteralField*> fields)
+        : Expression(static_kind, span), name(name),
           generic_arguments(std::move(generic_arguments)), fields(std::move(fields)) {}
 
     template <typename T>
@@ -550,12 +579,14 @@ export class StructLiteralExpression : public Expression {
 };
 
 export class BlockStatement : public Statement {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::BlockStatement;
 
-    std::vector<std::unique_ptr<Statement>> statements;
+    std::vector<Statement*> statements;
 
-    BlockStatement(Span span, std::vector<std::unique_ptr<Statement>> statements)
+    BlockStatement(Span span, std::vector<Statement*> statements)
         : Statement(static_kind, span), statements(std::move(statements)) {}
 
     template <typename T>
@@ -565,13 +596,15 @@ export class BlockStatement : public Statement {
 };
 
 export class ExpressionStatement : public Statement {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::ExpressionStatement;
 
-    std::unique_ptr<Expression> expression;
+    Expression* expression;
 
-    explicit ExpressionStatement(std::unique_ptr<Expression> expression)
-        : Statement(static_kind, expression->span), expression(std::move(expression)) {}
+    explicit ExpressionStatement(Expression* expression)
+        : Statement(static_kind, expression->span), expression(expression) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -580,17 +613,19 @@ export class ExpressionStatement : public Statement {
 };
 
 export class IfExpression : public Expression {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::IfExpression;
 
-    std::unique_ptr<Expression> condition;
-    std::unique_ptr<Statement> then_branch;
-    std::unique_ptr<Statement> else_branch;
+    Expression* condition;
+    Statement* then_branch;
+    Statement* else_branch;
 
-    IfExpression(Span span, std::unique_ptr<Expression> condition,
-                 std::unique_ptr<Statement> then_branch, std::unique_ptr<Statement> else_branch)
-        : Expression(static_kind, span), condition(std::move(condition)),
-          then_branch(std::move(then_branch)), else_branch(std::move(else_branch)) {}
+    IfExpression(Span span, Expression* condition, Statement* then_branch,
+                 Statement* else_branch)
+        : Expression(static_kind, span), condition(condition), then_branch(then_branch),
+          else_branch(else_branch) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -599,13 +634,14 @@ export class IfExpression : public Expression {
 };
 
 export class ReturnStatement : public Statement {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::ReturnStatement;
 
-    std::unique_ptr<Expression> value;
+    Expression* value;
 
-    ReturnStatement(Span span, std::unique_ptr<Expression> value)
-        : Statement(static_kind, span), value(std::move(value)) {}
+    ReturnStatement(Span span, Expression* value) : Statement(static_kind, span), value(value) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -614,6 +650,8 @@ export class ReturnStatement : public Statement {
 };
 
 export class StructDeclaration : public Statement {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::StructDeclaration;
 
@@ -621,13 +659,13 @@ export class StructDeclaration : public Statement {
 
     std::string name;
 
-    std::vector<std::unique_ptr<GenericParameter>> generic_parameters;
+    std::vector<GenericParameter*> generic_parameters;
 
-    std::vector<std::unique_ptr<StructField>> fields;
+    std::vector<StructField*> fields;
 
     StructDeclaration(Span span, Visibility::Type visibility, std::string name,
-                      std::vector<std::unique_ptr<GenericParameter>> generic_parameters,
-                      std::vector<std::unique_ptr<StructField>> fields)
+                      std::vector<GenericParameter*> generic_parameters,
+                      std::vector<StructField*> fields)
         : Statement(static_kind, span), visibility(visibility), name(std::move(name)),
           generic_parameters(std::move(generic_parameters)), fields(std::move(fields)) {}
 
@@ -638,6 +676,8 @@ export class StructDeclaration : public Statement {
 };
 
 export class VarDeclaration : public Statement {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::VarDeclaration;
 
@@ -645,14 +685,13 @@ export class VarDeclaration : public Statement {
     StorageKind::Type storage_kind;
 
     std::string name;
-    std::unique_ptr<TypeExpression> type;
-    std::unique_ptr<Expression> initializer;
+    TypeExpression* annotation;
+    Expression* initializer;
 
     VarDeclaration(Span span, Visibility::Type visibility, StorageKind::Type storage_kind,
-                   std::string name, std::unique_ptr<TypeExpression> type,
-                   std::unique_ptr<Expression> initializer)
+                   std::string name, TypeExpression* annotation, Expression* initializer)
         : Statement(static_kind, span), visibility(visibility), storage_kind(storage_kind),
-          name(std::move(name)), type(std::move(type)), initializer(std::move(initializer)) {}
+          name(std::move(name)), annotation(annotation), initializer(initializer) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -661,19 +700,20 @@ export class VarDeclaration : public Statement {
 };
 
 export class FunctionDeclaration : public Statement {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::FunctionDeclaration;
 
     Visibility::Type visibility;
 
-    std::unique_ptr<FunctionPrototype> prototype;
-    std::unique_ptr<BlockStatement> body;
+    FunctionPrototype* prototype;
+    BlockStatement* body;
 
-    FunctionDeclaration(Span span, Visibility::Type visibility,
-                        std::unique_ptr<FunctionPrototype> prototype,
-                        std::unique_ptr<BlockStatement> body)
-        : Statement(static_kind, span), visibility(visibility), prototype(std::move(prototype)),
-          body(std::move(body)) {}
+    FunctionDeclaration(Span span, Visibility::Type visibility, FunctionPrototype* prototype,
+                        BlockStatement* body)
+        : Statement(static_kind, span), visibility(visibility), prototype(prototype),
+          body(body) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -682,17 +722,18 @@ export class FunctionDeclaration : public Statement {
 };
 
 export class ExternFunctionDeclaration : public Statement {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::ExternFunctionDeclaration;
 
     Visibility::Type visibility;
 
-    std::unique_ptr<FunctionPrototype> prototype;
+    FunctionPrototype* prototype;
 
     ExternFunctionDeclaration(Span span, Visibility::Type visibility,
-                              std::unique_ptr<FunctionPrototype> prototype)
-        : Statement(static_kind, span), visibility(visibility),
-          prototype(std::move(prototype)) {}
+                              FunctionPrototype* prototype)
+        : Statement(static_kind, span), visibility(visibility), prototype(prototype) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -701,18 +742,20 @@ export class ExternFunctionDeclaration : public Statement {
 };
 
 export class ExternVarDeclaration : public Statement {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::ExternVarDeclaration;
 
     Visibility::Type visibility;
 
     std::string name;
-    std::unique_ptr<TypeExpression> type;
+    TypeExpression* annotation;
 
     ExternVarDeclaration(Span span, Visibility::Type visibility, std::string name,
-                         std::unique_ptr<TypeExpression> type)
+                         TypeExpression* annotation)
         : Statement(static_kind, span), visibility(visibility), name(std::move(name)),
-          type(std::move(type)) {}
+          annotation(annotation) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -721,12 +764,14 @@ export class ExternVarDeclaration : public Statement {
 };
 
 export class ImportStatement : public Statement {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::ImportStatement;
 
-    std::vector<std::unique_ptr<IdentifierExpression>> path;
+    std::vector<IdentifierExpression*> path;
 
-    ImportStatement(Span span, std::vector<std::unique_ptr<IdentifierExpression>> path)
+    ImportStatement(Span span, std::vector<IdentifierExpression*> path)
         : Statement(static_kind, span), path(std::move(path)) {}
 
     template <typename T>
@@ -737,6 +782,8 @@ export class ImportStatement : public Statement {
 
 export template <typename T>
 class Visitor {
+  private:
+
   public:
     virtual ~Visitor() = default;
 
@@ -774,65 +821,273 @@ class Visitor {
     virtual T visit(ImportStatement& node) = 0;
 
     void visit_expression(Expression& expression) {
-        if (auto* n = expression.as<NumberLiteral>()) { visit(*n); return; }
-        if (auto* n = expression.as<FloatLiteral>()) { visit(*n); return; }
-        if (auto* n = expression.as<StringLiteral>()) { visit(*n); return; }
-        if (auto* n = expression.as<BooleanLiteral>()) { visit(*n); return; }
-        if (auto* n = expression.as<IdentifierExpression>()) { visit(*n); return; }
-        if (auto* n = expression.as<BinaryExpression>()) { visit(*n); return; }
-        if (auto* n = expression.as<UnaryExpression>()) { visit(*n); return; }
-        if (auto* n = expression.as<CallExpression>()) { visit(*n); return; }
-        if (auto* n = expression.as<IndexExpression>()) { visit(*n); return; }
-        if (auto* n = expression.as<MemberExpression>()) { visit(*n); return; }
-        if (auto* n = expression.as<AssignExpression>()) { visit(*n); return; }
-        if (auto* n = expression.as<StructLiteralExpression>()) { visit(*n); return; }
-        if (auto* n = expression.as<IfExpression>()) { visit(*n); return; }
+        NumberLiteral* number_literal = expression.as<NumberLiteral>();
+        if (number_literal != nullptr) {
+            visit(*number_literal);
+            return;
+        }
+        FloatLiteral* float_literal = expression.as<FloatLiteral>();
+        if (float_literal != nullptr) {
+            visit(*float_literal);
+            return;
+        }
+        StringLiteral* string_literal = expression.as<StringLiteral>();
+        if (string_literal != nullptr) {
+            visit(*string_literal);
+            return;
+        }
+        BooleanLiteral* boolean_literal = expression.as<BooleanLiteral>();
+        if (boolean_literal != nullptr) {
+            visit(*boolean_literal);
+            return;
+        }
+        IdentifierExpression* identifier_expression = expression.as<IdentifierExpression>();
+        if (identifier_expression != nullptr) {
+            visit(*identifier_expression);
+            return;
+        }
+        BinaryExpression* binary_expression = expression.as<BinaryExpression>();
+        if (binary_expression != nullptr) {
+            visit(*binary_expression);
+            return;
+        }
+        UnaryExpression* unary_expression = expression.as<UnaryExpression>();
+        if (unary_expression != nullptr) {
+            visit(*unary_expression);
+            return;
+        }
+        CallExpression* call_expression = expression.as<CallExpression>();
+        if (call_expression != nullptr) {
+            visit(*call_expression);
+            return;
+        }
+        IndexExpression* index_expression = expression.as<IndexExpression>();
+        if (index_expression != nullptr) {
+            visit(*index_expression);
+            return;
+        }
+        MemberExpression* member_expression = expression.as<MemberExpression>();
+        if (member_expression != nullptr) {
+            visit(*member_expression);
+            return;
+        }
+        AssignExpression* assign_expression = expression.as<AssignExpression>();
+        if (assign_expression != nullptr) {
+            visit(*assign_expression);
+            return;
+        }
+        StructLiteralExpression* struct_literal_expression = expression.as<StructLiteralExpression>();
+        if (struct_literal_expression != nullptr) {
+            visit(*struct_literal_expression);
+            return;
+        }
+        IfExpression* if_expression = expression.as<IfExpression>();
+        if (if_expression != nullptr) {
+            visit(*if_expression);
+            return;
+        }
     }
 
     void visit_statement(Statement& statement) {
-        if (auto* n = statement.as<BlockStatement>()) { visit(*n); return; }
-        if (auto* n = statement.as<ExpressionStatement>()) { visit(*n); return; }
-        if (auto* n = statement.as<ReturnStatement>()) { visit(*n); return; }
-        if (auto* n = statement.as<StructDeclaration>()) { visit(*n); return; }
-        if (auto* n = statement.as<VarDeclaration>()) { visit(*n); return; }
-        if (auto* n = statement.as<FunctionDeclaration>()) { visit(*n); return; }
-        if (auto* n = statement.as<ExternFunctionDeclaration>()) { visit(*n); return; }
-        if (auto* n = statement.as<ExternVarDeclaration>()) { visit(*n); return; }
-        if (auto* n = statement.as<ImportStatement>()) { visit(*n); return; }
+        BlockStatement* block_statement = statement.as<BlockStatement>();
+        if (block_statement != nullptr) {
+            visit(*block_statement);
+            return;
+        }
+        ExpressionStatement* expression_statement = statement.as<ExpressionStatement>();
+        if (expression_statement != nullptr) {
+            visit(*expression_statement);
+            return;
+        }
+        ReturnStatement* return_statement = statement.as<ReturnStatement>();
+        if (return_statement != nullptr) {
+            visit(*return_statement);
+            return;
+        }
+        StructDeclaration* struct_declaration = statement.as<StructDeclaration>();
+        if (struct_declaration != nullptr) {
+            visit(*struct_declaration);
+            return;
+        }
+        VarDeclaration* var_declaration = statement.as<VarDeclaration>();
+        if (var_declaration != nullptr) {
+            visit(*var_declaration);
+            return;
+        }
+        FunctionDeclaration* function_declaration = statement.as<FunctionDeclaration>();
+        if (function_declaration != nullptr) {
+            visit(*function_declaration);
+            return;
+        }
+        ExternFunctionDeclaration* extern_function_declaration = statement.as<ExternFunctionDeclaration>();
+        if (extern_function_declaration != nullptr) {
+            visit(*extern_function_declaration);
+            return;
+        }
+        ExternVarDeclaration* extern_var_declaration = statement.as<ExternVarDeclaration>();
+        if (extern_var_declaration != nullptr) {
+            visit(*extern_var_declaration);
+            return;
+        }
+        ImportStatement* import_statement = statement.as<ImportStatement>();
+        if (import_statement != nullptr) {
+            visit(*import_statement);
+            return;
+        }
     }
 
     void visit_node(Node& node) {
-        if (auto* n = node.as<TypeExpression>()) { visit(*n); return; }
-        if (auto* n = node.as<GenericParameter>()) { visit(*n); return; }
-        if (auto* n = node.as<GenericArgument>()) { visit(*n); return; }
-        if (auto* n = node.as<Parameter>()) { visit(*n); return; }
-        if (auto* n = node.as<Argument>()) { visit(*n); return; }
-        if (auto* n = node.as<FunctionPrototype>()) { visit(*n); return; }
-        if (auto* n = node.as<StructField>()) { visit(*n); return; }
-        if (auto* n = node.as<StructLiteralField>()) { visit(*n); return; }
+        TypeExpression* type_expression = node.as<TypeExpression>();
+        if (type_expression != nullptr) {
+            visit(*type_expression);
+            return;
+        }
+        GenericParameter* generic_parameter = node.as<GenericParameter>();
+        if (generic_parameter != nullptr) {
+            visit(*generic_parameter);
+            return;
+        }
+        GenericArgument* generic_argument = node.as<GenericArgument>();
+        if (generic_argument != nullptr) {
+            visit(*generic_argument);
+            return;
+        }
+        Parameter* parameter = node.as<Parameter>();
+        if (parameter != nullptr) {
+            visit(*parameter);
+            return;
+        }
+        Argument* argument = node.as<Argument>();
+        if (argument != nullptr) {
+            visit(*argument);
+            return;
+        }
+        FunctionPrototype* function_prototype = node.as<FunctionPrototype>();
+        if (function_prototype != nullptr) {
+            visit(*function_prototype);
+            return;
+        }
+        StructField* struct_field = node.as<StructField>();
+        if (struct_field != nullptr) {
+            visit(*struct_field);
+            return;
+        }
+        StructLiteralField* struct_literal_field = node.as<StructLiteralField>();
+        if (struct_literal_field != nullptr) {
+            visit(*struct_literal_field);
+            return;
+        }
 
-        if (auto* n = node.as<NumberLiteral>()) { visit(*n); return; }
-        if (auto* n = node.as<FloatLiteral>()) { visit(*n); return; }
-        if (auto* n = node.as<StringLiteral>()) { visit(*n); return; }
-        if (auto* n = node.as<BooleanLiteral>()) { visit(*n); return; }
-        if (auto* n = node.as<IdentifierExpression>()) { visit(*n); return; }
-        if (auto* n = node.as<BinaryExpression>()) { visit(*n); return; }
-        if (auto* n = node.as<UnaryExpression>()) { visit(*n); return; }
-        if (auto* n = node.as<CallExpression>()) { visit(*n); return; }
-        if (auto* n = node.as<IndexExpression>()) { visit(*n); return; }
-        if (auto* n = node.as<MemberExpression>()) { visit(*n); return; }
-        if (auto* n = node.as<AssignExpression>()) { visit(*n); return; }
-        if (auto* n = node.as<StructLiteralExpression>()) { visit(*n); return; }
-        if (auto* n = node.as<IfExpression>()) { visit(*n); return; }
+        NumberLiteral* number_literal = node.as<NumberLiteral>();
+        if (number_literal != nullptr) {
+            visit(*number_literal);
+            return;
+        }
+        FloatLiteral* float_literal = node.as<FloatLiteral>();
+        if (float_literal != nullptr) {
+            visit(*float_literal);
+            return;
+        }
+        StringLiteral* string_literal = node.as<StringLiteral>();
+        if (string_literal != nullptr) {
+            visit(*string_literal);
+            return;
+        }
+        BooleanLiteral* boolean_literal = node.as<BooleanLiteral>();
+        if (boolean_literal != nullptr) {
+            visit(*boolean_literal);
+            return;
+        }
+        IdentifierExpression* identifier_expression = node.as<IdentifierExpression>();
+        if (identifier_expression != nullptr) {
+            visit(*identifier_expression);
+            return;
+        }
+        BinaryExpression* binary_expression = node.as<BinaryExpression>();
+        if (binary_expression != nullptr) {
+            visit(*binary_expression);
+            return;
+        }
+        UnaryExpression* unary_expression = node.as<UnaryExpression>();
+        if (unary_expression != nullptr) {
+            visit(*unary_expression);
+            return;
+        }
+        CallExpression* call_expression = node.as<CallExpression>();
+        if (call_expression != nullptr) {
+            visit(*call_expression);
+            return;
+        }
+        IndexExpression* index_expression = node.as<IndexExpression>();
+        if (index_expression != nullptr) {
+            visit(*index_expression);
+            return;
+        }
+        MemberExpression* member_expression = node.as<MemberExpression>();
+        if (member_expression != nullptr) {
+            visit(*member_expression);
+            return;
+        }
+        AssignExpression* assign_expression = node.as<AssignExpression>();
+        if (assign_expression != nullptr) {
+            visit(*assign_expression);
+            return;
+        }
+        StructLiteralExpression* struct_literal_expression = node.as<StructLiteralExpression>();
+        if (struct_literal_expression != nullptr) {
+            visit(*struct_literal_expression);
+            return;
+        }
+        IfExpression* if_expression = node.as<IfExpression>();
+        if (if_expression != nullptr) {
+            visit(*if_expression);
+            return;
+        }
 
-        if (auto* n = node.as<BlockStatement>()) { visit(*n); return; }
-        if (auto* n = node.as<ExpressionStatement>()) { visit(*n); return; }
-        if (auto* n = node.as<ReturnStatement>()) { visit(*n); return; }
-        if (auto* n = node.as<StructDeclaration>()) { visit(*n); return; }
-        if (auto* n = node.as<VarDeclaration>()) { visit(*n); return; }
-        if (auto* n = node.as<FunctionDeclaration>()) { visit(*n); return; }
-        if (auto* n = node.as<ExternFunctionDeclaration>()) { visit(*n); return; }
-        if (auto* n = node.as<ExternVarDeclaration>()) { visit(*n); return; }
-        if (auto* n = node.as<ImportStatement>()) { visit(*n); return; }
+        BlockStatement* block_statement = node.as<BlockStatement>();
+        if (block_statement != nullptr) {
+            visit(*block_statement);
+            return;
+        }
+        ExpressionStatement* expression_statement = node.as<ExpressionStatement>();
+        if (expression_statement != nullptr) {
+            visit(*expression_statement);
+            return;
+        }
+        ReturnStatement* return_statement = node.as<ReturnStatement>();
+        if (return_statement != nullptr) {
+            visit(*return_statement);
+            return;
+        }
+        StructDeclaration* struct_declaration = node.as<StructDeclaration>();
+        if (struct_declaration != nullptr) {
+            visit(*struct_declaration);
+            return;
+        }
+        VarDeclaration* var_declaration = node.as<VarDeclaration>();
+        if (var_declaration != nullptr) {
+            visit(*var_declaration);
+            return;
+        }
+        FunctionDeclaration* function_declaration = node.as<FunctionDeclaration>();
+        if (function_declaration != nullptr) {
+            visit(*function_declaration);
+            return;
+        }
+        ExternFunctionDeclaration* extern_function_declaration = node.as<ExternFunctionDeclaration>();
+        if (extern_function_declaration != nullptr) {
+            visit(*extern_function_declaration);
+            return;
+        }
+        ExternVarDeclaration* extern_var_declaration = node.as<ExternVarDeclaration>();
+        if (extern_var_declaration != nullptr) {
+            visit(*extern_var_declaration);
+            return;
+        }
+        ImportStatement* import_statement = node.as<ImportStatement>();
+        if (import_statement != nullptr) {
+            visit(*import_statement);
+            return;
+        }
     }
 };

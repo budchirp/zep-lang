@@ -9,7 +9,7 @@ export module zep.hir.ir;
 
 import zep.common.position;
 import zep.common.span;
-import zep.frontend.sema.kinds;
+import zep.frontend.sema.kind;
 import zep.hir.sema.type;
 import zep.hir.sema.scope.symbol;
 import zep.hir.sema.scope;

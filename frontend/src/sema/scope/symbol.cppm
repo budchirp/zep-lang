@@ -1,48 +1,41 @@
 module;
 
-#include <memory>
+#include <cstdint>
 #include <string>
+#include <utility>
 
 export module zep.frontend.sema.symbol;
 
-import zep.common.position;
 import zep.common.span;
-import zep.frontend.sema.kinds;
-import zep.frontend.sema.type;
+import zep.frontend.sema.kind;
+import zep.frontend.sema.type.type_id;
 
 export class Symbol {
+  private:
+
   public:
     class Kind {
+      private:
+
       public:
-        enum class Type : std::uint8_t {
-            Var,
-            Function,
-            Type,
-        };
+        enum class Type : std::uint8_t { Var, Function, Type };
     };
 
   protected:
-    Symbol(Kind::Type kind, std::string name, Span span, Visibility::Type visibility,
-           std::shared_ptr<Type> type)
-        : kind(kind), span(span), name(std::move(name)), visibility(visibility),
-          type(std::move(type)) {}
-
-  private:
-    Symbol(const Symbol&) = delete;
-    Symbol& operator=(const Symbol&) = delete;
-    Symbol(Symbol&&) = default;
-    Symbol& operator=(Symbol&&) = default;
+    Symbol(Kind::Type kind, std::string name, Span span, Visibility::Type visibility, TypeId type)
+        : kind(kind), span(span), name(std::move(name)), visibility(visibility), type(type) {}
 
   public:
-    Kind::Type kind;
-
-    Span span;
-
-    std::string name;
-
+    const Kind::Type kind;
+    const Span span;
+    const std::string name;
     Visibility::Type visibility;
+    TypeId type;
 
-    std::shared_ptr<Type> type;
+    Symbol(const Symbol&) = delete;
+    Symbol& operator=(const Symbol&) = delete;
+    Symbol(Symbol&&) = delete;
+    Symbol& operator=(Symbol&&) = delete;
 
     virtual ~Symbol() = default;
 
@@ -64,31 +57,35 @@ export class Symbol {
 };
 
 export class VarSymbol : public Symbol {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Var;
 
-    StorageKind::Type storage_kind;
+    const StorageKind::Type storage_kind;
 
     VarSymbol(std::string name, Span span, Visibility::Type visibility,
-              StorageKind::Type storage_kind, std::shared_ptr<Type> type)
-        : Symbol(static_kind, std::move(name), span, visibility, std::move(type)),
-          storage_kind(storage_kind) {}
+              StorageKind::Type storage_kind, TypeId type)
+        : Symbol(static_kind, std::move(name), span, visibility, type), storage_kind(storage_kind) {
+    }
 };
 
 export class FunctionSymbol : public Symbol {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Function;
 
-    FunctionSymbol(std::string name, Span span, Visibility::Type visibility,
-                   std::shared_ptr<Type> type)
-        : Symbol(static_kind, std::move(name), span, visibility, std::move(type)) {}
+    FunctionSymbol(std::string name, Span span, Visibility::Type visibility, TypeId type)
+        : Symbol(static_kind, std::move(name), span, visibility, type) {}
 };
 
 export class TypeSymbol : public Symbol {
+  private:
+
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Type;
 
-    TypeSymbol(std::string name, Span span, Visibility::Type visibility,
-               std::shared_ptr<Type> type)
-        : Symbol(static_kind, std::move(name), span, visibility, std::move(type)) {}
+    TypeSymbol(std::string name, Span span, Visibility::Type visibility, TypeId type)
+        : Symbol(static_kind, std::move(name), span, visibility, type) {}
 };

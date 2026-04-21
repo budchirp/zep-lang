@@ -5,6 +5,8 @@ export module zep.common.span;
 import zep.common.position;
 
 export class Span {
+  private:
+
   public:
     Position start;
     Position end;
