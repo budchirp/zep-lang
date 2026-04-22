@@ -46,7 +46,7 @@ cmake --build cmake-build-release
 
 - DO NOT add comments to code.
 - DO NOT add explicit types. use `auto` whenever you can. Function return types MUST be explicit no `auto` allowed there.
-- 1. `private`, 2. `protected` and 3. `public` class order should be like this. DO NOT create methods like `get_x` and `set_x` if it just returns the field or just assigns it. make the field public instead.
+- 1. `private`, 2. `protected` and 3. `public` class order should be like this. DO NOT create methods like `get_x` and `set_x`. make the field public instead.
 - Use `auto` when the type can be deduced; DO NOT use `auto` when creating instances (e.g., `Parser parser`)
 - DO NOT use shortcut names (e.g., `ty` for type, `ctx` for context)
 - ALWAYS use classes (never structs); use explicit constructors to ensure all members are initialized.
