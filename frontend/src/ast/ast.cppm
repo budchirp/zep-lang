@@ -840,6 +840,11 @@ class Visitor {
             visit(*if_expression);
             return;
         }
+        TypeExpression* type_expression = expression.as<TypeExpression>();
+        if (type_expression != nullptr) {
+            visit(*type_expression);
+            return;
+        }
     }
 
     void visit_statement(Statement& statement) {
