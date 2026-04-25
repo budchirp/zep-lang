@@ -21,6 +21,7 @@ include(cmake/Modules.cmake)
 
 add_subdirectory(common)
 add_subdirectory(frontend)
+add_subdirectory(hir)
 add_subdirectory(codegen)
 add_subdirectory(driver)
 add_subdirectory(cli)

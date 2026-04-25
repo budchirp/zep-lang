@@ -70,8 +70,7 @@ export class MonomorphizationCache {
         pending_specializations.clear();
     }
 
-    MonoCacheResult get_or_create(const std::string& name,
-                                  const std::vector<std::shared_ptr<Type>>& types) {
+    MonoCacheResult get_or_create(const std::string& name, const std::vector<const Type*>& types) {
         std::string full = NameMangler::mangle(name, types);
 
         if (specializations.contains(full)) {

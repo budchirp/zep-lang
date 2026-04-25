@@ -10,9 +10,7 @@ export module zep.hir.ir;
 import zep.common.position;
 import zep.common.span;
 import zep.frontend.sema.kind;
-import zep.hir.sema.type;
-import zep.hir.sema.scope.symbol;
-import zep.hir.sema.scope;
+import zep.frontend.sema.type;
 
 export class HIRNodeKind {
   public:
@@ -71,25 +69,19 @@ export class HIRNode {
 };
 
 export class HIRExpression : public HIRNode {
-  private:
-    std::shared_ptr<HIRType> type;
-
   public:
-    using HIRNode::HIRNode;
+    const Type* type;
 
-    void set_type(std::shared_ptr<HIRType> type) { this->type = std::move(type); }
-    std::shared_ptr<HIRType> get_type() const { return type; }
+    HIRExpression(HIRNodeKind::Type kind, Span span, const Type* type = nullptr)
+        : HIRNode(kind, span), type(type) {}
 };
 
 export class HIRStatement : public HIRNode {
-  private:
-    std::shared_ptr<HIRType> type;
-
   public:
-    using HIRNode::HIRNode;
+    const Type* type;
 
-    void set_type(std::shared_ptr<HIRType> type) { this->type = std::move(type); }
-    std::shared_ptr<HIRType> get_type() const { return type; }
+    HIRStatement(HIRNodeKind::Type kind, Span span, const Type* type = nullptr)
+        : HIRNode(kind, span), type(type) {}
 };
 
 export class HIRBlockStatement : public HIRStatement {
@@ -98,8 +90,7 @@ export class HIRBlockStatement : public HIRStatement {
 
     std::vector<std::unique_ptr<HIRStatement>> statements;
 
-    explicit HIRBlockStatement(Span span,
-                               std::vector<std::unique_ptr<HIRStatement>> statements)
+    explicit HIRBlockStatement(Span span, std::vector<std::unique_ptr<HIRStatement>> statements)
         : HIRStatement(static_kind, span), statements(std::move(statements)) {}
 };
 
@@ -109,8 +100,8 @@ export class HIRNumberLiteral : public HIRExpression {
 
     std::string value;
 
-    HIRNumberLiteral(Span span, std::string value)
-        : HIRExpression(static_kind, span), value(std::move(value)) {}
+    HIRNumberLiteral(Span span, std::string value, const Type* type = nullptr)
+        : HIRExpression(static_kind, span, type), value(std::move(value)) {}
 };
 
 export class HIRFloatLiteral : public HIRExpression {
@@ -119,8 +110,8 @@ export class HIRFloatLiteral : public HIRExpression {
 
     std::string value;
 
-    HIRFloatLiteral(Span span, std::string value)
-        : HIRExpression(static_kind, span), value(std::move(value)) {}
+    HIRFloatLiteral(Span span, std::string value, const Type* type = nullptr)
+        : HIRExpression(static_kind, span, type), value(std::move(value)) {}
 };
 
 export class HIRStringLiteral : public HIRExpression {
@@ -129,8 +120,8 @@ export class HIRStringLiteral : public HIRExpression {
 
     std::string value;
 
-    HIRStringLiteral(Span span, std::string value)
-        : HIRExpression(static_kind, span), value(std::move(value)) {}
+    HIRStringLiteral(Span span, std::string value, const Type* type = nullptr)
+        : HIRExpression(static_kind, span, type), value(std::move(value)) {}
 };
 
 export class HIRBooleanLiteral : public HIRExpression {
@@ -139,8 +130,8 @@ export class HIRBooleanLiteral : public HIRExpression {
 
     bool value;
 
-    HIRBooleanLiteral(Span span, bool value)
-        : HIRExpression(static_kind, span), value(value) {}
+    HIRBooleanLiteral(Span span, bool value, const Type* type = nullptr)
+        : HIRExpression(static_kind, span, type), value(value) {}
 };
 
 export class HIRIdentifierExpression : public HIRExpression {
@@ -149,8 +140,8 @@ export class HIRIdentifierExpression : public HIRExpression {
 
     std::string name;
 
-    HIRIdentifierExpression(Span span, std::string name)
-        : HIRExpression(static_kind, span), name(std::move(name)) {}
+    HIRIdentifierExpression(Span span, std::string name, const Type* type = nullptr)
+        : HIRExpression(static_kind, span, type), name(std::move(name)) {}
 };
 
 export class HIRBinaryExpression : public HIRExpression {
@@ -218,9 +209,9 @@ export class HIRBinaryExpression : public HIRExpression {
     Operator::Type op;
     std::unique_ptr<HIRExpression> right;
 
-    HIRBinaryExpression(Span span, std::unique_ptr<HIRExpression> left,
-                        Operator::Type op, std::unique_ptr<HIRExpression> right)
-        : HIRExpression(static_kind, span), left(std::move(left)), op(op),
+    HIRBinaryExpression(Span span, std::unique_ptr<HIRExpression> left, Operator::Type op,
+                        std::unique_ptr<HIRExpression> right, const Type* type = nullptr)
+        : HIRExpression(static_kind, span, type), left(std::move(left)), op(op),
           right(std::move(right)) {}
 };
 
@@ -258,9 +249,9 @@ export class HIRUnaryExpression : public HIRExpression {
     Operator::Type op;
     std::unique_ptr<HIRExpression> operand;
 
-    HIRUnaryExpression(Span span, Operator::Type op,
-                       std::unique_ptr<HIRExpression> operand)
-        : HIRExpression(static_kind, span), op(op), operand(std::move(operand)) {}
+    HIRUnaryExpression(Span span, Operator::Type op, std::unique_ptr<HIRExpression> operand,
+                       const Type* type = nullptr)
+        : HIRExpression(static_kind, span, type), op(op), operand(std::move(operand)) {}
 };
 
 export class HIRCallExpression : public HIRExpression {
@@ -271,8 +262,9 @@ export class HIRCallExpression : public HIRExpression {
     std::vector<std::unique_ptr<HIRExpression>> arguments;
 
     HIRCallExpression(Span span, std::unique_ptr<HIRExpression> callee,
-                      std::vector<std::unique_ptr<HIRExpression>> arguments)
-        : HIRExpression(static_kind, span), callee(std::move(callee)),
+                      std::vector<std::unique_ptr<HIRExpression>> arguments,
+                      const Type* type = nullptr)
+        : HIRExpression(static_kind, span, type), callee(std::move(callee)),
           arguments(std::move(arguments)) {}
 };
 
@@ -284,9 +276,9 @@ export class HIRIndexExpression : public HIRExpression {
     std::unique_ptr<HIRExpression> index;
 
     HIRIndexExpression(Span span, std::unique_ptr<HIRExpression> object,
-                       std::unique_ptr<HIRExpression> index)
-        : HIRExpression(static_kind, span), object(std::move(object)), index(std::move(index)) {
-    }
+                       std::unique_ptr<HIRExpression> index, const Type* type = nullptr)
+        : HIRExpression(static_kind, span, type), object(std::move(object)),
+          index(std::move(index)) {}
 };
 
 export class HIRMemberExpression : public HIRExpression {
@@ -296,9 +288,9 @@ export class HIRMemberExpression : public HIRExpression {
     std::unique_ptr<HIRExpression> object;
     std::string member;
 
-    HIRMemberExpression(Span span, std::unique_ptr<HIRExpression> object,
-                        std::string member)
-        : HIRExpression(static_kind, span), object(std::move(object)),
+    HIRMemberExpression(Span span, std::unique_ptr<HIRExpression> object, std::string member,
+                        const Type* type = nullptr)
+        : HIRExpression(static_kind, span, type), object(std::move(object)),
           member(std::move(member)) {}
 };
 
@@ -310,9 +302,9 @@ export class HIRAssignExpression : public HIRExpression {
     std::unique_ptr<HIRExpression> value;
 
     HIRAssignExpression(Span span, std::unique_ptr<HIRExpression> target,
-                        std::unique_ptr<HIRExpression> value)
-        : HIRExpression(static_kind, span), target(std::move(target)), value(std::move(value)) {
-    }
+                        std::unique_ptr<HIRExpression> value, const Type* type = nullptr)
+        : HIRExpression(static_kind, span, type), target(std::move(target)),
+          value(std::move(value)) {}
 };
 
 export class HIRStructLiteralField {
@@ -332,8 +324,10 @@ export class HIRStructLiteralExpression : public HIRExpression {
     std::vector<HIRStructLiteralField> fields;
 
     HIRStructLiteralExpression(Span span, std::string name,
-                               std::vector<HIRStructLiteralField> fields)
-        : HIRExpression(static_kind, span), name(std::move(name)), fields(std::move(fields)) {}
+                               std::vector<HIRStructLiteralField> fields,
+                               const Type* type = nullptr)
+        : HIRExpression(static_kind, span, type), name(std::move(name)),
+          fields(std::move(fields)) {}
 };
 
 export class HIRIfExpression : public HIRExpression {
@@ -346,8 +340,8 @@ export class HIRIfExpression : public HIRExpression {
 
     HIRIfExpression(Span span, std::unique_ptr<HIRExpression> condition,
                     std::unique_ptr<HIRStatement> then_branch,
-                    std::unique_ptr<HIRStatement> else_branch)
-        : HIRExpression(static_kind, span), condition(std::move(condition)),
+                    std::unique_ptr<HIRStatement> else_branch, const Type* type = nullptr)
+        : HIRExpression(static_kind, span, type), condition(std::move(condition)),
           then_branch(std::move(then_branch)), else_branch(std::move(else_branch)) {}
 };
 
@@ -358,7 +352,8 @@ export class HIRExpressionStatement : public HIRStatement {
     std::unique_ptr<HIRExpression> expression;
 
     explicit HIRExpressionStatement(Span span, std::unique_ptr<HIRExpression> expression)
-        : HIRStatement(static_kind, span), expression(std::move(expression)) {}
+        : HIRStatement(static_kind, span, expression != nullptr ? expression->type : nullptr),
+          expression(std::move(expression)) {}
 };
 
 export class HIRReturnStatement : public HIRStatement {
@@ -367,8 +362,8 @@ export class HIRReturnStatement : public HIRStatement {
 
     std::unique_ptr<HIRExpression> value;
 
-    HIRReturnStatement(Span span, std::unique_ptr<HIRExpression> value)
-        : HIRStatement(static_kind, span), value(std::move(value)) {}
+    HIRReturnStatement(Span span, std::unique_ptr<HIRExpression> value, const Type* type = nullptr)
+        : HIRStatement(static_kind, span, type), value(std::move(value)) {}
 };
 
 export class HIRVarDeclaration : public HIRStatement {
@@ -378,23 +373,21 @@ export class HIRVarDeclaration : public HIRStatement {
     Visibility::Type visibility;
     StorageKind::Type storage_kind;
     std::string name;
-    std::shared_ptr<HIRType> type;
     std::unique_ptr<HIRExpression> initializer;
 
-    HIRVarDeclaration(Span span, Visibility::Type visibility,
-                      StorageKind::Type storage_kind, std::string name,
-                      std::shared_ptr<HIRType> type, std::unique_ptr<HIRExpression> initializer)
-        : HIRStatement(static_kind, span), visibility(visibility), storage_kind(storage_kind),
-          name(std::move(name)), type(std::move(type)), initializer(std::move(initializer)) {}
+    HIRVarDeclaration(Span span, Visibility::Type visibility, StorageKind::Type storage_kind,
+                      std::string name, const Type* type,
+                      std::unique_ptr<HIRExpression> initializer)
+        : HIRStatement(static_kind, span, type), visibility(visibility),
+          storage_kind(storage_kind), name(std::move(name)), initializer(std::move(initializer)) {}
 };
 
 export class HIRParameter {
   public:
     std::string name;
-    std::shared_ptr<HIRType> type;
+    const Type* type;
 
-    HIRParameter(std::string name, std::shared_ptr<HIRType> type)
-        : name(std::move(name)), type(std::move(type)) {}
+    HIRParameter(std::string name, const Type* type) : name(std::move(name)), type(type) {}
 };
 
 export class HIRFunctionDeclaration {
@@ -405,25 +398,22 @@ export class HIRFunctionDeclaration {
     Visibility::Type visibility;
     std::string name;
     std::vector<HIRParameter> parameters;
-    std::shared_ptr<HIRType> return_type;
+    const Type* return_type;
     std::unique_ptr<HIRBlockStatement> body;
     bool variadic;
 
     HIRFunctionDeclaration(Span span, Visibility::Type visibility, std::string name,
-                           std::vector<HIRParameter> parameters,
-                           std::shared_ptr<HIRType> return_type,
+                           std::vector<HIRParameter> parameters, const Type* return_type,
                            std::unique_ptr<HIRBlockStatement> body, bool variadic)
         : span(span), visibility(visibility), name(std::move(name)),
-          parameters(std::move(parameters)), return_type(std::move(return_type)),
-          body(std::move(body)), variadic(variadic) {}
+          parameters(std::move(parameters)), return_type(return_type), body(std::move(body)),
+          variadic(variadic) {}
 };
 
 export class HIRProgram {
   public:
-    std::unique_ptr<HIRScope> global_scope;
     std::vector<std::unique_ptr<HIRFunctionDeclaration>> functions;
 
-    HIRProgram(std::unique_ptr<HIRScope> global_scope,
-               std::vector<std::unique_ptr<HIRFunctionDeclaration>> functions)
-        : global_scope(std::move(global_scope)), functions(std::move(functions)) {}
+    explicit HIRProgram(std::vector<std::unique_ptr<HIRFunctionDeclaration>> functions)
+        : functions(std::move(functions)) {}
 };
