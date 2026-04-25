@@ -6,20 +6,22 @@ module;
 #include <utility>
 #include <vector>
 
-export module zep.frontend.sema.type.type_context;
+export module zep.frontend.sema.type.resolver;
 
 import zep.frontend.sema.type;
 import zep.frontend.sema.env;
 import zep.frontend.sema.scope;
 import zep.frontend.arena;
 
-export class TypeContext {
+export class TypeResolver {
   private:
     TypeArena& type_arena;
     Env& env;
+
     std::unordered_map<std::string, const Type*> substitutions;
 
-    const Type* substitute_type(const Type* type,
+    const Type*
+    substitute_type(const Type* type,
                     const std::unordered_map<std::string, const Type*>& substitution_map) {
         if (type == nullptr) {
             return nullptr;
@@ -79,10 +81,8 @@ export class TypeContext {
                 return type;
             }
 
-            return type_arena.create<StructType>(
-                struct_type->name,
-                struct_type->generic_parameters,
-                std::move(new_fields));
+            return type_arena.create<StructType>(struct_type->name, struct_type->generic_parameters,
+                                                 std::move(new_fields));
         }
 
         case Type::Kind::Type::Function: {
@@ -107,11 +107,8 @@ export class TypeContext {
             }
 
             return type_arena.create<FunctionType>(
-                function_type->name,
-                return_type,
-                std::move(new_parameters),
-                function_type->generic_parameters,
-                function_type->variadic);
+                function_type->name, return_type, std::move(new_parameters),
+                function_type->generic_parameters, function_type->variadic);
         }
 
         default:
@@ -120,15 +117,15 @@ export class TypeContext {
     }
 
   public:
-    TypeContext(TypeArena& type_arena, Env& env) : type_arena(type_arena), env(env) {}
+    TypeResolver(TypeArena& type_arena, Env& env) : type_arena(type_arena), env(env) {}
 
     class SubstitutionScope {
       private:
-        TypeContext& context;
+        TypeResolver& context;
         std::unordered_map<std::string, const Type*> saved;
 
       public:
-        explicit SubstitutionScope(TypeContext& context)
+        explicit SubstitutionScope(TypeResolver& context)
             : context(context), saved(context.substitutions) {}
 
         SubstitutionScope(const SubstitutionScope&) = delete;
@@ -167,7 +164,7 @@ export class TypeContext {
             if (!named->generic_arguments.empty()) {
                 const auto* struct_type = resolved_symbol_type->as<StructType>();
                 if (struct_type == nullptr) {
-                                        return nullptr;
+                    return nullptr;
                 }
 
                 if (named->generic_arguments.size() == struct_type->generic_parameters.size()) {
@@ -245,10 +242,8 @@ export class TypeContext {
                 return type;
             }
 
-            return type_arena.create<StructType>(
-                struct_type->name,
-                std::move(resolved_params),
-                std::move(resolved_fields));
+            return type_arena.create<StructType>(struct_type->name, std::move(resolved_params),
+                                                 std::move(resolved_fields));
         }
 
         case Type::Kind::Type::Function: {
@@ -293,11 +288,8 @@ export class TypeContext {
             }
 
             return type_arena.create<FunctionType>(
-                function_type->name,
-                resolved_return,
-                std::move(resolved_parameters),
-                std::move(resolved_generic_params),
-                function_type->variadic);
+                function_type->name, resolved_return, std::move(resolved_parameters),
+                std::move(resolved_generic_params), function_type->variadic);
         }
 
         default:

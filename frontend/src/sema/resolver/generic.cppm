@@ -9,7 +9,7 @@ import zep.common.span;
 import zep.frontend.sema.type;
 import zep.frontend.ast;
 import zep.common.logger.diagnostic;
-import zep.frontend.sema.type.type_context;
+import zep.frontend.sema.type.resolver;
 import zep.frontend.sema.context;
 import zep.frontend.sema.env;
 import zep.frontend.sema.scope;
@@ -19,11 +19,11 @@ export class GenericResolver {
     Visitor<void>& visitor;
 
     Context& context;
-    TypeContext& type_context;
+    TypeResolver& resolver;
 
   public:
-    explicit GenericResolver(Context& context, TypeContext& type_context, Visitor<void>& visitor)
-        : visitor(visitor), context(context), type_context(type_context) {}
+    explicit GenericResolver(Context& context, TypeResolver& resolver, Visitor<void>& visitor)
+        : visitor(visitor), context(context), resolver(resolver) {}
 
     bool check_generic_arguments(std::vector<GenericArgument*>& generic_arguments,
                                  const std::vector<GenericParameterType>& generic_parameters,
@@ -74,7 +74,7 @@ export class GenericResolver {
                 }
             }
 
-            type_context.add_substitution(generic_parameter.name, argument_type);
+            resolver.add_substitution(generic_parameter.name, argument_type);
         }
 
         return all_valid;
@@ -82,12 +82,10 @@ export class GenericResolver {
 
     void define_generic_parameters(const std::vector<GenericParameterType>& generic_parameters) {
         for (const auto& generic_parameter : generic_parameters) {
-            if (generic_parameter.constraint != nullptr) {
-                type_context.add_substitution(generic_parameter.name, generic_parameter.constraint);
-            } else {
-                type_context.add_substitution(generic_parameter.name,
-                                              context.env.primitives["any"]);
-            }
+            resolver.add_substitution(generic_parameter.name,
+                                      generic_parameter.constraint != nullptr
+                                          ? generic_parameter.constraint
+                                          : context.env.primitives["any"]);
         }
     }
 };

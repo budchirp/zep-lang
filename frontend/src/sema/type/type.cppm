@@ -225,7 +225,7 @@ inline bool Type::compatible(const Type* other) const {
         return true;
     }
 
-    if (kind == Kind::Type::Any || other->kind == Kind::Type::Any) {
+    if (is<AnyType>() || other->is<AnyType>()) {
         return true;
     }
 
@@ -235,60 +235,85 @@ inline bool Type::compatible(const Type* other) const {
 
     switch (kind) {
     case Kind::Type::Integer: {
-        const IntegerType* left_integer = as<IntegerType>();
-        const IntegerType* right_integer = other->as<IntegerType>();
+        const auto* left_integer = as<IntegerType>();
+        const auto* right_integer = other->as<IntegerType>();
+
         return left_integer->is_unsigned == right_integer->is_unsigned &&
                left_integer->size == right_integer->size;
     }
 
     case Kind::Type::Float: {
-        const FloatType* left_float = as<FloatType>();
-        const FloatType* right_float = other->as<FloatType>();
+        const auto* left_float = as<FloatType>();
+        const auto* right_float = other->as<FloatType>();
+
         return left_float->size == right_float->size;
     }
 
     case Kind::Type::Pointer: {
-        const PointerType* left_pointer = as<PointerType>();
-        const PointerType* right_pointer = other->as<PointerType>();
-
-        const Type* left_element = left_pointer->element;
-        const Type* right_element = right_pointer->element;
-        if (left_element->kind == Kind::Type::Void || right_element->kind == Kind::Type::Void) {
-            return true;
-        }
+        const auto* left_pointer = as<PointerType>();
+        const auto* right_pointer = other->as<PointerType>();
 
         if (left_pointer->is_mutable != right_pointer->is_mutable) {
             return false;
+        }
+
+        const auto* left_element = left_pointer->element;
+        const auto* right_element = right_pointer->element;
+
+        if (left_element == nullptr || right_element == nullptr) {
+            return false;
+        }
+
+        if (left_element->is<VoidType>() || right_element->is<VoidType>()) {
+            return true;
         }
 
         return left_pointer->element->compatible(right_pointer->element);
     }
 
     case Kind::Type::Array: {
-        const ArrayType* left_array = as<ArrayType>();
-        const ArrayType* right_array = other->as<ArrayType>();
+        const auto* left_array = as<ArrayType>();
+        const auto* right_array = other->as<ArrayType>();
+
         if (left_array->size != right_array->size) {
             return false;
         }
-        return left_array->element->compatible(right_array->element);
+
+        const auto* left_element = left_array->element;
+        const auto* right_element = right_array->element;
+
+        if (left_element == nullptr || right_element == nullptr) {
+            return false;
+        }
+
+        return left_element->compatible(right_element);
     }
 
     case Kind::Type::Struct: {
-        const StructType* left_struct = as<StructType>();
-        const StructType* right_struct = other->as<StructType>();
+        const auto* left_struct = as<StructType>();
+        const auto* right_struct = other->as<StructType>();
+
         if (left_struct->name != right_struct->name) {
             return false;
         }
+
         if (left_struct->fields.size() != right_struct->fields.size()) {
             return false;
         }
+
         for (std::size_t i = 0; i < left_struct->fields.size(); ++i) {
             if (left_struct->fields[i].name != right_struct->fields[i].name) {
                 return false;
             }
-            const Type* lf = left_struct->fields[i].type;
-            const Type* rf = right_struct->fields[i].type;
-            if (!(lf == nullptr || rf == nullptr || lf->compatible(rf))) {
+
+            const auto* left_field_type = left_struct->fields[i].type;
+            const auto* right_field_type = right_struct->fields[i].type;
+
+            if (left_field_type == nullptr || right_field_type == nullptr) {
+                return false;
+            }
+
+            if (!left_field_type->compatible(right_field_type)) {
                 return false;
             }
         }
@@ -296,23 +321,37 @@ inline bool Type::compatible(const Type* other) const {
     }
 
     case Kind::Type::Function: {
-        const FunctionType* left_function = as<FunctionType>();
-        const FunctionType* right_function = other->as<FunctionType>();
-        const Type* lr = left_function->return_type;
-        const Type* rr = right_function->return_type;
-        if (!(lr == nullptr || rr == nullptr || lr->compatible(rr))) {
+        const auto* left_function = as<FunctionType>();
+        const auto* right_function = other->as<FunctionType>();
+
+        const auto* left_return_type = left_function->return_type;
+        const auto* right_return_type = right_function->return_type;
+
+        if (left_return_type == nullptr || right_return_type == nullptr) {
             return false;
         }
+
+        if (!left_return_type->compatible(right_return_type)) {
+            return false;
+        }
+
         if (left_function->parameters.size() != right_function->parameters.size()) {
             return false;
         }
+
         for (std::size_t i = 0; i < left_function->parameters.size(); ++i) {
-            const Type* lp = left_function->parameters[i].type;
-            const Type* rp = right_function->parameters[i].type;
-            if (lp != nullptr && rp != nullptr && !lp->compatible(rp)) {
+            const auto* left_parameter_type = left_function->parameters[i].type;
+            const auto* right_parameter_type = right_function->parameters[i].type;
+
+            if (left_parameter_type == nullptr || right_parameter_type == nullptr) {
+                return false;
+            }
+
+            if (!left_parameter_type->compatible(right_parameter_type)) {
                 return false;
             }
         }
+
         return true;
     }
 

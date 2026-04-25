@@ -79,8 +79,11 @@ export class FunctionSymbol : public Symbol {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Function;
 
+    const FunctionType* function_type;
+
     FunctionSymbol(std::string name, Span span, Visibility::Type visibility, const Type* type)
-        : Symbol(static_kind, std::move(name), span, visibility, type) {}
+        : Symbol(static_kind, std::move(name), span, visibility, type),
+          function_type(type->as<FunctionType>()) {}
 };
 
 export class TypeSymbol : public Symbol {

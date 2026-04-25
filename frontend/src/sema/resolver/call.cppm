@@ -8,7 +8,7 @@ export module zep.frontend.sema.resolver.call;
 import zep.frontend.sema.type;
 import zep.frontend.ast;
 import zep.common.logger.diagnostic;
-import zep.frontend.sema.type.type_context;
+import zep.frontend.sema.type.resolver;
 import zep.frontend.sema.context;
 import zep.frontend.sema.env;
 import zep.frontend.sema.scope;
@@ -20,10 +20,11 @@ export class CallResolver {
     Visitor<void>& visitor;
 
     Context& context;
-    TypeContext& type_context;
+    TypeResolver& resolver;
 
-    bool check_arguments(const FunctionType* function_type, CallExpression& node,
-                         bool emit_errors = false) {
+    CallExpression& node;
+
+    bool check_arguments(const FunctionType* function_type, bool emit_errors = false) {
         std::size_t parameter_count = function_type->parameters.size();
         std::size_t required =
             function_type->variadic && parameter_count > 0 ? parameter_count - 1 : parameter_count;
@@ -52,8 +53,7 @@ export class CallResolver {
         bool all_valid = true;
 
         for (std::size_t i = 0; i < required; ++i) {
-            const auto* expected_type =
-                type_context.resolve_type(function_type->parameters[i].type);
+            const auto* expected_type = resolver.resolve_type(function_type->parameters[i].type);
             const auto* argument_type = node.arguments[i]->value->type;
             if (expected_type == nullptr || argument_type == nullptr) {
                 return false;
@@ -74,8 +74,7 @@ export class CallResolver {
         }
 
         if (function_type->variadic && parameter_count > 0) {
-            const auto* element_type =
-                type_context.resolve_type(function_type->parameters.back().type);
+            const auto* element_type = resolver.resolve_type(function_type->parameters.back().type);
             if (element_type == nullptr) {
                 return false;
             }
@@ -117,10 +116,11 @@ export class CallResolver {
     }
 
   public:
-    explicit CallResolver(Context& context, TypeContext& type_context, Visitor<void>& visitor)
-        : visitor(visitor), context(context), type_context(type_context) {}
+    explicit CallResolver(Context& context, TypeResolver& resolver, Visitor<void>& visitor,
+                          CallExpression& node)
+        : visitor(visitor), context(context), resolver(resolver), node(node) {}
 
-    const FunctionType* resolve_overload(const std::string& name, CallExpression& node) {
+    const FunctionType* resolve_overload(const std::string& name) {
         for (auto* generic_argument : node.generic_arguments) {
             visitor.visit(*generic_argument);
         }
@@ -141,7 +141,7 @@ export class CallResolver {
                 continue;
             }
 
-            if (is_valid(function_type, node, false)) {
+            if (is_valid(function_type, false)) {
                 best_match = symbol;
                 match_count = match_count + 1;
             }
@@ -164,16 +164,15 @@ export class CallResolver {
         return nullptr;
     }
 
-    bool is_valid(const FunctionType* function_type, CallExpression& node,
-                  bool emit_errors = false) {
-        GenericResolver generic_resolver(context, type_context, visitor);
+    bool is_valid(const FunctionType* function_type, bool emit_errors = false) {
+        GenericResolver generic_resolver(context, resolver, visitor);
         if (!generic_resolver.check_generic_arguments(node.generic_arguments,
                                                       function_type->generic_parameters, node.span,
                                                       emit_errors)) {
             return false;
         }
 
-        if (!check_arguments(function_type, node, emit_errors)) {
+        if (!check_arguments(function_type, emit_errors)) {
             return false;
         }
 

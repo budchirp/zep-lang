@@ -9,7 +9,7 @@ export module zep.frontend.sema.resolver.structure;
 import zep.frontend.sema.type;
 import zep.frontend.ast;
 import zep.common.logger.diagnostic;
-import zep.frontend.sema.type.type_context;
+import zep.frontend.sema.type.resolver;
 import zep.frontend.sema.context;
 import zep.frontend.sema.resolver.generic;
 
@@ -18,9 +18,11 @@ export class StructureResolver {
     Visitor<void>& visitor;
 
     Context& context;
-    TypeContext& type_context;
+    TypeResolver& resolver;
 
-    void check_fields(const StructType* struct_type, StructLiteralExpression& node) {
+    StructLiteralExpression& node;
+
+    void check_fields(const StructType* struct_type) {
         std::unordered_map<std::string, bool> fields;
 
         for (auto* literal_field : node.fields) {
@@ -40,7 +42,7 @@ export class StructureResolver {
                 if (declared_field.name == literal_field->name) {
                     found = true;
 
-                    const auto* expected_type = type_context.resolve_type(declared_field.type);
+                    const auto* expected_type = resolver.resolve_type(declared_field.type);
                     const auto* actual_type = literal_field->value->type;
                     if (expected_type == nullptr || actual_type == nullptr) {
                         break;
@@ -74,14 +76,19 @@ export class StructureResolver {
     }
 
   public:
-    explicit StructureResolver(Context& context, TypeContext& type_context, Visitor<void>& visitor)
-        : visitor(visitor), context(context), type_context(type_context) {}
+    explicit StructureResolver(Context& context, TypeResolver& resolver, Visitor<void>& visitor,
+                               StructLiteralExpression& node)
+        : visitor(visitor), context(context), resolver(resolver), node(node) {}
 
-    void is_valid(const StructType* struct_type, StructLiteralExpression& node) {
-        GenericResolver generic_resolver(context, type_context, visitor);
-        generic_resolver.check_generic_arguments(node.generic_arguments,
-                                                 struct_type->generic_parameters, node.span, true);
+    bool is_valid(const StructType* struct_type) {
+        GenericResolver generic_resolver(context, resolver, visitor);
+        if (!generic_resolver.check_generic_arguments(
+                node.generic_arguments, struct_type->generic_parameters, node.span, true)) {
+            return false;
+        }
 
-        check_fields(struct_type, node);
+        check_fields(struct_type);
+
+        return true;
     }
 };
