@@ -11,6 +11,9 @@ import zep.frontend.parser;
 import zep.frontend.sema.context;
 import zep.frontend.sema.type.checker;
 import zep.frontend.debug.ast_dumper;
+import zep.hir;
+import zep.hir.ir;
+import zep.hir.debug.dumper;
 
 export class Driver {
   private:
@@ -33,5 +36,12 @@ export class Driver {
 
         AstDumper ast_dumper;
         ast_dumper.dump_program(program);
+
+        auto hir_program = HIRProgram();
+        HIRBuilder hir_builder(hir_program.arena, context.types, context.env);
+        hir_program = hir_builder.lower(program);
+
+        HIRDumper hir_dumper;
+        hir_dumper.dump_program(hir_program);
     }
 };

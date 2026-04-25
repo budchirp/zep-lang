@@ -12,6 +12,7 @@ export module zep.frontend.sema.scope;
 import zep.frontend.sema.kind;
 import zep.frontend.sema.symbol;
 import zep.frontend.sema.type;
+import zep.common.arena;
 
 export class Scope {
   public:
@@ -132,3 +133,5 @@ export class Scope {
 
     bool is_global() const { return parent == nullptr; }
 };
+
+export using ScopeArena = Arena<Scope>;

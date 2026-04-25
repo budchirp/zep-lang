@@ -12,6 +12,7 @@ import zep.common.position;
 import zep.common.span;
 import zep.frontend.sema.type;
 import zep.frontend.sema.kind;
+import zep.common.arena;
 
 export template <typename T>
 class Visitor;
@@ -88,6 +89,8 @@ export class Node {
         return nullptr;
     }
 };
+
+export using NodeArena = Arena<Node>;
 
 export class Expression : public Node {
   protected:

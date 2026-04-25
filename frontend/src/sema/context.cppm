@@ -5,9 +5,11 @@ export module zep.frontend.sema.context;
 import zep.common.source;
 import zep.common.logger;
 import zep.common.logger.diagnostic;
-import zep.frontend.arena;
-import zep.frontend.arena;
 import zep.frontend.sema.env;
+import zep.frontend.ast;
+import zep.frontend.sema.type;
+import zep.frontend.sema.scope;
+import zep.frontend.sema.symbol;
 
 export class Context {
   public:

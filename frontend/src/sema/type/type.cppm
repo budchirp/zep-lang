@@ -9,6 +9,8 @@ module;
 
 export module zep.frontend.sema.type;
 
+import zep.common.arena;
+
 export class Type {
   public:
     class Kind {
@@ -65,6 +67,8 @@ export class Type {
 
     virtual std::string to_string() const = 0;
 };
+
+export using TypeArena = Arena<Type>;
 
 // ---
 

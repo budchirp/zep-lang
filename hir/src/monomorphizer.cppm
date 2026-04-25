@@ -27,7 +27,7 @@ export class MonomorphizationCache {
     std::unordered_set<std::string> specializations;
     std::unordered_map<std::string, const StructDeclaration*> structs;
     std::unordered_map<std::string, const FunctionDeclaration*> functions;
-    std::vector<std::unique_ptr<HIRFunctionDeclaration>> pending_specializations;
+    std::vector<HIRFunctionDeclaration*> pending_specializations;
 
   public:
     void register_function(const std::string& name, const FunctionDeclaration* statement) {
@@ -58,14 +58,13 @@ export class MonomorphizationCache {
 
     void clear_pending_specializations() { pending_specializations.clear(); }
 
-    void enqueue_specialization(std::unique_ptr<HIRFunctionDeclaration> function) {
-        pending_specializations.push_back(std::move(function));
+    void enqueue_specialization(HIRFunctionDeclaration* function) {
+        pending_specializations.push_back(function);
     }
 
-    void drain_pending_specializations_into(
-        std::vector<std::unique_ptr<HIRFunctionDeclaration>>& destination) {
-        for (auto& item : pending_specializations) {
-            destination.push_back(std::move(item));
+    void drain_pending_specializations_into(std::vector<HIRFunctionDeclaration*>& destination) {
+        for (auto* item : pending_specializations) {
+            destination.push_back(item);
         }
         pending_specializations.clear();
     }

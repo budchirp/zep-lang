@@ -10,12 +10,7 @@ module;
 #include <utility>
 #include <vector>
 
-export module zep.frontend.arena;
-
-import zep.frontend.ast;
-import zep.frontend.sema.scope;
-import zep.frontend.sema.symbol;
-import zep.frontend.sema.type;
+export module zep.common.arena;
 
 export template <typename T>
 class Arena {
@@ -23,6 +18,8 @@ class Arena {
     std::vector<T*> pointers;
 
   public:
+    Arena() = default;
+
     ~Arena() {
         for (auto* pointer : pointers) {
             delete pointer;
@@ -38,8 +35,3 @@ class Arena {
         return pointer;
     }
 };
-
-export using NodeArena = Arena<Node>;
-export using ScopeArena = Arena<Scope>;
-export using SymbolArena = Arena<Symbol>;
-export using TypeArena = Arena<Type>;

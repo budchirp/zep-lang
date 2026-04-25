@@ -9,6 +9,7 @@ export module zep.frontend.sema.symbol;
 import zep.common.span;
 import zep.frontend.sema.kind;
 import zep.frontend.sema.type;
+import zep.common.arena;
 
 export class Symbol {
   public:
@@ -60,6 +61,8 @@ export class Symbol {
         return static_cast<bool>(kind == T::static_kind);
     }
 };
+
+export using SymbolArena = Arena<Symbol>;
 
 export class VarSymbol : public Symbol {
   private:
