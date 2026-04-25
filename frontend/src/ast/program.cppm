@@ -5,11 +5,9 @@ module;
 export module zep.frontend.ast.program;
 
 import zep.frontend.ast;
-import zep.frontend.arena.node;
+import zep.frontend.arena;
 
 export class Program {
-  private:
-
   public:
     NodeArena nodes;
 

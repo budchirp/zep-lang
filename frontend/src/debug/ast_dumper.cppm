@@ -11,16 +11,13 @@ import zep.common.logger;
 import zep.frontend.ast;
 import zep.frontend.ast.program;
 import zep.frontend.sema.type;
-import zep.frontend.sema.type.type_id;
-import zep.frontend.arena.type;
+import zep.frontend.arena;
 import zep.frontend.sema.scope;
 import zep.frontend.sema.symbol;
 import zep.frontend.sema.env;
 import zep.frontend.sema.kind;
 export class AstDumper : public Visitor<void> {
   private:
-    TypeArena& types;
-
     int depth;
     bool with_indent;
     bool trailing_newline;
@@ -41,10 +38,8 @@ export class AstDumper : public Visitor<void> {
     }
 
   public:
-    explicit AstDumper(TypeArena& types, int depth = 0, bool with_indent = true,
-                       bool trailing_newline = true)
-        : types(types), depth(depth), with_indent(with_indent), trailing_newline(trailing_newline) {
-    }
+    explicit AstDumper(int depth = 0, bool with_indent = true, bool trailing_newline = true)
+        : depth(depth), with_indent(with_indent), trailing_newline(trailing_newline) {}
 
     void dump_program(Program& program) {
         constexpr int depth = 0;
@@ -80,8 +75,8 @@ export class AstDumper : public Visitor<void> {
 
         Logger::print_indent(depth + 1);
         Logger::print("constraint: ");
-        if (generic_parameter_type.constraint.is_valid()) {
-            dump_type(types, generic_parameter_type.constraint, depth + 1, false, false);
+        if (generic_parameter_type.constraint != nullptr) {
+            dump_type(generic_parameter_type.constraint, depth + 1, false, false);
         } else {
             Logger::print("null");
         }
@@ -108,8 +103,8 @@ export class AstDumper : public Visitor<void> {
 
         Logger::print_indent(depth + 1);
         Logger::print("type: ");
-        if (generic_argument_type.type.is_valid()) {
-            dump_type(types, generic_argument_type.type, depth + 1, false, false);
+        if (generic_argument_type.type != nullptr) {
+            dump_type(generic_argument_type.type, depth + 1, false, false);
         } else {
             Logger::print("null");
         }
@@ -136,8 +131,8 @@ export class AstDumper : public Visitor<void> {
 
         Logger::print_indent(depth + 1);
         Logger::print("type: ");
-        if (parameter_type.type.is_valid()) {
-            dump_type(types, parameter_type.type, depth + 1, false, false);
+        if (parameter_type.type != nullptr) {
+            dump_type(parameter_type.type, depth + 1, false, false);
         } else {
             Logger::print("null");
         }
@@ -164,8 +159,8 @@ export class AstDumper : public Visitor<void> {
 
         Logger::print_indent(depth + 1);
         Logger::print("type: ");
-        if (struct_field_type.type.is_valid()) {
-            dump_type(types, struct_field_type.type, depth + 1, false, false);
+        if (struct_field_type.type != nullptr) {
+            dump_type(struct_field_type.type, depth + 1, false, false);
         } else {
             Logger::print("null");
         }
@@ -179,20 +174,8 @@ export class AstDumper : public Visitor<void> {
         }
     }
 
-    void dump_type(TypeArena& arena, TypeId id, int depth, bool with_indent = true,
+    void dump_type(const Type* type, int depth, bool with_indent = true,
                    bool trailing_newline = true) {
-        if (!id.is_valid()) {
-            if (with_indent) {
-                Logger::print_indent(depth);
-            }
-            Logger::print("null");
-            if (trailing_newline) {
-                Logger::print("\n");
-            }
-            return;
-        }
-
-        const Type* type = arena.get(id);
         if (type == nullptr) {
             if (with_indent) {
                 Logger::print_indent(depth);
@@ -211,19 +194,6 @@ export class AstDumper : public Visitor<void> {
             }
 
             Logger::print("AnyType()");
-
-            if (trailing_newline) {
-                Logger::print("\n");
-            }
-            break;
-        }
-
-        case Type::Kind::Type::Unknown: {
-            if (with_indent) {
-                Logger::print_indent(depth);
-            }
-
-            Logger::print("UnknownType()");
 
             if (trailing_newline) {
                 Logger::print("\n");
@@ -356,7 +326,7 @@ export class AstDumper : public Visitor<void> {
 
             Logger::print_indent(depth + 1);
             Logger::print("element: ");
-            dump_type(arena, array_type->element, depth + 1, false, false);
+            dump_type(array_type->element, depth + 1, false, false);
             Logger::print(",\n");
 
             Logger::print_indent(depth + 1);
@@ -387,7 +357,7 @@ export class AstDumper : public Visitor<void> {
 
             Logger::print_indent(depth + 1);
             Logger::print("element: ");
-            dump_type(arena, pointer_type->element, depth + 1, false, false);
+            dump_type(pointer_type->element, depth + 1, false, false);
             Logger::print("\n");
 
             Logger::print_indent(depth);
@@ -466,8 +436,8 @@ export class AstDumper : public Visitor<void> {
 
             Logger::print_indent(depth + 1);
             Logger::print("return_type: ");
-            if (function_type->return_type.is_valid()) {
-                dump_type(arena, function_type->return_type, depth + 1, false, false);
+            if (function_type->return_type != nullptr) {
+                dump_type(function_type->return_type, depth + 1, false, false);
             } else {
                 Logger::print("null");
             }
@@ -518,124 +488,15 @@ export class AstDumper : public Visitor<void> {
         }
         }
     }
-
-    void dump_scope(Scope& scope, int depth, bool with_indent = true,
-                    bool trailing_newline = true) {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("Scope(\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("name: \"", scope.name, "\",\n");
-
-        Logger::print_indent(depth + 1);
-        Logger::print("types: [");
-        if (scope.local_types_empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            for (const auto& [name, type_id] : scope.list_local_types()) {
-                Logger::print_indent(depth + 2);
-                Logger::print("ParameterType(\n");
-                Logger::print_indent(depth + 3);
-                Logger::print("name: \"", name, "\",\n");
-                Logger::print_indent(depth + 3);
-                Logger::print("type: ");
-                dump_type(types, type_id, depth + 3, false, false);
-                Logger::print("\n");
-                Logger::print_indent(depth + 2);
-                Logger::print(")\n");
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-
-        Logger::print_indent(depth + 1);
-        Logger::print("vars: [");
-        if (scope.local_vars_empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            for (const auto& [name, symbol] : scope.list_local_vars()) {
-                Logger::print_indent(depth + 2);
-                Logger::print("VarSymbol(\n");
-                Logger::print_indent(depth + 3);
-                Logger::print("name: \"", symbol->name, "\",\n");
-                Logger::print_indent(depth + 3);
-                Logger::print("type: ");
-                if (symbol->type.is_valid()) {
-                    dump_type(types, symbol->type, depth + 3, false, false);
-                } else {
-                    Logger::print("null");
-                }
-                Logger::print(",\n");
-                Logger::print_indent(depth + 3);
-                Logger::print("storage_kind: ", StorageKind::to_string(symbol->storage_kind), "\n");
-                Logger::print_indent(depth + 2);
-                Logger::print(")\n");
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-
-        Logger::print_indent(depth + 1);
-        Logger::print("functions: [");
-        if (scope.local_functions_empty()) {
-            Logger::print("],\n");
-        } else {
-            Logger::print("\n");
-            for (const auto& [function_name, symbol] : scope.list_local_functions()) {
-                Logger::print_indent(depth + 2);
-                Logger::print("FunctionSymbol(\n");
-                Logger::print_indent(depth + 3);
-                Logger::print("name: \"", function_name, "\",\n");
-                Logger::print_indent(depth + 3);
-                Logger::print("type: ");
-                if (symbol->type.is_valid()) {
-                    dump_type(types, symbol->type, depth + 3, false, false);
-                } else {
-                    Logger::print("null");
-                }
-                Logger::print(",\n");
-                Logger::print_indent(depth + 3);
-                Logger::print("visibility: ", Visibility::to_string(symbol->visibility), "\n");
-                Logger::print_indent(depth + 2);
-                Logger::print(")\n");
-            }
-            Logger::print_indent(depth + 1);
-            Logger::print("],\n");
-        }
-
-        Logger::print_indent(depth);
-        Logger::print(")");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
-
-    void dump_env(Env& env) {
-        Logger::print_indent(0);
-        Logger::print("Env(\n");
-
-        Logger::print_indent(1);
-        Logger::print("global_scope: ");
-        dump_scope(*env.global_scope, 1, false, true);
-
-        Logger::print_indent(0);
-        Logger::print(")\n");
-    }
-
+    
     void visit(TypeExpression& node) override {
         if (with_indent) {
             Logger::print_indent(depth);
         }
 
         Logger::print("TypeExpression(type: ");
-        if (node.type.is_valid()) {
-            dump_type(types, node.type, depth, false, false);
+        if (node.type != nullptr) {
+            dump_type(node.type, depth, false, false);
         } else {
             Logger::print("null");
         }

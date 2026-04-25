@@ -9,7 +9,7 @@ import zep.common.logger;
 import zep.frontend.lexer;
 import zep.frontend.parser;
 import zep.frontend.sema.context;
-import zep.frontend.sema.checker;
+import zep.frontend.sema.type.checker;
 import zep.frontend.debug.ast_dumper;
 
 export class Driver {
@@ -31,8 +31,7 @@ export class Driver {
             std::exit(1);
         }
 
-        AstDumper ast_dumper(context.types);
+        AstDumper ast_dumper;
         ast_dumper.dump_program(*program);
-        ast_dumper.dump_env(context.env);
     }
 };

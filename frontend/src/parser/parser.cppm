@@ -12,31 +12,32 @@ export module zep.frontend.parser;
 import zep.common.span;
 import zep.frontend.ast;
 import zep.frontend.ast.program;
-import zep.frontend.arena.node;
-import zep.frontend.arena.type;
+import zep.frontend.arena;
+import zep.frontend.arena;
 import zep.frontend.token;
 import zep.frontend.lexer;
 import zep.frontend.parser.precedence;
 import zep.common.logger;
 import zep.frontend.sema.context;
 import zep.frontend.sema.type;
-import zep.frontend.sema.type.type_id;
-import zep.frontend.sema.type.type_helper;
 import zep.frontend.sema.kind;
 
 export class Parser {
   private:
-    Context& context;
+    Program program;
 
-    NodeArena* nodes;
-    TypeArena& types;
+    Context& context;
 
     Lexer lexer;
 
     const Logger& logger;
 
+    // ---
+
     Token current_token;
     Token peek_token;
+
+    // ---
 
     void advance() {
         current_token = peek_token;
@@ -70,6 +71,8 @@ export class Parser {
         return token;
     }
 
+    // ---
+
     Visibility::Type parse_visibility(bool mandatory = true) {
         switch (current_token.type) {
         case Token::Type::Public:
@@ -89,35 +92,28 @@ export class Parser {
         }
     }
 
-    TypeId resolve_type_name(const std::string& name) {
+    const Type* resolve_primitive(const std::string& name) {
         if (name == "void") {
-            return context.env.global_scope->lookup_type("void");
+            return context.env.primitives["void"];
         }
 
         if (name == "string") {
-            return context.env.global_scope->lookup_type("string");
+            return context.env.primitives["string"];
         }
 
-        if (name == "boolean" || name == "bool") {
-            return context.env.global_scope->lookup_type("bool");
+        if (name == "boolean") {
+            return context.env.primitives["boolean"];
         }
 
         if (name.size() >= 2 && (name[0] == 'i' || name[0] == 'u')) {
-            auto is_unsigned = name[0] == 'u';
-            try {
-                auto size = std::stoi(name.substr(1));
-                return types.create<IntegerType>(is_unsigned, static_cast<std::uint8_t>(size));
-            } catch (...) {}
+            return context.env.primitives[name[0] + name.substr(1)];
         }
 
         if (name.size() >= 2 && name[0] == 'f') {
-            try {
-                auto size = std::stoi(name.substr(1));
-                return types.create<FloatType>(static_cast<std::uint8_t>(size));
-            } catch (...) {}
+            return context.env.primitives["f" + name.substr(1)];
         }
 
-        return types.create<NamedType>(name, std::vector<GenericArgumentType>{});
+        return context.types.create<NamedType>(name, std::vector<GenericArgumentType>{});
     }
 
     Statement* parse_statement() {
@@ -138,68 +134,19 @@ export class Parser {
             return parse_return_statement();
         case Token::Type::LeftBrace:
             return parse_block_statement();
-        default:
-            return parse_expression_statement();
+        default: {
+            return program.nodes.create<ExpressionStatement>(parse_expression());
         }
-    }
-
-    ExpressionStatement* parse_expression_statement() {
-        auto* expression = parse_expression();
-        return nodes->create<ExpressionStatement>(expression);
+        }
     }
 
     Expression* parse_expression(Precedence::Type precedence = Precedence::Type::None) {
         auto* left = parse_prefix();
-        while (get_precedence(current_token.type) > precedence) {
+        while (Precedence::get(current_token.type) > precedence) {
             left = parse_infix(left);
         }
 
         return left;
-    }
-
-    Expression* parse_prefix() {
-        switch (current_token.type) {
-        case Token::Type::Minus:
-        case Token::Type::Plus:
-        case Token::Type::Not:
-        case Token::Type::Asterisk:
-        case Token::Type::Ampersand:
-            return parse_unary_expression();
-        default:
-            return parse_primary();
-        }
-    }
-
-    Expression* parse_unary_expression() {
-        auto span = current_token.span;
-
-        auto op = UnaryExpression::Operator::Type::Minus;
-
-        switch (current_token.type) {
-        case Token::Type::Minus:
-            op = UnaryExpression::Operator::Type::Minus;
-            break;
-        case Token::Type::Plus:
-            op = UnaryExpression::Operator::Type::Plus;
-            break;
-        case Token::Type::Not:
-            op = UnaryExpression::Operator::Type::Not;
-            break;
-        case Token::Type::Asterisk:
-            op = UnaryExpression::Operator::Type::Dereference;
-            break;
-        case Token::Type::Ampersand:
-            op = UnaryExpression::Operator::Type::AddressOf;
-            break;
-        default:
-            logger.error(span, "unexpected token '" + std::string(current_token.value) +
-                                   "' in unary expression");
-        }
-
-        advance();
-
-        auto* operand = parse_expression(Precedence::Type::Unary);
-        return nodes->create<UnaryExpression>(span, op, operand);
     }
 
     Expression* parse_primary() {
@@ -211,25 +158,25 @@ export class Parser {
             auto value = std::string(current_token.value);
             advance();
 
-            return nodes->create<StringLiteral>(span, std::move(value));
+            return program.nodes.create<StringLiteral>(span, std::move(value));
         }
         case Token::Type::Number: {
             auto value = std::string(current_token.value);
             advance();
 
-            return nodes->create<NumberLiteral>(span, std::move(value));
+            return program.nodes.create<NumberLiteral>(span, std::move(value));
         }
         case Token::Type::Float: {
             auto value = std::string(current_token.value);
             advance();
 
-            return nodes->create<FloatLiteral>(span, std::move(value));
+            return program.nodes.create<FloatLiteral>(span, std::move(value));
         }
         case Token::Type::Boolean: {
             auto value = current_token.value == "true";
             advance();
 
-            return nodes->create<BooleanLiteral>(span, value);
+            return program.nodes.create<BooleanLiteral>(span, value);
         }
         case Token::Type::Identifier: {
             auto name = std::string(current_token.value);
@@ -239,12 +186,14 @@ export class Parser {
                 auto generic_arguments = parse_generic_arguments();
 
                 if (check(Token::Type::LeftParen)) {
-                    auto* callee = nodes->create<IdentifierExpression>(span, std::move(name));
+                    auto* callee =
+                        program.nodes.create<IdentifierExpression>(span, std::move(name));
                     return parse_call_expression(callee, std::move(generic_arguments));
                 }
 
                 if (check(Token::Type::LeftBrace)) {
-                    auto* type_name = nodes->create<IdentifierExpression>(span, std::move(name));
+                    auto* type_name =
+                        program.nodes.create<IdentifierExpression>(span, std::move(name));
                     return parse_struct_literal(type_name, std::move(generic_arguments));
                 }
 
@@ -252,11 +201,11 @@ export class Parser {
             }
 
             if (check(Token::Type::LeftBrace)) {
-                auto* type_name = nodes->create<IdentifierExpression>(span, std::move(name));
+                auto* type_name = program.nodes.create<IdentifierExpression>(span, std::move(name));
                 return parse_struct_literal(type_name, {});
             }
 
-            return nodes->create<IdentifierExpression>(span, std::move(name));
+            return program.nodes.create<IdentifierExpression>(span, std::move(name));
         }
         case Token::Type::LeftParen: {
             advance();
@@ -300,7 +249,7 @@ export class Parser {
 
             auto* right = parse_expression(
                 static_cast<Precedence::Type>(static_cast<int>(Precedence::Type::Assignment) - 1));
-            return nodes->create<AssignExpression>(span, left, right);
+            return program.nodes.create<AssignExpression>(span, left, right);
         }
         case Token::Type::LeftParen:
         case Token::Type::LeftBracket:
@@ -309,6 +258,19 @@ export class Parser {
         default:
             logger.error(current_token.span,
                          "unexpected token '" + std::string(current_token.value) + "'");
+        }
+    }
+
+    Expression* parse_prefix() {
+        switch (current_token.type) {
+        case Token::Type::Minus:
+        case Token::Type::Plus:
+        case Token::Type::Not:
+        case Token::Type::Asterisk:
+        case Token::Type::Ampersand:
+            return parse_unary_expression();
+        default:
+            return parse_primary();
         }
     }
 
@@ -324,6 +286,185 @@ export class Parser {
             logger.error(current_token.span,
                          "unexpected token '" + std::string(current_token.value) + "'");
         }
+    }
+
+    // ---
+
+    std::vector<Parameter*> parse_parameters() {
+        auto parameters = std::vector<Parameter*>{};
+
+        while (!check(Token::Type::RightParen) && !check(Token::Type::Eof)) {
+            auto span = current_token.span;
+
+            auto is_variadic = false;
+            if (match(Token::Type::Ellipsis)) {
+                is_variadic = true;
+            }
+
+            auto name = std::string(expect(Token::Type::Identifier).value);
+            expect(Token::Type::Colon);
+            auto* type_expression = parse_type_expression();
+
+            parameters.push_back(program.nodes.create<Parameter>(span, is_variadic, std::move(name),
+                                                                 type_expression));
+
+            if (!check(Token::Type::RightParen)) {
+                expect(Token::Type::Comma);
+            }
+        }
+
+        return parameters;
+    }
+
+    std::vector<Argument*> parse_arguments() {
+        auto arguments = std::vector<Argument*>{};
+
+        while (!check(Token::Type::RightParen) && !check(Token::Type::Eof)) {
+            auto span = current_token.span;
+            auto* value = parse_expression();
+
+            arguments.push_back(program.nodes.create<Argument>(span, "", value));
+
+            if (!check(Token::Type::RightParen)) {
+                expect(Token::Type::Comma);
+            }
+        }
+
+        return arguments;
+    }
+
+    std::vector<GenericParameter*> parse_generic_parameters() {
+        auto generic_parameters = std::vector<GenericParameter*>{};
+
+        expect(Token::Type::LessThan);
+        while (!check(Token::Type::GreaterThan) && !check(Token::Type::Eof)) {
+            auto span = current_token.span;
+
+            auto name = std::string(expect(Token::Type::Identifier).value);
+
+            auto* constraint = static_cast<TypeExpression*>(nullptr);
+            if (match(Token::Type::Colon)) {
+                constraint = parse_type_expression();
+            }
+
+            generic_parameters.push_back(
+                program.nodes.create<GenericParameter>(span, std::move(name), constraint));
+
+            if (!check(Token::Type::GreaterThan)) {
+                expect(Token::Type::Comma);
+            }
+        }
+        expect(Token::Type::GreaterThan);
+
+        return generic_parameters;
+    }
+
+    std::vector<GenericArgument*> parse_generic_arguments() {
+        auto generic_arguments = std::vector<GenericArgument*>{};
+
+        expect(Token::Type::LessThan);
+        while (!check(Token::Type::GreaterThan) && !check(Token::Type::Eof)) {
+            auto span = current_token.span;
+
+            auto* type_expression = parse_type_expression();
+
+            generic_arguments.push_back(
+                program.nodes.create<GenericArgument>(span, "", type_expression));
+
+            if (!check(Token::Type::GreaterThan)) {
+                expect(Token::Type::Comma);
+            }
+        }
+        expect(Token::Type::GreaterThan);
+
+        return generic_arguments;
+    }
+
+    // ---
+
+    TypeExpression* parse_type_expression() {
+        auto span = current_token.span;
+
+        if (check(Token::Type::Asterisk)) {
+            advance();
+
+            auto is_mutable = false;
+            if (check(Token::Type::Mut)) {
+                is_mutable = true;
+                advance();
+            }
+
+            auto* element = parse_type_expression();
+
+            const auto* pointer_type = context.types.create<PointerType>(element->type, is_mutable);
+            return program.nodes.create<TypeExpression>(span, pointer_type);
+        }
+
+        auto name = std::string(expect(Token::Type::Identifier).value);
+        const auto* type = resolve_primitive(name);
+
+        if (check(Token::Type::LessThan)) {
+            if (type->kind == Type::Kind::Type::Named) {
+                auto generic_arguments = parse_generic_arguments();
+
+                auto generic_argument_types = std::vector<GenericArgumentType>{};
+                generic_argument_types.reserve(generic_arguments.size());
+
+                for (auto* generic_argument : generic_arguments) {
+                    generic_argument_types.emplace_back("", generic_argument->type->type);
+                }
+
+                type = context.types.create<NamedType>(name, std::move(generic_argument_types));
+            }
+        }
+
+        while (check(Token::Type::LeftBracket)) {
+            advance();
+
+            auto size = std::optional<std::size_t>{};
+            if (check(Token::Type::Number)) {
+                size = std::stoull(std::string(current_token.value));
+                advance();
+            }
+
+            expect(Token::Type::RightBracket);
+
+            type = context.types.create<ArrayType>(type, size);
+        }
+
+        return program.nodes.create<TypeExpression>(span, type);
+    }
+
+    Expression* parse_unary_expression() {
+        auto span = current_token.span;
+
+        auto op = UnaryExpression::Operator::Type::Minus;
+
+        switch (current_token.type) {
+        case Token::Type::Minus:
+            op = UnaryExpression::Operator::Type::Minus;
+            break;
+        case Token::Type::Plus:
+            op = UnaryExpression::Operator::Type::Plus;
+            break;
+        case Token::Type::Not:
+            op = UnaryExpression::Operator::Type::Not;
+            break;
+        case Token::Type::Asterisk:
+            op = UnaryExpression::Operator::Type::Dereference;
+            break;
+        case Token::Type::Ampersand:
+            op = UnaryExpression::Operator::Type::AddressOf;
+            break;
+        default:
+            logger.error(span, "unexpected token '" + std::string(current_token.value) +
+                                   "' in unary expression");
+        }
+
+        advance();
+
+        auto* operand = parse_expression(Precedence::Type::Unary);
+        return program.nodes.create<UnaryExpression>(span, op, operand);
     }
 
     Expression* parse_binary_expression(Expression* left) {
@@ -382,165 +523,18 @@ export class Parser {
                                    "' in binary expression");
         }
 
-        auto precedence = get_precedence(current_token.type);
+        auto precedence = Precedence::get(current_token.type);
 
         advance();
 
         if (op == BinaryExpression::Operator::Type::As ||
             op == BinaryExpression::Operator::Type::Is) {
-            auto* type_expression = parse_type_expression();
-            auto label = context.type_helper.type_to_string(type_expression->type);
-            auto* right = nodes->create<IdentifierExpression>(span, std::move(label));
-            right->type = type_expression->type;
-            return nodes->create<BinaryExpression>(span, left, op, right);
+            auto* right = parse_type_expression();
+            return program.nodes.create<BinaryExpression>(span, left, op, right);
         }
 
         auto* right = parse_expression(precedence);
-        return nodes->create<BinaryExpression>(span, left, op, right);
-    }
-
-    std::vector<Parameter*> parse_parameters() {
-        auto parameters = std::vector<Parameter*>{};
-
-        while (!check(Token::Type::RightParen) && !check(Token::Type::Eof)) {
-            auto span = current_token.span;
-
-            auto is_variadic = false;
-            if (match(Token::Type::Ellipsis)) {
-                is_variadic = true;
-            }
-
-            auto name = std::string(expect(Token::Type::Identifier).value);
-            expect(Token::Type::Colon);
-            auto* type_expression = parse_type_expression();
-
-            parameters.push_back(
-                nodes->create<Parameter>(span, is_variadic, std::move(name), type_expression));
-
-            if (!check(Token::Type::RightParen)) {
-                expect(Token::Type::Comma);
-            }
-        }
-
-        return parameters;
-    }
-
-    std::vector<Argument*> parse_arguments() {
-        auto arguments = std::vector<Argument*>{};
-
-        while (!check(Token::Type::RightParen) && !check(Token::Type::Eof)) {
-            auto span = current_token.span;
-            auto* value = parse_expression();
-
-            arguments.push_back(nodes->create<Argument>(span, "", value));
-
-            if (!check(Token::Type::RightParen)) {
-                expect(Token::Type::Comma);
-            }
-        }
-
-        return arguments;
-    }
-
-    std::vector<GenericParameter*> parse_generic_parameters() {
-        auto generic_parameters = std::vector<GenericParameter*>{};
-
-        expect(Token::Type::LessThan);
-        while (!check(Token::Type::GreaterThan) && !check(Token::Type::Eof)) {
-            auto span = current_token.span;
-
-            auto name = std::string(expect(Token::Type::Identifier).value);
-
-            auto* constraint = static_cast<TypeExpression*>(nullptr);
-            if (match(Token::Type::Colon)) {
-                constraint = parse_type_expression();
-            }
-
-            generic_parameters.push_back(
-                nodes->create<GenericParameter>(span, std::move(name), constraint));
-
-            if (!check(Token::Type::GreaterThan)) {
-                expect(Token::Type::Comma);
-            }
-        }
-        expect(Token::Type::GreaterThan);
-
-        return generic_parameters;
-    }
-
-    std::vector<GenericArgument*> parse_generic_arguments() {
-        auto generic_arguments = std::vector<GenericArgument*>{};
-
-        expect(Token::Type::LessThan);
-        while (!check(Token::Type::GreaterThan) && !check(Token::Type::Eof)) {
-            auto span = current_token.span;
-
-            auto* type_expression = parse_type_expression();
-
-            generic_arguments.push_back(nodes->create<GenericArgument>(span, "", type_expression));
-
-            if (!check(Token::Type::GreaterThan)) {
-                expect(Token::Type::Comma);
-            }
-        }
-        expect(Token::Type::GreaterThan);
-
-        return generic_arguments;
-    }
-
-    TypeExpression* parse_type_expression() {
-        auto span = current_token.span;
-
-        if (check(Token::Type::Asterisk)) {
-            advance();
-
-            auto is_mutable = false;
-            if (check(Token::Type::Mut)) {
-                is_mutable = true;
-                advance();
-            }
-
-            auto* element = parse_type_expression();
-
-            auto element_id = element->type;
-            auto pointer_id = types.create<PointerType>(element_id, is_mutable);
-            return nodes->create<TypeExpression>(span, pointer_id);
-        }
-
-        auto name = std::string(expect(Token::Type::Identifier).value);
-        auto type_id = resolve_type_name(name);
-
-        if (check(Token::Type::LessThan)) {
-            auto* base_type = types.get(type_id);
-            if (base_type != nullptr && base_type->kind == Type::Kind::Type::Named) {
-                auto generic_arguments = parse_generic_arguments();
-
-                auto generic_argument_types = std::vector<GenericArgumentType>{};
-                generic_argument_types.reserve(generic_arguments.size());
-
-                for (auto* generic_argument : generic_arguments) {
-                    generic_argument_types.emplace_back("", generic_argument->type->type);
-                }
-
-                type_id = types.create<NamedType>(name, std::move(generic_argument_types));
-            }
-        }
-
-        while (check(Token::Type::LeftBracket)) {
-            advance();
-
-            auto size = std::optional<std::size_t>{};
-            if (check(Token::Type::Number)) {
-                size = std::stoull(std::string(current_token.value));
-                advance();
-            }
-
-            expect(Token::Type::RightBracket);
-
-            type_id = types.create<ArrayType>(type_id, size);
-        }
-
-        return nodes->create<TypeExpression>(span, type_id);
+        return program.nodes.create<BinaryExpression>(span, left, op, right);
     }
 
     IfExpression* parse_if_expression() {
@@ -559,13 +553,13 @@ export class Parser {
             else_branch = parse_block_statement();
         }
 
-        return nodes->create<IfExpression>(span, condition, then_branch, else_branch);
+        return program.nodes.create<IfExpression>(span, condition, then_branch, else_branch);
     }
 
     StructLiteralExpression*
     parse_struct_literal(IdentifierExpression* name,
                          std::vector<GenericArgument*> generic_arguments = {}) {
-        auto struct_span = name->span;
+        auto span = name->span;
 
         expect(Token::Type::LeftBrace);
 
@@ -578,7 +572,7 @@ export class Parser {
             auto* value = parse_expression();
 
             fields.push_back(
-                nodes->create<StructLiteralField>(field_span, std::move(field_name), value));
+                program.nodes.create<StructLiteralField>(field_span, std::move(field_name), value));
 
             if (!check(Token::Type::RightBrace)) {
                 expect(Token::Type::Comma);
@@ -587,8 +581,8 @@ export class Parser {
 
         expect(Token::Type::RightBrace);
 
-        return nodes->create<StructLiteralExpression>(
-            struct_span, name, std::move(generic_arguments), std::move(fields));
+        return program.nodes.create<StructLiteralExpression>(
+            span, name, std::move(generic_arguments), std::move(fields));
     }
 
     CallExpression* parse_call_expression(Expression* callee,
@@ -599,8 +593,8 @@ export class Parser {
         auto arguments = parse_arguments();
         expect(Token::Type::RightParen);
 
-        return nodes->create<CallExpression>(span, callee, std::move(generic_arguments),
-                                             std::move(arguments));
+        return program.nodes.create<CallExpression>(span, callee, std::move(generic_arguments),
+                                                    std::move(arguments));
     }
 
     IndexExpression* parse_index_expression(Expression* value) {
@@ -610,7 +604,7 @@ export class Parser {
         auto* index = parse_expression();
         expect(Token::Type::RightBracket);
 
-        return nodes->create<IndexExpression>(span, value, index);
+        return program.nodes.create<IndexExpression>(span, value, index);
     }
 
     MemberExpression* parse_member_expression(Expression* value) {
@@ -619,7 +613,7 @@ export class Parser {
         expect(Token::Type::Dot);
         auto member = std::string(expect(Token::Type::Identifier).value);
 
-        return nodes->create<MemberExpression>(span, value, std::move(member));
+        return program.nodes.create<MemberExpression>(span, value, std::move(member));
     }
 
     ImportStatement* parse_import_statement() {
@@ -630,14 +624,16 @@ export class Parser {
         auto path = std::vector<IdentifierExpression*>{};
 
         auto first = expect(Token::Type::Identifier);
-        path.push_back(nodes->create<IdentifierExpression>(first.span, std::string(first.value)));
+        path.push_back(
+            program.nodes.create<IdentifierExpression>(first.span, std::string(first.value)));
 
         while (match(Token::Type::Dot)) {
             auto part = expect(Token::Type::Identifier);
-            path.push_back(nodes->create<IdentifierExpression>(part.span, std::string(part.value)));
+            path.push_back(
+                program.nodes.create<IdentifierExpression>(part.span, std::string(part.value)));
         }
 
-        return nodes->create<ImportStatement>(span, std::move(path));
+        return program.nodes.create<ImportStatement>(span, std::move(path));
     }
 
     StructDeclaration* parse_struct_declaration(Visibility::Type visibility) {
@@ -667,14 +663,14 @@ export class Parser {
             expect(Token::Type::Colon);
             auto* type_expression = parse_type_expression();
 
-            fields.push_back(nodes->create<StructField>(field_span, field_visibility,
-                                                        std::move(field_name), type_expression));
+            fields.push_back(program.nodes.create<StructField>(
+                field_span, field_visibility, std::move(field_name), type_expression));
         }
 
         expect(Token::Type::RightBrace);
 
-        return nodes->create<StructDeclaration>(span, visibility, std::move(name),
-                                                std::move(generic_parameters), std::move(fields));
+        return program.nodes.create<StructDeclaration>(
+            span, visibility, std::move(name), std::move(generic_parameters), std::move(fields));
     }
 
     FunctionPrototype* parse_function_prototype() {
@@ -694,9 +690,9 @@ export class Parser {
         expect(Token::Type::Colon);
         auto* return_type = parse_type_expression();
 
-        return nodes->create<FunctionPrototype>(span, std::move(name),
-                                                std::move(generic_parameters),
-                                                std::move(parameters), return_type);
+        return program.nodes.create<FunctionPrototype>(span, std::move(name),
+                                                       std::move(generic_parameters),
+                                                       std::move(parameters), return_type);
     }
 
     FunctionDeclaration* parse_function_declaration(Visibility::Type visibility) {
@@ -707,7 +703,7 @@ export class Parser {
         auto* prototype = parse_function_prototype();
         auto* body = parse_block_statement();
 
-        return nodes->create<FunctionDeclaration>(span, visibility, prototype, body);
+        return program.nodes.create<FunctionDeclaration>(span, visibility, prototype, body);
     }
 
     VarDeclaration* parse_var_declaration(Visibility::Type visibility) {
@@ -736,8 +732,8 @@ export class Parser {
             initializer = parse_expression();
         }
 
-        return nodes->create<VarDeclaration>(span, visibility, storage_kind, std::move(name),
-                                             type_expression, initializer);
+        return program.nodes.create<VarDeclaration>(span, visibility, storage_kind, std::move(name),
+                                                    type_expression, initializer);
     }
 
     ReturnStatement* parse_return_statement() {
@@ -750,7 +746,7 @@ export class Parser {
             value = parse_expression();
         }
 
-        return nodes->create<ReturnStatement>(span, value);
+        return program.nodes.create<ReturnStatement>(span, value);
     }
 
     BlockStatement* parse_block_statement() {
@@ -769,7 +765,7 @@ export class Parser {
 
         expect(Token::Type::RightBrace);
 
-        return nodes->create<BlockStatement>(span, std::move(statements));
+        return program.nodes.create<BlockStatement>(span, std::move(statements));
     }
 
     Statement* parse_extern_declaration(Visibility::Type visibility) {
@@ -782,7 +778,7 @@ export class Parser {
             advance();
 
             auto* prototype = parse_function_prototype();
-            return nodes->create<ExternFunctionDeclaration>(span, visibility, prototype);
+            return program.nodes.create<ExternFunctionDeclaration>(span, visibility, prototype);
         }
         case Token::Type::Var: {
             advance();
@@ -791,8 +787,8 @@ export class Parser {
             expect(Token::Type::Colon);
             auto* type_expression = parse_type_expression();
 
-            return nodes->create<ExternVarDeclaration>(span, visibility, std::move(name),
-                                                       type_expression);
+            return program.nodes.create<ExternVarDeclaration>(span, visibility, std::move(name),
+                                                              type_expression);
         }
         default:
             logger.error(span, "expected 'fn' or 'var' after 'extern'");
@@ -802,23 +798,18 @@ export class Parser {
 
   public:
     Parser(Context& context, Lexer lexer)
-        : context(context), nodes(nullptr), types(context.types), lexer(std::move(lexer)),
-          logger(context.logger), current_token(this->lexer.next_token()),
-          peek_token(this->lexer.next_token()) {}
+        : context(context), lexer(std::move(lexer)), logger(context.logger),
+          current_token(this->lexer.next_token()), peek_token(this->lexer.next_token()) {}
 
-    std::unique_ptr<Program> parse() {
-        std::unique_ptr<Program> result = std::make_unique<Program>();
-        nodes = &result->nodes;
-
+    Program* parse() {
         while (!check(Token::Type::Eof)) {
-            result->statements.push_back(parse_statement());
+            program.statements.push_back(parse_statement());
 
             if (check(Token::Type::Semicolon)) {
                 advance();
             }
         }
 
-        nodes = nullptr;
-        return result;
+        return &program;
     }
 };

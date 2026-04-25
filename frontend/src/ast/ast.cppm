@@ -1,6 +1,7 @@
 module;
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -9,19 +10,15 @@ export module zep.frontend.ast;
 
 import zep.common.position;
 import zep.common.span;
-import zep.frontend.sema.type.type_id;
+import zep.frontend.sema.type;
 import zep.frontend.sema.kind;
 
 export template <typename T>
 class Visitor;
 
 export class Node {
-  private:
-
   public:
     class Kind {
-      private:
-
       public:
         enum class Type : std::uint8_t {
             TypeExpression,
@@ -93,32 +90,28 @@ export class Node {
 };
 
 export class Expression : public Node {
-  private:
+  protected:
+    explicit Expression(Kind::Type kind, Span span) : Node(kind, span), type(nullptr) {}
 
   public:
-    TypeId type;
-
-    using Node::Node;
+    const Type* type;
 };
 
 export class Statement : public Node {
-  private:
+  protected:
+    explicit Statement(Kind::Type kind, Span span) : Node(kind, span), type(nullptr) {}
 
   public:
-    TypeId type;
-
-    using Node::Node;
+    const Type* type;
 };
 
-export class TypeExpression : public Node {
-  private:
-
+export class TypeExpression : public Expression {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::TypeExpression;
 
-    TypeId type;
+    const Type* type;
 
-    TypeExpression(Span span, TypeId type) : Node(static_kind, span), type(type) {}
+    TypeExpression(Span span, const Type* type) : Expression(static_kind, span), type(type) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -127,8 +120,6 @@ export class TypeExpression : public Node {
 };
 
 export class GenericParameter : public Node {
-  private:
-
   public:
     static constexpr Kind::Type static_kind = Kind::Type::GenericParameter;
 
@@ -145,7 +136,6 @@ export class GenericParameter : public Node {
 };
 
 export class GenericArgument : public Node {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::GenericArgument;
@@ -163,7 +153,6 @@ export class GenericArgument : public Node {
 };
 
 export class Parameter : public Node {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Parameter;
@@ -184,7 +173,6 @@ export class Parameter : public Node {
 };
 
 export class Argument : public Node {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Argument;
@@ -202,7 +190,6 @@ export class Argument : public Node {
 };
 
 export class FunctionPrototype : public Node {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::FunctionPrototype;
@@ -228,7 +215,6 @@ export class FunctionPrototype : public Node {
 };
 
 export class StructField : public Node {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::StructField;
@@ -250,7 +236,6 @@ export class StructField : public Node {
 };
 
 export class StructLiteralField : public Node {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::StructLiteralField;
@@ -268,7 +253,6 @@ export class StructLiteralField : public Node {
 };
 
 export class NumberLiteral : public Expression {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::NumberLiteral;
@@ -285,7 +269,6 @@ export class NumberLiteral : public Expression {
 };
 
 export class FloatLiteral : public Expression {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::FloatLiteral;
@@ -302,7 +285,6 @@ export class FloatLiteral : public Expression {
 };
 
 export class StringLiteral : public Expression {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::StringLiteral;
@@ -319,7 +301,6 @@ export class StringLiteral : public Expression {
 };
 
 export class BooleanLiteral : public Expression {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::BooleanLiteral;
@@ -335,7 +316,6 @@ export class BooleanLiteral : public Expression {
 };
 
 export class IdentifierExpression : public Expression {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::IdentifierExpression;
@@ -352,14 +332,10 @@ export class IdentifierExpression : public Expression {
 };
 
 export class BinaryExpression : public Expression {
-  private:
-
   public:
     static constexpr Kind::Type static_kind = Kind::Type::BinaryExpression;
 
     class Operator {
-      private:
-
       public:
         enum class Type : std::uint8_t {
             Plus,
@@ -430,14 +406,11 @@ export class BinaryExpression : public Expression {
 };
 
 export class UnaryExpression : public Expression {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::UnaryExpression;
 
     class Operator {
-      private:
-
       public:
         enum class Type : std::uint8_t {
             Plus,
@@ -477,7 +450,6 @@ export class UnaryExpression : public Expression {
 };
 
 export class CallExpression : public Expression {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::CallExpression;
@@ -488,8 +460,7 @@ export class CallExpression : public Expression {
 
     std::vector<Argument*> arguments;
 
-    CallExpression(Span span, Expression* callee,
-                   std::vector<GenericArgument*> generic_arguments,
+    CallExpression(Span span, Expression* callee, std::vector<GenericArgument*> generic_arguments,
                    std::vector<Argument*> arguments)
         : Expression(static_kind, span), callee(callee),
           generic_arguments(std::move(generic_arguments)), arguments(std::move(arguments)) {}
@@ -501,7 +472,6 @@ export class CallExpression : public Expression {
 };
 
 export class IndexExpression : public Expression {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::IndexExpression;
@@ -519,7 +489,6 @@ export class IndexExpression : public Expression {
 };
 
 export class MemberExpression : public Expression {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::MemberExpression;
@@ -537,7 +506,6 @@ export class MemberExpression : public Expression {
 };
 
 export class AssignExpression : public Expression {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::AssignExpression;
@@ -555,7 +523,6 @@ export class AssignExpression : public Expression {
 };
 
 export class StructLiteralExpression : public Expression {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::StructLiteralExpression;
@@ -579,7 +546,6 @@ export class StructLiteralExpression : public Expression {
 };
 
 export class BlockStatement : public Statement {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::BlockStatement;
@@ -596,7 +562,6 @@ export class BlockStatement : public Statement {
 };
 
 export class ExpressionStatement : public Statement {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::ExpressionStatement;
@@ -613,7 +578,6 @@ export class ExpressionStatement : public Statement {
 };
 
 export class IfExpression : public Expression {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::IfExpression;
@@ -622,8 +586,7 @@ export class IfExpression : public Expression {
     Statement* then_branch;
     Statement* else_branch;
 
-    IfExpression(Span span, Expression* condition, Statement* then_branch,
-                 Statement* else_branch)
+    IfExpression(Span span, Expression* condition, Statement* then_branch, Statement* else_branch)
         : Expression(static_kind, span), condition(condition), then_branch(then_branch),
           else_branch(else_branch) {}
 
@@ -634,7 +597,6 @@ export class IfExpression : public Expression {
 };
 
 export class ReturnStatement : public Statement {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::ReturnStatement;
@@ -650,7 +612,6 @@ export class ReturnStatement : public Statement {
 };
 
 export class StructDeclaration : public Statement {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::StructDeclaration;
@@ -676,7 +637,6 @@ export class StructDeclaration : public Statement {
 };
 
 export class VarDeclaration : public Statement {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::VarDeclaration;
@@ -700,7 +660,6 @@ export class VarDeclaration : public Statement {
 };
 
 export class FunctionDeclaration : public Statement {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::FunctionDeclaration;
@@ -712,8 +671,7 @@ export class FunctionDeclaration : public Statement {
 
     FunctionDeclaration(Span span, Visibility::Type visibility, FunctionPrototype* prototype,
                         BlockStatement* body)
-        : Statement(static_kind, span), visibility(visibility), prototype(prototype),
-          body(body) {}
+        : Statement(static_kind, span), visibility(visibility), prototype(prototype), body(body) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {
@@ -722,7 +680,6 @@ export class FunctionDeclaration : public Statement {
 };
 
 export class ExternFunctionDeclaration : public Statement {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::ExternFunctionDeclaration;
@@ -731,8 +688,7 @@ export class ExternFunctionDeclaration : public Statement {
 
     FunctionPrototype* prototype;
 
-    ExternFunctionDeclaration(Span span, Visibility::Type visibility,
-                              FunctionPrototype* prototype)
+    ExternFunctionDeclaration(Span span, Visibility::Type visibility, FunctionPrototype* prototype)
         : Statement(static_kind, span), visibility(visibility), prototype(prototype) {}
 
     template <typename T>
@@ -742,7 +698,6 @@ export class ExternFunctionDeclaration : public Statement {
 };
 
 export class ExternVarDeclaration : public Statement {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::ExternVarDeclaration;
@@ -764,7 +719,6 @@ export class ExternVarDeclaration : public Statement {
 };
 
 export class ImportStatement : public Statement {
-  private:
 
   public:
     static constexpr Kind::Type static_kind = Kind::Type::ImportStatement;
@@ -782,7 +736,6 @@ export class ImportStatement : public Statement {
 
 export template <typename T>
 class Visitor {
-  private:
 
   public:
     virtual ~Visitor() = default;
@@ -876,7 +829,8 @@ class Visitor {
             visit(*assign_expression);
             return;
         }
-        StructLiteralExpression* struct_literal_expression = expression.as<StructLiteralExpression>();
+        StructLiteralExpression* struct_literal_expression =
+            expression.as<StructLiteralExpression>();
         if (struct_literal_expression != nullptr) {
             visit(*struct_literal_expression);
             return;
@@ -919,7 +873,8 @@ class Visitor {
             visit(*function_declaration);
             return;
         }
-        ExternFunctionDeclaration* extern_function_declaration = statement.as<ExternFunctionDeclaration>();
+        ExternFunctionDeclaration* extern_function_declaration =
+            statement.as<ExternFunctionDeclaration>();
         if (extern_function_declaration != nullptr) {
             visit(*extern_function_declaration);
             return;
@@ -1074,7 +1029,8 @@ class Visitor {
             visit(*function_declaration);
             return;
         }
-        ExternFunctionDeclaration* extern_function_declaration = node.as<ExternFunctionDeclaration>();
+        ExternFunctionDeclaration* extern_function_declaration =
+            node.as<ExternFunctionDeclaration>();
         if (extern_function_declaration != nullptr) {
             visit(*extern_function_declaration);
             return;
