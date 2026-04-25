@@ -237,7 +237,7 @@ export class TypeResolver {
 
             auto* symbol = env.current_scope->lookup_type(named->name);
             if (symbol == nullptr) {
-                return nullptr;
+                return type;
             }
 
             auto* resolved_symbol_type = symbol->type;

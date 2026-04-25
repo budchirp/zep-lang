@@ -9,8 +9,11 @@ export module zep.hir.debug.dumper;
 import zep.common.logger;
 import zep.frontend.sema.type;
 import zep.frontend.sema.kind;
+import zep.frontend.sema.scope;
+import zep.frontend.sema.symbol;
 import zep.frontend.debug.sema_dumper;
 import zep.hir.ir;
+import zep.hir.ir.program;
 
 export class HIRDumper : public HIRVisitor<void> {
   private:
@@ -34,25 +37,93 @@ export class HIRDumper : public HIRVisitor<void> {
         sema_dumper.dump_type(type, depth, with_indent, trailing_newline);
     }
 
+    void dump_symbol(const Symbol& symbol, int depth) {
+        Logger::print_indent(depth);
+        Logger::print("Symbol(\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", symbol.name, "\",\n");
+
+        Logger::print_indent(depth + 1);
+        auto kind_str = std::string();
+        switch (symbol.kind) {
+        case Symbol::Kind::Type::Var: kind_str = "Var"; break;
+        case Symbol::Kind::Type::Function: kind_str = "Function"; break;
+        case Symbol::Kind::Type::Type: kind_str = "Type"; break;
+        }
+        Logger::print("kind: ", kind_str, ",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("visibility: ", Visibility::to_string(symbol.visibility), ",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
+        dump_type(symbol.type, depth + 1, false, false);
+        Logger::print("\n");
+
+        Logger::print_indent(depth);
+        Logger::print(")");
+    }
+
+    void dump_scope(const Scope& scope) {
+        Logger::print_indent(1);
+        Logger::print("symbols: [\n");
+
+        auto total_symbols = scope.variables.size() + scope.types.size();
+        for (const auto& [name, overloads] : scope.functions) {
+            total_symbols += overloads.size();
+        }
+
+        auto current = std::size_t(0);
+
+        for (const auto& [name, symbol] : scope.variables) {
+            dump_symbol(*symbol, 2);
+            if (++current < total_symbols) Logger::print(",");
+            Logger::print("\n");
+        }
+
+        for (const auto& [name, symbol] : scope.types) {
+            dump_symbol(*symbol, 2);
+            if (++current < total_symbols) Logger::print(",");
+            Logger::print("\n");
+        }
+
+        for (const auto& [name, overloads] : scope.functions) {
+            for (const auto* symbol : overloads) {
+                dump_symbol(*symbol, 2);
+                if (++current < total_symbols) Logger::print(",");
+                Logger::print("\n");
+            }
+        }
+
+        Logger::print_indent(1);
+        Logger::print("]\n");
+    }
+
   public:
     HIRDumper() = default;
 
     void dump_program(HIRProgram& program) {
         Logger::print_indent(0);
-        Logger::print("HIRProgram(functions: [");
+        Logger::print("HIRProgram(\n");
 
-        if (program.functions.empty()) {
-            Logger::print("])\n");
-        } else {
-            Logger::print("\n");
-            for (std::size_t i = 0; i < program.functions.size(); ++i) {
-                visit_child(*program.functions[i], 1, true);
-                Logger::print((i + 1 < program.functions.size() ? ",\n" : "\n"));
-            }
-
-            Logger::print_indent(0);
-            Logger::print("])\n");
+        if (program.global_scope != nullptr) {
+            dump_scope(*program.global_scope);
         }
+
+        Logger::print_indent(1);
+        Logger::print("functions: [\n");
+
+        for (std::size_t i = 0; i < program.functions.size(); ++i) {
+            visit_child(*program.functions[i], 2, true);
+            Logger::print((i + 1 < program.functions.size() ? ",\n" : "\n"));
+        }
+
+        Logger::print_indent(1);
+        Logger::print("]\n");
+
+        Logger::print_indent(0);
+        Logger::print(")\n");
     }
 
     void visit(HIRBlockStatement& node) override {

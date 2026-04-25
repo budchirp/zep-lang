@@ -33,11 +33,13 @@ export class SemaDumper {
 
         Logger::print_indent(depth + 1);
         Logger::print("constraint: ");
+
         if (generic_parameter_type.constraint != nullptr) {
             dump_type(generic_parameter_type.constraint, depth + 1, false, false);
         } else {
             Logger::print("null");
         }
+
         Logger::print("\n");
 
         Logger::print_indent(depth);
@@ -61,11 +63,13 @@ export class SemaDumper {
 
         Logger::print_indent(depth + 1);
         Logger::print("type: ");
+
         if (generic_argument_type.type != nullptr) {
             dump_type(generic_argument_type.type, depth + 1, false, false);
         } else {
             Logger::print("null");
         }
+
         Logger::print("\n");
 
         Logger::print_indent(depth);
@@ -89,11 +93,13 @@ export class SemaDumper {
 
         Logger::print_indent(depth + 1);
         Logger::print("type: ");
+
         if (parameter_type.type != nullptr) {
             dump_type(parameter_type.type, depth + 1, false, false);
         } else {
             Logger::print("null");
         }
+
         Logger::print("\n");
 
         Logger::print_indent(depth);
@@ -117,11 +123,13 @@ export class SemaDumper {
 
         Logger::print_indent(depth + 1);
         Logger::print("type: ");
+
         if (struct_field_type.type != nullptr) {
             dump_type(struct_field_type.type, depth + 1, false, false);
         } else {
             Logger::print("null");
         }
+
         Logger::print("\n");
 
         Logger::print_indent(depth);
@@ -206,7 +214,7 @@ export class SemaDumper {
         }
 
         case Type::Kind::Type::Integer: {
-            const IntegerType* integer_type = type->as<IntegerType>();
+            const auto* integer_type = type->as<IntegerType>();
 
             if (with_indent) {
                 Logger::print_indent(depth);
@@ -231,7 +239,7 @@ export class SemaDumper {
         }
 
         case Type::Kind::Type::Float: {
-            const FloatType* float_type = type->as<FloatType>();
+            const auto* float_type = type->as<FloatType>();
 
             if (with_indent) {
                 Logger::print_indent(depth);
@@ -247,7 +255,7 @@ export class SemaDumper {
         }
 
         case Type::Kind::Type::Named: {
-            const NamedType* named_type = type->as<NamedType>();
+            const auto* named_type = type->as<NamedType>();
 
             if (with_indent) {
                 Logger::print_indent(depth);
@@ -260,10 +268,12 @@ export class SemaDumper {
 
             Logger::print_indent(depth + 1);
             Logger::print("generic_arguments: [");
+
             if (named_type->generic_arguments.empty()) {
                 Logger::print("]\n");
             } else {
                 Logger::print("\n");
+
                 for (std::size_t i = 0; i < named_type->generic_arguments.size(); ++i) {
                     dump_generic_argument_type(named_type->generic_arguments[i], depth + 2, true, false);
                     Logger::print((i + 1 < named_type->generic_arguments.size() ? ",\n" : "\n"));
@@ -284,7 +294,7 @@ export class SemaDumper {
         }
 
         case Type::Kind::Type::Array: {
-            const ArrayType* array_type = type->as<ArrayType>();
+            const auto* array_type = type->as<ArrayType>();
 
             if (with_indent) {
                 Logger::print_indent(depth);
@@ -311,7 +321,7 @@ export class SemaDumper {
         }
 
         case Type::Kind::Type::Pointer: {
-            const PointerType* pointer_type = type->as<PointerType>();
+            const auto* pointer_type = type->as<PointerType>();
 
             if (with_indent) {
                 Logger::print_indent(depth);
@@ -338,7 +348,7 @@ export class SemaDumper {
         }
 
         case Type::Kind::Type::Struct: {
-            const StructType* struct_type = type->as<StructType>();
+            const auto* struct_type = type->as<StructType>();
 
             if (with_indent) {
                 Logger::print_indent(depth);
@@ -351,10 +361,12 @@ export class SemaDumper {
 
             Logger::print_indent(depth + 1);
             Logger::print("generic_parameters: [");
+
             if (struct_type->generic_parameters.empty()) {
                 Logger::print("],\n");
             } else {
                 Logger::print("\n");
+
                 for (std::size_t i = 0; i < struct_type->generic_parameters.size(); ++i) {
                     dump_generic_parameter_type(struct_type->generic_parameters[i], depth + 2, true, false);
                     Logger::print((i + 1 < struct_type->generic_parameters.size() ? ",\n" : "\n"));
@@ -366,10 +378,12 @@ export class SemaDumper {
 
             Logger::print_indent(depth + 1);
             Logger::print("fields: [");
+
             if (struct_type->fields.empty()) {
                 Logger::print("]\n");
             } else {
                 Logger::print("\n");
+
                 for (std::size_t i = 0; i < struct_type->fields.size(); ++i) {
                     dump_struct_field_type(struct_type->fields[i], depth + 2, true, false);
                     Logger::print((i + 1 < struct_type->fields.size() ? ",\n" : "\n"));
@@ -390,7 +404,7 @@ export class SemaDumper {
         }
 
         case Type::Kind::Type::Function: {
-            const FunctionType* function_type = type->as<FunctionType>();
+            const auto* function_type = type->as<FunctionType>();
 
             if (with_indent) {
                 Logger::print_indent(depth);
@@ -403,19 +417,23 @@ export class SemaDumper {
 
             Logger::print_indent(depth + 1);
             Logger::print("return_type: ");
+
             if (function_type->return_type != nullptr) {
                 dump_type(function_type->return_type, depth + 1, false, false);
             } else {
                 Logger::print("null");
             }
+
             Logger::print(",\n");
 
             Logger::print_indent(depth + 1);
             Logger::print("parameters: [");
+
             if (function_type->parameters.empty()) {
                 Logger::print("],\n");
             } else {
                 Logger::print("\n");
+
                 for (std::size_t i = 0; i < function_type->parameters.size(); ++i) {
                     dump_parameter_type(function_type->parameters[i], depth + 2, true, false);
                     Logger::print((i + 1 < function_type->parameters.size() ? ",\n" : "\n"));
@@ -427,10 +445,12 @@ export class SemaDumper {
 
             Logger::print_indent(depth + 1);
             Logger::print("generics: [");
+
             if (function_type->generic_parameters.empty()) {
                 Logger::print("],\n");
             } else {
                 Logger::print("\n");
+
                 for (std::size_t i = 0; i < function_type->generic_parameters.size(); ++i) {
                     dump_generic_parameter_type(function_type->generic_parameters[i], depth + 2, true, false);
                     Logger::print((i + 1 < function_type->generic_parameters.size() ? ",\n" : "\n"));
@@ -460,7 +480,8 @@ export class SemaDumper {
             Logger::print_indent(depth);
         }
 
-        std::string kind_str;
+        auto kind_str = std::string();
+
         switch (symbol->kind) {
             case Symbol::Kind::Type::Var: kind_str = "VarSymbol"; break;
             case Symbol::Kind::Type::Function: kind_str = "FunctionSymbol"; break;
@@ -505,16 +526,19 @@ export class SemaDumper {
         Logger::print_indent(depth + 1);
         Logger::print("symbols: [");
 
-        std::vector<Symbol*> all_symbols;
-        for (auto& [name, sym] : scope->types) {
-            all_symbols.push_back(sym);
+        auto all_symbols = std::vector<Symbol*>();
+
+        for (auto& [name, symbol] : scope->types) {
+            all_symbols.push_back(symbol);
         }
-        for (auto& [name, sym] : scope->variables) {
-            all_symbols.push_back(sym);
+
+        for (auto& [name, symbol] : scope->variables) {
+            all_symbols.push_back(symbol);
         }
-        for (auto& [name, syms] : scope->functions) {
-            for (auto* sym : syms) {
-                all_symbols.push_back(sym);
+
+        for (auto& [name, symbols] : scope->functions) {
+            for (auto* symbol : symbols) {
+                all_symbols.push_back(symbol);
             }
         }
 
@@ -522,6 +546,7 @@ export class SemaDumper {
             Logger::print("]\n");
         } else {
             Logger::print("\n");
+
             for (std::size_t i = 0; i < all_symbols.size(); ++i) {
                 dump_symbol(all_symbols[i], depth + 2, true, false);
                 Logger::print((i + 1 < all_symbols.size() ? ",\n" : "\n"));

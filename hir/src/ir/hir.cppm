@@ -44,7 +44,8 @@ export class HIRNodeKind {
 export class HIRNode {
   private:
   protected:
-    explicit HIRNode(HIRNodeKind::Type kind, Span span) : kind(kind), span(span) {}
+    explicit HIRNode(HIRNodeKind::Type kind, Span span)
+        : kind(kind), span(span) {}
 
     HIRNode(const HIRNode&) = delete;
     HIRNode& operator=(const HIRNode&) = delete;
@@ -509,13 +510,14 @@ export class HIRFunctionDeclaration : public HIRNode {
     const Type* return_type;
     HIRBlockStatement* body;
     bool variadic;
+    const Type* type;
 
     HIRFunctionDeclaration(Span span, Visibility::Type visibility, std::string name,
                            std::vector<HIRParameter> parameters, const Type* return_type,
-                           HIRBlockStatement* body, bool variadic)
+                           HIRBlockStatement* body, bool variadic, const Type* type)
         : HIRNode(static_kind, span), visibility(visibility), name(std::move(name)),
           parameters(std::move(parameters)), return_type(return_type), body(body),
-          variadic(variadic) {}
+          variadic(variadic), type(type) {}
 
     template <typename T>
     T accept(HIRVisitor<T>& visitor) {
@@ -584,22 +586,14 @@ auto HIRNode::accept(HIRVisitor<T>& visitor) -> T {
         return static_cast<HIRTypeExpression*>(this)->accept(visitor);
     case HIRNodeKind::Type::ExpressionStatement:
         return static_cast<HIRExpressionStatement*>(this)->accept(visitor);
-    case HIRNodeKind::Type::ReturnStatement:
+    case HIRReturnStatement::static_kind:
         return static_cast<HIRReturnStatement*>(this)->accept(visitor);
-    case HIRNodeKind::Type::VarDeclaration:
+    case HIRVarDeclaration::static_kind:
         return static_cast<HIRVarDeclaration*>(this)->accept(visitor);
-    case HIRNodeKind::Type::FunctionDeclaration:
+    case HIRFunctionDeclaration::static_kind:
         return static_cast<HIRFunctionDeclaration*>(this)->accept(visitor);
     }
     return T();
 }
 
 export using HIRArena = Arena<HIRNode>;
-
-export class HIRProgram {
-  public:
-    HIRArena arena;
-    std::vector<HIRFunctionDeclaration*> functions;
-
-    explicit HIRProgram() = default;
-};

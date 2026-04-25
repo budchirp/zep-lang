@@ -11,10 +11,9 @@ import zep.frontend.parser;
 import zep.frontend.sema.context;
 import zep.frontend.sema.type.checker;
 import zep.frontend.debug.ast_dumper;
-import zep.hir;
-import zep.hir.ir;
+import zep.hir.builder;
+import zep.hir.ir.program;
 import zep.hir.debug.dumper;
-import zep.frontend.debug.sema_dumper;
 
 export class Driver {
   private:
@@ -38,15 +37,10 @@ export class Driver {
         // AstDumper ast_dumper;
         // ast_dumper.dump_program(program);
 
-        auto hir_program = HIRProgram();
-        HIRBuilder hir_builder(hir_program.arena, context.types, context.env);
-        hir_program = hir_builder.lower(program);
+        HIRBuilder hir_builder(context.types, context.env);
+        auto hir_program = hir_builder.lower(program);
 
         HIRDumper hir_dumper;
         hir_dumper.dump_program(hir_program);
-
-        Logger::print("\n");
-        SemaDumper sema_dumper;
-        sema_dumper.dump_scope(context.env.global_scope);
     }
 };

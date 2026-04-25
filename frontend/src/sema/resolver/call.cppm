@@ -121,7 +121,7 @@ export class CallResolver {
         : visitor(visitor), context(context), resolver(resolver), node(node) {}
 
     const FunctionType* resolve_overload(const std::string& name) {
-        const auto& overloads = context.env.current_scope->lookup_function(name);
+        const auto& overloads = context.env.current_scope->lookup_function_overloads(name);
 
         const FunctionSymbol* best_match = nullptr;
         int match_count = 0;

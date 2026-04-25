@@ -137,7 +137,7 @@ export class TypeChecker : public Visitor<void> {
             return;
         }
 
-        const auto& overloads = context.env.current_scope->lookup_function(node.name);
+        const auto& overloads = context.env.current_scope->lookup_function_overloads(node.name);
         if (!overloads.empty()) {
             node.type = overloads.front()->type;
             return;
@@ -311,7 +311,8 @@ export class TypeChecker : public Visitor<void> {
 
         auto scope = resolver.scoped_substitutions();
 
-        const auto& overloads = context.env.current_scope->lookup_function(function_type->name);
+        const auto& overloads =
+            context.env.current_scope->lookup_function_overloads(function_type->name);
         CallResolver call_resolver(context, resolver, *this, node);
         if (overloads.size() > 1) {
             function_type = call_resolver.resolve_overload(function_type->name);

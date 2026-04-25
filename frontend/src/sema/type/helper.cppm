@@ -82,7 +82,8 @@ export class TypeHelper {
 
     FunctionSymbol* define_function(FunctionDeclaration& node) {
         if (node.type != nullptr) {
-            for (auto* symbol : context.env.current_scope->lookup_function(node.prototype->name)) {
+            for (auto* symbol :
+                 context.env.current_scope->lookup_function_overloads(node.prototype->name)) {
                 if (symbol->type == node.type) {
                     return symbol;
                 }
@@ -94,7 +95,8 @@ export class TypeHelper {
         const auto* type = builder.build_function(*node.prototype);
         node.type = type;
 
-        for (auto* symbol : context.env.current_scope->lookup_function(node.prototype->name)) {
+        for (auto* symbol :
+             context.env.current_scope->lookup_function_overloads(node.prototype->name)) {
             const auto* function_type = symbol->type->as<FunctionType>();
             if (function_type == nullptr) {
                 continue;

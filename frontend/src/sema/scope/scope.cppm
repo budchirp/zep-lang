@@ -103,7 +103,7 @@ export class Scope {
         return nullptr;
     }
 
-    const std::vector<FunctionSymbol*>& lookup_function(const std::string& key) const {
+    const std::vector<FunctionSymbol*>& lookup_function_overloads(const std::string& key) const {
         static const std::vector<FunctionSymbol*> symbols;
 
         const Scope* scope = this;
@@ -119,17 +119,16 @@ export class Scope {
         return symbols;
     }
 
-    bool has_type(const std::string& key) const {
-        return types.contains(key);
+    const FunctionSymbol* lookup_function(const std::string& key) const {
+        const auto& overloads = lookup_function_overloads(key);
+        return overloads.empty() ? nullptr : overloads[0];
     }
 
-    bool has_variable(const std::string& key) const {
-        return variables.contains(key);
-    }
+    bool has_type(const std::string& key) const { return types.contains(key); }
 
-    bool has_function(const std::string& key) const {
-        return functions.contains(key);
-    }
+    bool has_variable(const std::string& key) const { return variables.contains(key); }
+
+    bool has_function(const std::string& key) const { return functions.contains(key); }
 
     bool is_global() const { return parent == nullptr; }
 };
