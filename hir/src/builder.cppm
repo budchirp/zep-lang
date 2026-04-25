@@ -24,17 +24,6 @@ export class HIRBuilder {
     TypeResolver resolver;
     MonomorphizationCache mono_cache;
 
-    const Type* resolve_type(const Type* type) {
-        return resolver.resolve_type(type);
-    }
-
-    bool check_variadic(const FunctionPrototype& prototype) {
-        if (prototype.parameters.empty()) {
-            return false;
-        }
-
-        return prototype.parameters.back()->is_variadic;
-    }
 
     std::string lower_monomorphized_call(CallExpression& expression,
                                          IdentifierExpression& identifier,
@@ -43,7 +32,7 @@ export class HIRBuilder {
         generic_arguments.reserve(expression.generic_arguments.size());
 
         for (const auto& generic_argument : expression.generic_arguments) {
-            generic_arguments.push_back(resolve_type(generic_argument->type->type));
+            generic_arguments.push_back(resolver.resolve_type(generic_argument->type->type));
         }
 
         auto cache_result = mono_cache.get_or_create(identifier.name, generic_arguments);
@@ -62,7 +51,7 @@ export class HIRBuilder {
             }
         }
 
-        callee_type_out = resolve_type(expression.callee->type);
+        callee_type_out = resolver.resolve_type(expression.callee->type);
 
         return cache_result.name;
     }
@@ -72,8 +61,8 @@ export class HIRBuilder {
         auto parameter_types = std::vector<const Type*>();
         parameter_types.reserve(function_type->parameters.size());
 
-        for (const auto& param : function_type->parameters) {
-            parameter_types.push_back(resolve_type(param.type));
+        for (const auto& parameter : function_type->parameters) {
+            parameter_types.push_back(resolver.resolve_type(parameter.type));
         }
 
         return NameMangler::mangle(identifier.name, parameter_types);
@@ -81,23 +70,23 @@ export class HIRBuilder {
 
     HIRExpression* lower_expression(Expression& expression) {
         if (auto* node = expression.as<NumberLiteral>(); node != nullptr) {
-            return arena.create<HIRNumberLiteral>(node->span, node->value, resolve_type(node->type));
+            return arena.create<HIRNumberLiteral>(node->span, node->value, resolver.resolve_type(node->type));
         }
 
         if (auto* node = expression.as<FloatLiteral>(); node != nullptr) {
-            return arena.create<HIRFloatLiteral>(node->span, node->value, resolve_type(node->type));
+            return arena.create<HIRFloatLiteral>(node->span, node->value, resolver.resolve_type(node->type));
         }
 
         if (auto* node = expression.as<StringLiteral>(); node != nullptr) {
-            return arena.create<HIRStringLiteral>(node->span, node->value, resolve_type(node->type));
+            return arena.create<HIRStringLiteral>(node->span, node->value, resolver.resolve_type(node->type));
         }
 
         if (auto* node = expression.as<BooleanLiteral>(); node != nullptr) {
-            return arena.create<HIRBooleanLiteral>(node->span, node->value, resolve_type(node->type));
+            return arena.create<HIRBooleanLiteral>(node->span, node->value, resolver.resolve_type(node->type));
         }
 
         if (auto* node = expression.as<IdentifierExpression>(); node != nullptr) {
-            return arena.create<HIRIdentifierExpression>(node->span, node->name, resolve_type(node->type));
+            return arena.create<HIRIdentifierExpression>(node->span, node->name, resolver.resolve_type(node->type));
         }
 
         if (auto* node = expression.as<BinaryExpression>(); node != nullptr) {
@@ -106,7 +95,7 @@ export class HIRBuilder {
 
             auto op = static_cast<HIRBinaryExpression::Operator::Type>(static_cast<std::uint8_t>(node->op));
 
-            return arena.create<HIRBinaryExpression>(node->span, hir_left, op, hir_right, resolve_type(node->type));
+            return arena.create<HIRBinaryExpression>(node->span, hir_left, op, hir_right, resolver.resolve_type(node->type));
         }
 
         if (auto* node = expression.as<UnaryExpression>(); node != nullptr) {
@@ -114,7 +103,7 @@ export class HIRBuilder {
 
             auto op = static_cast<HIRUnaryExpression::Operator::Type>(static_cast<std::uint8_t>(node->op));
 
-            return arena.create<HIRUnaryExpression>(node->span, op, hir_operand, resolve_type(node->type));
+            return arena.create<HIRUnaryExpression>(node->span, op, hir_operand, resolver.resolve_type(node->type));
         }
 
         if (auto* node = expression.as<CallExpression>(); node != nullptr) {
@@ -125,20 +114,20 @@ export class HIRBuilder {
             auto* hir_object = lower_expression(*node->value);
             auto* hir_index = lower_expression(*node->index);
 
-            return arena.create<HIRIndexExpression>(node->span, hir_object, hir_index, resolve_type(node->type));
+            return arena.create<HIRIndexExpression>(node->span, hir_object, hir_index, resolver.resolve_type(node->type));
         }
 
         if (auto* node = expression.as<MemberExpression>(); node != nullptr) {
             auto* hir_object = lower_expression(*node->value);
 
-            return arena.create<HIRMemberExpression>(node->span, hir_object, node->member, resolve_type(node->type));
+            return arena.create<HIRMemberExpression>(node->span, hir_object, node->member, resolver.resolve_type(node->type));
         }
 
         if (auto* node = expression.as<AssignExpression>(); node != nullptr) {
             auto* hir_target = lower_expression(*node->target);
             auto* hir_value = lower_expression(*node->value);
 
-            return arena.create<HIRAssignExpression>(node->span, hir_target, hir_value, resolve_type(node->type));
+            return arena.create<HIRAssignExpression>(node->span, hir_target, hir_value, resolver.resolve_type(node->type));
         }
 
         if (auto* node = expression.as<StructLiteralExpression>(); node != nullptr) {
@@ -153,14 +142,14 @@ export class HIRBuilder {
             if (!node->generic_arguments.empty()) {
                 auto generic_args = std::vector<const Type*>();
 
-                for (const auto& arg : node->generic_arguments) {
-                    generic_args.push_back(resolve_type(arg->type->type));
+                for (const auto& argument : node->generic_arguments) {
+                    generic_args.push_back(resolver.resolve_type(argument->type->type));
                 }
 
                 struct_name = NameMangler::mangle(struct_name, generic_args);
             }
 
-            return arena.create<HIRStructLiteralExpression>(node->span, std::move(struct_name), std::move(hir_fields), resolve_type(node->type));
+            return arena.create<HIRStructLiteralExpression>(node->span, std::move(struct_name), std::move(hir_fields), resolver.resolve_type(node->type));
         }
 
         if (auto* node = expression.as<IfExpression>(); node != nullptr) {
@@ -173,18 +162,18 @@ export class HIRBuilder {
                 hir_else = lower_statement(*node->else_branch);
             }
 
-            return arena.create<HIRIfExpression>(node->span, hir_condition, hir_then, hir_else, resolve_type(node->type));
+            return arena.create<HIRIfExpression>(node->span, hir_condition, hir_then, hir_else, resolver.resolve_type(node->type));
         }
 
         if (auto* node = expression.as<TypeExpression>(); node != nullptr) {
-            return arena.create<HIRTypeExpression>(node->span, resolve_type(node->type));
+            return arena.create<HIRTypeExpression>(node->span, resolver.resolve_type(node->type));
         }
 
         return nullptr;
     }
 
     HIRExpression* lower_call_expression(CallExpression& expression) {
-        const auto* callee_type = resolve_type(expression.callee->type);
+        const auto* callee_type = resolver.resolve_type(expression.callee->type);
         const auto* function_type = (callee_type != nullptr) ? callee_type->as<FunctionType>() : nullptr;
 
         auto hir_arguments = std::vector<HIRExpression*>();
@@ -213,15 +202,15 @@ export class HIRBuilder {
             hir_callee = lower_expression(*expression.callee);
         }
 
-        return arena.create<HIRCallExpression>(expression.span, hir_callee, std::move(hir_arguments), resolve_type(expression.type));
+        return arena.create<HIRCallExpression>(expression.span, hir_callee, std::move(hir_arguments), resolver.resolve_type(expression.type));
     }
 
     HIRStatement* lower_statement(Statement& statement) {
         if (auto* node = statement.as<BlockStatement>(); node != nullptr) {
             auto hir_statements = std::vector<HIRStatement*>();
 
-            for (auto& stmt : node->statements) {
-                hir_statements.push_back(lower_statement(*stmt));
+            for (auto& statement_node : node->statements) {
+                hir_statements.push_back(lower_statement(*statement_node));
             }
 
             return arena.create<HIRBlockStatement>(node->span, std::move(hir_statements));
@@ -238,7 +227,7 @@ export class HIRBuilder {
                 hir_value = lower_expression(*node->value);
             }
 
-            return arena.create<HIRReturnStatement>(node->span, hir_value, resolve_type(node->type));
+            return arena.create<HIRReturnStatement>(node->span, hir_value, resolver.resolve_type(node->type));
         }
 
         if (auto* node = statement.as<VarDeclaration>(); node != nullptr) {
@@ -248,15 +237,15 @@ export class HIRBuilder {
                 hir_initializer = lower_expression(*node->initializer);
             }
 
-            return arena.create<HIRVarDeclaration>(node->span, node->visibility, node->storage_kind, node->name, resolve_type(node->type), hir_initializer);
+            return arena.create<HIRVarDeclaration>(node->span, node->visibility, node->storage_kind, node->name, resolver.resolve_type(node->type), hir_initializer);
         }
 
         return nullptr;
     }
 
     HIRFunctionDeclaration* lower_monomorphized_function(FunctionDeclaration& declaration, 
-                                                         const std::string& mangled_name,
-                                                         const std::vector<const Type*>& generic_arguments = {}) {
+                                                          const std::string& mangled_name,
+                                                          const std::vector<const Type*>& generic_arguments = {}) {
         auto scope = resolver.scoped_substitutions();
 
         for (std::size_t i = 0; i < declaration.prototype->generic_parameters.size(); ++i) {
@@ -268,13 +257,18 @@ export class HIRBuilder {
         auto hir_parameters = std::vector<HIRParameter>();
 
         for (auto& parameter : declaration.prototype->parameters) {
-            hir_parameters.emplace_back(parameter->name, resolve_type(parameter->type->type));
+            hir_parameters.emplace_back(parameter->name, resolver.resolve_type(parameter->type->type));
         }
 
-        const auto* hir_return = resolve_type(declaration.prototype->return_type->type);
+        const auto* hir_return = resolver.resolve_type(declaration.prototype->return_type->type);
         
-        auto* hir_stmt = lower_statement(*declaration.body);
-        auto* hir_body = static_cast<HIRBlockStatement*>(hir_stmt);
+        auto* hir_statement = lower_statement(*declaration.body);
+        auto* hir_body = static_cast<HIRBlockStatement*>(hir_statement);
+
+        bool is_variadic = false;
+        if (!declaration.prototype->parameters.empty()) {
+            is_variadic = declaration.prototype->parameters.back()->is_variadic;
+        }
 
         return arena.create<HIRFunctionDeclaration>(
             declaration.span, 
@@ -283,7 +277,7 @@ export class HIRBuilder {
             std::move(hir_parameters), 
             hir_return, 
             hir_body, 
-            check_variadic(*declaration.prototype)
+            is_variadic
         );
     }
 
@@ -295,28 +289,28 @@ export class HIRBuilder {
         auto hir_program = HIRProgram();
 
         for (auto& statement : program.statements) {
-            if (auto* func = statement->as<FunctionDeclaration>(); func != nullptr) {
-                if (!func->prototype->generic_parameters.empty()) {
-                    mono_cache.register_function(func->prototype->name, func);
+            if (auto* function = statement->as<FunctionDeclaration>(); function != nullptr) {
+                if (!function->prototype->generic_parameters.empty()) {
+                    mono_cache.register_function(function->prototype->name, function);
                 }
-            } else if (auto* struct_decl = statement->as<StructDeclaration>(); struct_decl != nullptr) {
-                if (!struct_decl->generic_parameters.empty()) {
-                    mono_cache.register_struct(struct_decl->name, struct_decl);
+            } else if (auto* struct_declaration = statement->as<StructDeclaration>(); struct_declaration != nullptr) {
+                if (!struct_declaration->generic_parameters.empty()) {
+                    mono_cache.register_struct(struct_declaration->name, struct_declaration);
                 }
             }
         }
 
         for (auto& statement : program.statements) {
-            if (auto* func = statement->as<FunctionDeclaration>(); func != nullptr) {
-                if (func->prototype->generic_parameters.empty()) {
-                    auto param_types = std::vector<const Type*>();
+            if (auto* function = statement->as<FunctionDeclaration>(); function != nullptr) {
+                if (function->prototype->generic_parameters.empty()) {
+                    auto parameter_types = std::vector<const Type*>();
 
-                    for (const auto& p : func->prototype->parameters) {
-                        param_types.push_back(resolve_type(p->type->type));
+                    for (const auto& parameter : function->prototype->parameters) {
+                        parameter_types.push_back(resolver.resolve_type(parameter->type->type));
                     }
 
-                    auto mangled_name = NameMangler::mangle(func->prototype->name, param_types);
-                    hir_program.functions.push_back(lower_monomorphized_function(*func, mangled_name));
+                    auto mangled_name = NameMangler::mangle(function->prototype->name, parameter_types);
+                    hir_program.functions.push_back(lower_monomorphized_function(*function, mangled_name));
                 }
             }
         }

@@ -9,377 +9,545 @@ export module zep.hir.debug.dumper;
 import zep.common.logger;
 import zep.frontend.sema.type;
 import zep.frontend.sema.kind;
+import zep.frontend.debug.sema_dumper;
 import zep.hir.ir;
 
 export class HIRDumper : public HIRVisitor<void> {
   private:
-    std::uint32_t indent_level = 0;
+    int depth = 0;
+    bool with_indent = true;
+    SemaDumper sema_dumper;
 
-    void print_indent() {
-        for (std::uint32_t i = 0; i < indent_level; ++i) {
-            Logger::print("  ");
-        }
+    void visit_child(HIRNode& node, int new_depth, bool new_with_indent = true) {
+        int saved_depth = depth;
+        bool saved_with_indent = with_indent;
+
+        depth = new_depth;
+        with_indent = new_with_indent;
+        node.accept(*this);
+
+        depth = saved_depth;
+        with_indent = saved_with_indent;
     }
 
-    void print_type(const Type* type) {
-        if (type != nullptr) {
-            Logger::print(" (type: " + type->to_string() + ")");
-        }
+    void dump_type(const Type* type, int depth, bool with_indent = true, bool trailing_newline = false) {
+        sema_dumper.dump_type(type, depth, with_indent, trailing_newline);
     }
 
   public:
     HIRDumper() = default;
 
     void dump_program(HIRProgram& program) {
-        Logger::print("HIRProgram([\n");
-        indent_level++;
+        Logger::print_indent(0);
+        Logger::print("HIRProgram(functions: [");
 
-        for (std::size_t i = 0; i < program.functions.size(); ++i) {
-            program.functions[i]->accept(*this);
-            if (i < program.functions.size() - 1) {
-                Logger::print(",\n");
+        if (program.functions.empty()) {
+            Logger::print("])\n");
+        } else {
+            Logger::print("\n");
+            for (std::size_t i = 0; i < program.functions.size(); ++i) {
+                visit_child(*program.functions[i], 1, true);
+                Logger::print((i + 1 < program.functions.size() ? ",\n" : "\n"));
             }
-        }
 
-        indent_level--;
-        Logger::print("\n])\n");
+            Logger::print_indent(0);
+            Logger::print("])\n");
+        }
     }
 
     void visit(HIRBlockStatement& node) override {
-        print_indent();
-        Logger::print("BlockStatement([\n");
-        indent_level++;
-
-        for (std::size_t i = 0; i < node.statements.size(); ++i) {
-            node.statements[i]->accept(*this);
-            if (i < node.statements.size() - 1) {
-                Logger::print(",\n");
-            }
+        if (with_indent) {
+            Logger::print_indent(depth);
         }
 
-        indent_level--;
-        Logger::print("\n");
-        print_indent();
-        Logger::print("])");
+        Logger::print("BlockStatement(statements: [");
+        if (node.statements.empty()) {
+            Logger::print("])");
+        } else {
+            Logger::print("\n");
+            for (std::size_t i = 0; i < node.statements.size(); ++i) {
+                visit_child(*node.statements[i], depth + 1, true);
+                Logger::print((i + 1 < node.statements.size() ? ",\n" : "\n"));
+            }
+
+            Logger::print_indent(depth);
+            Logger::print("])");
+        }
     }
 
     void visit(HIRNumberLiteral& node) override {
-        print_indent();
-        Logger::print("NumberLiteral(value: \"" + node.value + "\"");
-        print_type(node.type);
+        if (with_indent) {
+            Logger::print_indent(depth);
+        }
+
+        Logger::print("NumberLiteral(\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("value: \"", node.value, "\",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
+        dump_type(node.type, depth + 1, false, false);
+        Logger::print("\n");
+
+        Logger::print_indent(depth);
         Logger::print(")");
     }
 
     void visit(HIRFloatLiteral& node) override {
-        print_indent();
-        Logger::print("FloatLiteral(value: \"" + node.value + "\"");
-        print_type(node.type);
+        if (with_indent) {
+            Logger::print_indent(depth);
+        }
+
+        Logger::print("FloatLiteral(\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("value: \"", node.value, "\",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
+        dump_type(node.type, depth + 1, false, false);
+        Logger::print("\n");
+
+        Logger::print_indent(depth);
         Logger::print(")");
     }
 
     void visit(HIRStringLiteral& node) override {
-        print_indent();
-        Logger::print("StringLiteral(value: \"" + node.value + "\"");
-        print_type(node.type);
+        if (with_indent) {
+            Logger::print_indent(depth);
+        }
+
+        Logger::print("StringLiteral(\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("value: \"", node.value, "\",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
+        dump_type(node.type, depth + 1, false, false);
+        Logger::print("\n");
+
+        Logger::print_indent(depth);
         Logger::print(")");
     }
 
     void visit(HIRBooleanLiteral& node) override {
-        print_indent();
-        Logger::print("BooleanLiteral(value: " + std::string(node.value ? "true" : "false"));
-        print_type(node.type);
+        if (with_indent) {
+            Logger::print_indent(depth);
+        }
+
+        Logger::print("BooleanLiteral(\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("value: ", (node.value ? "true" : "false"), ",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
+        dump_type(node.type, depth + 1, false, false);
+        Logger::print("\n");
+
+        Logger::print_indent(depth);
         Logger::print(")");
     }
 
     void visit(HIRIdentifierExpression& node) override {
-        print_indent();
-        Logger::print("IdentifierExpression(name: \"" + node.name + "\"");
-        print_type(node.type);
+        if (with_indent) {
+            Logger::print_indent(depth);
+        }
+
+        Logger::print("IdentifierExpression(\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", node.name, "\",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
+        dump_type(node.type, depth + 1, false, false);
+        Logger::print("\n");
+
+        Logger::print_indent(depth);
         Logger::print(")");
     }
 
     void visit(HIRBinaryExpression& node) override {
-        print_indent();
-        Logger::print("BinaryExpression(\n");
-        indent_level++;
+        if (with_indent) {
+            Logger::print_indent(depth);
+        }
 
-        print_indent();
-        Logger::print("left:\n");
-        indent_level++;
-        node.left->accept(*this);
-        indent_level--;
+        Logger::print("BinaryExpression(\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("op: ", HIRBinaryExpression::Operator::to_string(node.op), ",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
+        dump_type(node.type, depth + 1, false, false);
         Logger::print(",\n");
 
-        print_indent();
-        Logger::print("op: " + HIRBinaryExpression::Operator::to_string(node.op) + ",\n");
+        Logger::print_indent(depth + 1);
+        Logger::print("left: ");
+        visit_child(*node.left, depth + 1, false);
+        Logger::print(",\n");
 
-        print_indent();
-        Logger::print("right:\n");
-        indent_level++;
-        node.right->accept(*this);
-        indent_level--;
+        Logger::print_indent(depth + 1);
+        Logger::print("right: ");
+        visit_child(*node.right, depth + 1, false);
         Logger::print("\n");
 
-        indent_level--;
-        print_indent();
+        Logger::print_indent(depth);
         Logger::print(")");
-        print_type(node.type);
     }
 
     void visit(HIRUnaryExpression& node) override {
-        print_indent();
+        if (with_indent) {
+            Logger::print_indent(depth);
+        }
+
         Logger::print("UnaryExpression(\n");
-        indent_level++;
 
-        print_indent();
-        Logger::print("op: " + HIRUnaryExpression::Operator::to_string(node.op) + ",\n");
+        Logger::print_indent(depth + 1);
+        Logger::print("op: ", HIRUnaryExpression::Operator::to_string(node.op), ",\n");
 
-        print_indent();
-        Logger::print("operand:\n");
-        indent_level++;
-        node.operand->accept(*this);
-        indent_level--;
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
+        dump_type(node.type, depth + 1, false, false);
+        Logger::print(",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("operand: ");
+        visit_child(*node.operand, depth + 1, false);
         Logger::print("\n");
 
-        indent_level--;
-        print_indent();
+        Logger::print_indent(depth);
         Logger::print(")");
-        print_type(node.type);
     }
 
     void visit(HIRCallExpression& node) override {
-        print_indent();
-        Logger::print("CallExpression(\n");
-        indent_level++;
-
-        print_indent();
-        Logger::print("callee:\n");
-        indent_level++;
-        node.callee->accept(*this);
-        indent_level--;
-        Logger::print(",\n");
-
-        print_indent();
-        Logger::print("arguments: [\n");
-        indent_level++;
-
-        for (std::size_t i = 0; i < node.arguments.size(); ++i) {
-            node.arguments[i]->accept(*this);
-            if (i < node.arguments.size() - 1) {
-                Logger::print(",\n");
-            }
+        if (with_indent) {
+            Logger::print_indent(depth);
         }
 
-        indent_level--;
-        Logger::print("\n");
-        print_indent();
-        Logger::print("]\n");
+        Logger::print("CallExpression(\n");
 
-        indent_level--;
-        print_indent();
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
+        dump_type(node.type, depth + 1, false, false);
+        Logger::print(",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("callee: ");
+        visit_child(*node.callee, depth + 1, false);
+        Logger::print(",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("arguments: [");
+        if (node.arguments.empty()) {
+            Logger::print("]\n");
+        } else {
+            Logger::print("\n");
+            for (std::size_t i = 0; i < node.arguments.size(); ++i) {
+                visit_child(*node.arguments[i], depth + 2, true);
+                Logger::print((i + 1 < node.arguments.size() ? ",\n" : "\n"));
+            }
+
+            Logger::print_indent(depth + 1);
+            Logger::print("]\n");
+        }
+
+        Logger::print_indent(depth);
         Logger::print(")");
-        print_type(node.type);
     }
 
     void visit(HIRIndexExpression& node) override {
-        print_indent();
-        Logger::print("IndexExpression(\n");
-        indent_level++;
+        if (with_indent) {
+            Logger::print_indent(depth);
+        }
 
-        print_indent();
-        Logger::print("object:\n");
-        indent_level++;
-        node.object->accept(*this);
-        indent_level--;
+        Logger::print("IndexExpression(\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
+        dump_type(node.type, depth + 1, false, false);
         Logger::print(",\n");
 
-        print_indent();
-        Logger::print("index:\n");
-        indent_level++;
-        node.index->accept(*this);
-        indent_level--;
+        Logger::print_indent(depth + 1);
+        Logger::print("object: ");
+        visit_child(*node.object, depth + 1, false);
+        Logger::print(",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("index: ");
+        visit_child(*node.index, depth + 1, false);
         Logger::print("\n");
 
-        indent_level--;
-        print_indent();
+        Logger::print_indent(depth);
         Logger::print(")");
-        print_type(node.type);
     }
 
     void visit(HIRMemberExpression& node) override {
-        print_indent();
-        Logger::print("MemberExpression(\n");
-        indent_level++;
+        if (with_indent) {
+            Logger::print_indent(depth);
+        }
 
-        print_indent();
-        Logger::print("object:\n");
-        indent_level++;
-        node.object->accept(*this);
-        indent_level--;
+        Logger::print("MemberExpression(\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("member: \"", node.member, "\",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
+        dump_type(node.type, depth + 1, false, false);
         Logger::print(",\n");
 
-        print_indent();
-        Logger::print("member: \"" + node.member + "\"\n");
+        Logger::print_indent(depth + 1);
+        Logger::print("object: ");
+        visit_child(*node.object, depth + 1, false);
+        Logger::print("\n");
 
-        indent_level--;
-        print_indent();
+        Logger::print_indent(depth);
         Logger::print(")");
-        print_type(node.type);
     }
 
     void visit(HIRAssignExpression& node) override {
-        print_indent();
-        Logger::print("AssignExpression(\n");
-        indent_level++;
+        if (with_indent) {
+            Logger::print_indent(depth);
+        }
 
-        print_indent();
-        Logger::print("target:\n");
-        indent_level++;
-        node.target->accept(*this);
-        indent_level--;
+        Logger::print("AssignExpression(\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
+        dump_type(node.type, depth + 1, false, false);
         Logger::print(",\n");
 
-        print_indent();
-        Logger::print("value:\n");
-        indent_level++;
-        node.value->accept(*this);
-        indent_level--;
+        Logger::print_indent(depth + 1);
+        Logger::print("target: ");
+        visit_child(*node.target, depth + 1, false);
+        Logger::print(",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("value: ");
+        visit_child(*node.value, depth + 1, false);
         Logger::print("\n");
 
-        indent_level--;
-        print_indent();
+        Logger::print_indent(depth);
         Logger::print(")");
-        print_type(node.type);
     }
 
     void visit(HIRStructLiteralExpression& node) override {
-        print_indent();
-        Logger::print("StructLiteralExpression(name: \"" + node.name + "\", fields: [\n");
-        indent_level++;
-
-        for (std::size_t i = 0; i < node.fields.size(); ++i) {
-            print_indent();
-            Logger::print("HIRStructLiteralField(name: \"" + node.fields[i].name + "\", value:\n");
-            indent_level++;
-            node.fields[i].value->accept(*this);
-            indent_level--;
-            Logger::print(")");
-            if (i < node.fields.size() - 1) {
-                Logger::print(",\n");
-            }
+        if (with_indent) {
+            Logger::print_indent(depth);
         }
 
-        indent_level--;
-        Logger::print("\n");
-        print_indent();
-        Logger::print("])");
-        print_type(node.type);
+        Logger::print("StructLiteralExpression(\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", node.name, "\",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
+        dump_type(node.type, depth + 1, false, false);
+        Logger::print(",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("fields: [");
+        if (node.fields.empty()) {
+            Logger::print("]\n");
+        } else {
+            Logger::print("\n");
+            for (std::size_t i = 0; i < node.fields.size(); ++i) {
+                Logger::print_indent(depth + 2);
+                Logger::print("Field(\n");
+
+                Logger::print_indent(depth + 3);
+                Logger::print("name: \"", node.fields[i].name, "\",\n");
+
+                Logger::print_indent(depth + 3);
+                Logger::print("value: ");
+                visit_child(*node.fields[i].value, depth + 3, false);
+                Logger::print("\n");
+
+                Logger::print_indent(depth + 2);
+                Logger::print(")");
+
+                Logger::print((i + 1 < node.fields.size() ? ",\n" : "\n"));
+            }
+
+            Logger::print_indent(depth + 1);
+            Logger::print("]\n");
+        }
+
+        Logger::print_indent(depth);
+        Logger::print(")");
     }
 
     void visit(HIRIfExpression& node) override {
-        print_indent();
-        Logger::print("IfExpression(\n");
-        indent_level++;
+        if (with_indent) {
+            Logger::print_indent(depth);
+        }
 
-        print_indent();
-        Logger::print("condition:\n");
-        indent_level++;
-        node.condition->accept(*this);
-        indent_level--;
+        Logger::print("IfExpression(\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
+        dump_type(node.type, depth + 1, false, false);
         Logger::print(",\n");
 
-        print_indent();
-        Logger::print("then:\n");
-        indent_level++;
-        node.then_branch->accept(*this);
-        indent_level--;
+        Logger::print_indent(depth + 1);
+        Logger::print("condition: ");
+        visit_child(*node.condition, depth + 1, false);
+        Logger::print(",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("then: ");
+        visit_child(*node.then_branch, depth + 1, false);
 
         if (node.else_branch != nullptr) {
             Logger::print(",\n");
-            print_indent();
-            Logger::print("else:\n");
-            indent_level++;
-            node.else_branch->accept(*this);
-            indent_level--;
+            Logger::print_indent(depth + 1);
+            Logger::print("else: ");
+            visit_child(*node.else_branch, depth + 1, false);
         }
-
-        indent_level--;
         Logger::print("\n");
-        print_indent();
+
+        Logger::print_indent(depth);
         Logger::print(")");
-        print_type(node.type);
     }
 
     void visit(HIRTypeExpression& node) override {
-        print_indent();
-        Logger::print("TypeExpression(value: " + node.type_value->to_string() + ")");
+        if (with_indent) {
+            Logger::print_indent(depth);
+        }
+
+        Logger::print("TypeExpression(\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
+        dump_type(node.type_value, depth + 1, false, false);
+        Logger::print("\n");
+
+        Logger::print_indent(depth);
+        Logger::print(")");
     }
 
     void visit(HIRExpressionStatement& node) override {
-        print_indent();
-        Logger::print("ExpressionStatement(expression:\n");
-        indent_level++;
-        node.expression->accept(*this);
-        indent_level--;
+        if (with_indent) {
+            Logger::print_indent(depth);
+        }
+
+        Logger::print("ExpressionStatement(\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("expression: ");
+        visit_child(*node.expression, depth + 1, false);
         Logger::print("\n");
-        print_indent();
+
+        Logger::print_indent(depth);
         Logger::print(")");
     }
 
     void visit(HIRReturnStatement& node) override {
-        print_indent();
-        Logger::print("ReturnStatement(value:\n");
+        if (with_indent) {
+            Logger::print_indent(depth);
+        }
+
+        Logger::print("ReturnStatement(\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("value: ");
         if (node.value != nullptr) {
-            indent_level++;
-            node.value->accept(*this);
-            indent_level--;
+            visit_child(*node.value, depth + 1, false);
         } else {
-            Logger::print("  null");
+            Logger::print("null");
         }
         Logger::print("\n");
-        print_indent();
+
+        Logger::print_indent(depth);
         Logger::print(")");
     }
 
     void visit(HIRVarDeclaration& node) override {
-        print_indent();
-        Logger::print("VarDeclaration(name: \"" + node.name + "\", visibility: " + Visibility::to_string(node.visibility) + ", storage: " + StorageKind::to_string(node.storage_kind));
-        print_type(node.type);
-        if (node.initializer != nullptr) {
-            Logger::print(", initializer:\n");
-            indent_level++;
-            node.initializer->accept(*this);
-            indent_level--;
+        if (with_indent) {
+            Logger::print_indent(depth);
         }
+
+        Logger::print("VarDeclaration(\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", node.name, "\",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("storage: ", StorageKind::to_string(node.storage_kind), ",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("type: ");
+        dump_type(node.type, depth + 1, false, false);
+        if (node.initializer != nullptr) {
+            Logger::print(",\n");
+
+            Logger::print_indent(depth + 1);
+            Logger::print("initializer: ");
+            visit_child(*node.initializer, depth + 1, false);
+        }
+        Logger::print("\n");
+
+        Logger::print_indent(depth);
         Logger::print(")");
     }
 
     void visit(HIRFunctionDeclaration& node) override {
-        print_indent();
-        Logger::print("FunctionDeclaration(name: \"" + node.name + "\", visibility: " + Visibility::to_string(node.visibility));
-        Logger::print(", parameters: [\n");
-        indent_level++;
-
-        for (std::size_t i = 0; i < node.parameters.size(); ++i) {
-            print_indent();
-            Logger::print("Parameter(name: \"" + node.parameters[i].name + "\", type: " + node.parameters[i].type->to_string() + ")");
-            if (i < node.parameters.size() - 1) {
-                Logger::print(",\n");
-            }
+        if (with_indent) {
+            Logger::print_indent(depth);
         }
 
-        indent_level--;
-        Logger::print("\n");
-        print_indent();
-        Logger::print("], return_type: " + node.return_type->to_string() + ",\n");
+        Logger::print("FunctionDeclaration(\n");
 
-        print_indent();
-        Logger::print("body:\n");
-        indent_level++;
-        node.body->accept(*this);
-        indent_level--;
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", node.name, "\",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("visibility: ", Visibility::to_string(node.visibility), ",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("parameters: [");
+        if (node.parameters.empty()) {
+            Logger::print("],\n");
+        } else {
+            Logger::print("\n");
+            for (std::size_t i = 0; i < node.parameters.size(); ++i) {
+                Logger::print_indent(depth + 2);
+                Logger::print("Parameter(\n");
+
+                Logger::print_indent(depth + 3);
+                Logger::print("name: \"", node.parameters[i].name, "\",\n");
+
+                Logger::print_indent(depth + 3);
+                Logger::print("type: ");
+                dump_type(node.parameters[i].type, depth + 3, false, false);
+                Logger::print("\n");
+
+                Logger::print_indent(depth + 2);
+                Logger::print(")");
+
+                Logger::print((i + 1 < node.parameters.size() ? ",\n" : "\n"));
+            }
+
+            Logger::print_indent(depth + 1);
+            Logger::print("],\n");
+        }
+
+        Logger::print_indent(depth + 1);
+        Logger::print("return_type: ");
+        dump_type(node.return_type, depth + 1, false, false);
+        Logger::print(",\n");
+
+        Logger::print_indent(depth + 1);
+        Logger::print("body: ");
+        visit_child(*node.body, depth + 1, false);
         Logger::print("\n");
-        print_indent();
+
+        Logger::print_indent(depth);
         Logger::print(")");
     }
 };

@@ -9,7 +9,6 @@ export module zep.frontend.sema.env;
 
 import zep.common.span;
 import zep.frontend.arena;
-import zep.frontend.arena;
 import zep.frontend.sema.kind;
 import zep.frontend.sema.scope;
 import zep.frontend.sema.symbol;
@@ -38,6 +37,7 @@ export class Env {
 
   public:
     Scope* current_scope;
+    Scope* const global_scope;
 
     std::unordered_map<std::string, const Type*> primitives;
 
@@ -48,7 +48,8 @@ export class Env {
 
     Env(TypeArena& type_arena, SymbolArena& symbol_arena, ScopeArena& scope_arena)
         : scope_arena(scope_arena),
-          current_scope(scope_arena.create<Scope>(Scope::Kind::Type::Global, "global", nullptr)) {
+          current_scope(scope_arena.create<Scope>(Scope::Kind::Type::Global, "global", nullptr)),
+          global_scope(current_scope) {
         init(type_arena);
 
         for (const auto& [name, type] : primitives) {

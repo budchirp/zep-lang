@@ -14,6 +14,7 @@ import zep.frontend.debug.ast_dumper;
 import zep.hir;
 import zep.hir.ir;
 import zep.hir.debug.dumper;
+import zep.frontend.debug.sema_dumper;
 
 export class Driver {
   private:
@@ -43,5 +44,9 @@ export class Driver {
 
         HIRDumper hir_dumper;
         hir_dumper.dump_program(hir_program);
+
+        Logger::print("\n");
+        SemaDumper sema_dumper;
+        sema_dumper.dump_scope(context.env.global_scope);
     }
 };
