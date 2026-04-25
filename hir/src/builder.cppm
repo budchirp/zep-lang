@@ -54,7 +54,8 @@ export class HIRBuilder {
             if (declaration != nullptr) {
                 auto* specialization = lower_monomorphized_function(
                     const_cast<FunctionDeclaration&>(*declaration), 
-                    cache_result.name
+                    cache_result.name,
+                    generic_arguments
                 );
 
                 mono_cache.enqueue_specialization(specialization);
@@ -254,7 +255,16 @@ export class HIRBuilder {
     }
 
     HIRFunctionDeclaration* lower_monomorphized_function(FunctionDeclaration& declaration, 
-                                                         const std::string& mangled_name) {
+                                                         const std::string& mangled_name,
+                                                         const std::vector<const Type*>& generic_arguments = {}) {
+        auto scope = resolver.scoped_substitutions();
+
+        for (std::size_t i = 0; i < declaration.prototype->generic_parameters.size(); ++i) {
+            if (i < generic_arguments.size()) {
+                resolver.add_substitution(declaration.prototype->generic_parameters[i]->name, generic_arguments[i]);
+            }
+        }
+
         auto hir_parameters = std::vector<HIRParameter>();
 
         for (auto& parameter : declaration.prototype->parameters) {

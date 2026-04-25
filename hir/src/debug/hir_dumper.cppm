@@ -378,8 +378,6 @@ export class HIRDumper : public HIRVisitor<void> {
         indent_level++;
         node.body->accept(*this);
         indent_level--;
-
-        indent_level--;
         Logger::print("\n");
         print_indent();
         Logger::print(")");

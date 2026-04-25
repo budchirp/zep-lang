@@ -28,6 +28,11 @@ export class TypeResolver {
         result.reserve(parameters.size());
 
         for (const auto& parameter : parameters) {
+            if (map.contains(parameter.name)) {
+                changed = true;
+                continue;
+            }
+
             const auto* substituted = substitute_type(parameter.constraint, map);
             if (substituted != parameter.constraint) {
                 changed = true;
@@ -91,7 +96,23 @@ export class TypeResolver {
                 return iterator->second;
             }
 
-            return type;
+            bool changed = false;
+            std::vector<GenericArgumentType> new_args;
+            new_args.reserve(named->generic_arguments.size());
+
+            for (const auto& arg : named->generic_arguments) {
+                const auto* substituted = substitute_type(arg.type, substitution_map);
+                if (substituted != arg.type) {
+                    changed = true;
+                }
+                new_args.emplace_back(arg.name, substituted);
+            }
+
+            if (!changed) {
+                return type;
+            }
+
+            return type_arena.create<NamedType>(named->name, std::move(new_args));
         }
 
         case Type::Kind::Type::Pointer: {
@@ -120,13 +141,14 @@ export class TypeResolver {
             const auto* struct_type = type->as<StructType>();
 
             bool changed = false;
+            auto new_params = substitute_generic_parameters(struct_type->generic_parameters, substitution_map, changed);
             auto new_fields = substitute_fields(struct_type->fields, substitution_map, changed);
 
             if (!changed) {
                 return type;
             }
 
-            return type_arena.create<StructType>(struct_type->name, struct_type->generic_parameters,
+            return type_arena.create<StructType>(struct_type->name, std::move(new_params),
                                                  std::move(new_fields));
         }
 
@@ -137,6 +159,7 @@ export class TypeResolver {
             bool changed = return_type != function_type->return_type;
             auto new_parameters =
                 substitute_parameters(function_type->parameters, substitution_map, changed);
+            auto new_params = substitute_generic_parameters(function_type->generic_parameters, substitution_map, changed);
 
             if (!changed) {
                 return type;
@@ -144,7 +167,7 @@ export class TypeResolver {
 
             return type_arena.create<FunctionType>(
                 function_type->name, return_type, std::move(new_parameters),
-                function_type->generic_parameters, function_type->variadic);
+                std::move(new_params), function_type->variadic);
         }
 
         default:
@@ -158,6 +181,11 @@ export class TypeResolver {
         result.reserve(parameters.size());
 
         for (const auto& parameter : parameters) {
+            if (substitutions.contains(parameter.name)) {
+                changed = true;
+                continue;
+            }
+
             const auto* resolved = resolve_type(parameter.constraint);
             if (resolved != parameter.constraint) {
                 changed = true;

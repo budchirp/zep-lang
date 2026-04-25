@@ -34,8 +34,8 @@ export class Driver {
             std::exit(1);
         }
 
-        AstDumper ast_dumper;
-        ast_dumper.dump_program(program);
+        // AstDumper ast_dumper;
+        // ast_dumper.dump_program(program);
 
         auto hir_program = HIRProgram();
         HIRBuilder hir_builder(hir_program.arena, context.types, context.env);
