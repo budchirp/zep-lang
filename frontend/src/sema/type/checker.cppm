@@ -75,7 +75,7 @@ export class TypeChecker : public Visitor<void> {
 
   public:
     explicit TypeChecker(Context& context)
-        : context(context), resolver(context.types, context.env), builder(*this, context),
+        : context(context), resolver(context.types, context.env), builder(*this, context, resolver),
           helper(*this, context, resolver, builder) {}
 
     void check(Program& program) {
@@ -309,16 +309,18 @@ export class TypeChecker : public Visitor<void> {
             return;
         }
 
-        const auto& overloads = context.env.current_scope->lookup_function(function_type->name);
+        auto scope = resolver.scoped_substitutions();
 
+        const auto& overloads = context.env.current_scope->lookup_function(function_type->name);
         CallResolver call_resolver(context, resolver, *this, node);
         if (overloads.size() > 1) {
             function_type = call_resolver.resolve_overload(function_type->name);
         }
 
-        call_resolver.is_valid(function_type, true);
-
-        node.type = resolver.resolve_type(function_type->return_type);
+        if (function_type != nullptr) {
+            call_resolver.is_valid(function_type, true);
+            node.type = resolver.resolve_type(function_type->return_type);
+        }
     }
 
     void visit(IndexExpression& node) override {
@@ -553,8 +555,9 @@ export class TypeChecker : public Visitor<void> {
         auto* symbol = helper.define_function(node);
         helper.current_function = symbol;
 
+        auto scope = resolver.scoped_substitutions();
         GenericResolver generic_resolver(context, resolver, *this);
-        generic_resolver.define_generic_parameters(symbol->function_type->generic_parameters);
+        generic_resolver.activate_generic_parameters(symbol->function_type->generic_parameters);
 
         for (const auto& parameter : symbol->function_type->parameters) {
             const auto* parameter_type = resolver.resolve_type(parameter.type);
@@ -570,6 +573,7 @@ export class TypeChecker : public Visitor<void> {
         }
 
         visit(*node.body);
+        helper.current_function = nullptr;
     }
 
     void visit(ExternFunctionDeclaration& node) override { helper.define_extern_function(node); }

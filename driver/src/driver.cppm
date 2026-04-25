@@ -24,7 +24,7 @@ export class Driver {
         auto program = parser.parse();
 
         TypeChecker type_checker(context);
-        type_checker.check(*program);
+        type_checker.check(program);
 
         if (context.diagnostics.has_errors()) {
             context.diagnostics.print(context.logger);
@@ -32,6 +32,6 @@ export class Driver {
         }
 
         AstDumper ast_dumper;
-        ast_dumper.dump_program(*program);
+        ast_dumper.dump_program(program);
     }
 };

@@ -9,16 +9,20 @@ import zep.frontend.arena;
 import zep.frontend.ast;
 import zep.frontend.ast.program;
 import zep.frontend.sema.context;
+import zep.frontend.sema.type.resolver;
+import zep.frontend.sema.env;
+import zep.frontend.sema.resolver.generic;
 
 export class TypeBuilder {
   private:
     Visitor<void>& visitor;
 
     Context& context;
+    TypeResolver& resolver;
 
   public:
-    explicit TypeBuilder(Visitor<void>& visitor, Context& context)
-        : visitor(visitor), context(context) {}
+    explicit TypeBuilder(Visitor<void>& visitor, Context& context, TypeResolver& resolver)
+        : visitor(visitor), context(context), resolver(resolver) {}
 
     std::vector<GenericParameterType>
     build_generic_parameters(std::vector<GenericParameter*>& generic_parameters) {
@@ -41,6 +45,10 @@ export class TypeBuilder {
     const Type* build_struct(StructDeclaration& node) {
         auto generic_parameter_types = build_generic_parameters(node.generic_parameters);
 
+        auto scope = resolver.scoped_substitutions();
+        GenericResolver generic_resolver(context, resolver, visitor);
+        generic_resolver.activate_generic_parameters(generic_parameter_types, true);
+
         std::vector<StructFieldType> field_types;
         field_types.reserve(node.fields.size());
 
@@ -55,6 +63,10 @@ export class TypeBuilder {
 
     const FunctionType* build_function(FunctionPrototype& prototype) {
         auto generic_parameter_types = build_generic_parameters(prototype.generic_parameters);
+
+        auto scope = resolver.scoped_substitutions();
+        GenericResolver generic_resolver(context, resolver, visitor);
+        generic_resolver.activate_generic_parameters(generic_parameter_types, true);
 
         std::vector<ParameterType> parameter_types;
         parameter_types.reserve(prototype.parameters.size());

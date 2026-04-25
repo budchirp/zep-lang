@@ -17,6 +17,7 @@ export class Context {
     TypeArena types;
     ScopeArena scopes;
     SymbolArena symbols;
+    NodeArena nodes;
 
     Env env;
 

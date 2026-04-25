@@ -24,8 +24,6 @@ import zep.frontend.sema.kind;
 
 export class Parser {
   private:
-    Program program;
-
     Context& context;
 
     Lexer lexer;
@@ -135,7 +133,7 @@ export class Parser {
         case Token::Type::LeftBrace:
             return parse_block_statement();
         default: {
-            return program.nodes.create<ExpressionStatement>(parse_expression());
+            return context.nodes.create<ExpressionStatement>(parse_expression());
         }
         }
     }
@@ -158,25 +156,25 @@ export class Parser {
             auto value = std::string(current_token.value);
             advance();
 
-            return program.nodes.create<StringLiteral>(span, std::move(value));
+            return context.nodes.create<StringLiteral>(span, std::move(value));
         }
         case Token::Type::Number: {
             auto value = std::string(current_token.value);
             advance();
 
-            return program.nodes.create<NumberLiteral>(span, std::move(value));
+            return context.nodes.create<NumberLiteral>(span, std::move(value));
         }
         case Token::Type::Float: {
             auto value = std::string(current_token.value);
             advance();
 
-            return program.nodes.create<FloatLiteral>(span, std::move(value));
+            return context.nodes.create<FloatLiteral>(span, std::move(value));
         }
         case Token::Type::Boolean: {
             auto value = current_token.value == "true";
             advance();
 
-            return program.nodes.create<BooleanLiteral>(span, value);
+            return context.nodes.create<BooleanLiteral>(span, value);
         }
         case Token::Type::Identifier: {
             auto name = std::string(current_token.value);
@@ -187,13 +185,13 @@ export class Parser {
 
                 if (check(Token::Type::LeftParen)) {
                     auto* callee =
-                        program.nodes.create<IdentifierExpression>(span, std::move(name));
+                        context.nodes.create<IdentifierExpression>(span, std::move(name));
                     return parse_call_expression(callee, std::move(generic_arguments));
                 }
 
                 if (check(Token::Type::LeftBrace)) {
                     auto* type_name =
-                        program.nodes.create<IdentifierExpression>(span, std::move(name));
+                        context.nodes.create<IdentifierExpression>(span, std::move(name));
                     return parse_struct_literal(type_name, std::move(generic_arguments));
                 }
 
@@ -201,11 +199,11 @@ export class Parser {
             }
 
             if (check(Token::Type::LeftBrace)) {
-                auto* type_name = program.nodes.create<IdentifierExpression>(span, std::move(name));
+                auto* type_name = context.nodes.create<IdentifierExpression>(span, std::move(name));
                 return parse_struct_literal(type_name, {});
             }
 
-            return program.nodes.create<IdentifierExpression>(span, std::move(name));
+            return context.nodes.create<IdentifierExpression>(span, std::move(name));
         }
         case Token::Type::LeftParen: {
             advance();
@@ -249,7 +247,7 @@ export class Parser {
 
             auto* right = parse_expression(
                 static_cast<Precedence::Type>(static_cast<int>(Precedence::Type::Assignment) - 1));
-            return program.nodes.create<AssignExpression>(span, left, right);
+            return context.nodes.create<AssignExpression>(span, left, right);
         }
         case Token::Type::LeftParen:
         case Token::Type::LeftBracket:
@@ -305,7 +303,7 @@ export class Parser {
             expect(Token::Type::Colon);
             auto* type_expression = parse_type_expression();
 
-            parameters.push_back(program.nodes.create<Parameter>(span, is_variadic, std::move(name),
+            parameters.push_back(context.nodes.create<Parameter>(span, is_variadic, std::move(name),
                                                                  type_expression));
 
             if (!check(Token::Type::RightParen)) {
@@ -323,7 +321,7 @@ export class Parser {
             auto span = current_token.span;
             auto* value = parse_expression();
 
-            arguments.push_back(program.nodes.create<Argument>(span, "", value));
+            arguments.push_back(context.nodes.create<Argument>(span, "", value));
 
             if (!check(Token::Type::RightParen)) {
                 expect(Token::Type::Comma);
@@ -348,7 +346,7 @@ export class Parser {
             }
 
             generic_parameters.push_back(
-                program.nodes.create<GenericParameter>(span, std::move(name), constraint));
+                context.nodes.create<GenericParameter>(span, std::move(name), constraint));
 
             if (!check(Token::Type::GreaterThan)) {
                 expect(Token::Type::Comma);
@@ -369,7 +367,7 @@ export class Parser {
             auto* type_expression = parse_type_expression();
 
             generic_arguments.push_back(
-                program.nodes.create<GenericArgument>(span, "", type_expression));
+                context.nodes.create<GenericArgument>(span, "", type_expression));
 
             if (!check(Token::Type::GreaterThan)) {
                 expect(Token::Type::Comma);
@@ -397,7 +395,7 @@ export class Parser {
             auto* element = parse_type_expression();
 
             const auto* pointer_type = context.types.create<PointerType>(element->type, is_mutable);
-            return program.nodes.create<TypeExpression>(span, pointer_type);
+            return context.nodes.create<TypeExpression>(span, pointer_type);
         }
 
         auto name = std::string(expect(Token::Type::Identifier).value);
@@ -432,7 +430,7 @@ export class Parser {
             type = context.types.create<ArrayType>(type, size);
         }
 
-        return program.nodes.create<TypeExpression>(span, type);
+        return context.nodes.create<TypeExpression>(span, type);
     }
 
     Expression* parse_unary_expression() {
@@ -464,7 +462,7 @@ export class Parser {
         advance();
 
         auto* operand = parse_expression(Precedence::Type::Unary);
-        return program.nodes.create<UnaryExpression>(span, op, operand);
+        return context.nodes.create<UnaryExpression>(span, op, operand);
     }
 
     Expression* parse_binary_expression(Expression* left) {
@@ -530,11 +528,11 @@ export class Parser {
         if (op == BinaryExpression::Operator::Type::As ||
             op == BinaryExpression::Operator::Type::Is) {
             auto* right = parse_type_expression();
-            return program.nodes.create<BinaryExpression>(span, left, op, right);
+            return context.nodes.create<BinaryExpression>(span, left, op, right);
         }
 
         auto* right = parse_expression(precedence);
-        return program.nodes.create<BinaryExpression>(span, left, op, right);
+        return context.nodes.create<BinaryExpression>(span, left, op, right);
     }
 
     IfExpression* parse_if_expression() {
@@ -553,7 +551,7 @@ export class Parser {
             else_branch = parse_block_statement();
         }
 
-        return program.nodes.create<IfExpression>(span, condition, then_branch, else_branch);
+        return context.nodes.create<IfExpression>(span, condition, then_branch, else_branch);
     }
 
     StructLiteralExpression*
@@ -572,7 +570,7 @@ export class Parser {
             auto* value = parse_expression();
 
             fields.push_back(
-                program.nodes.create<StructLiteralField>(field_span, std::move(field_name), value));
+                context.nodes.create<StructLiteralField>(field_span, std::move(field_name), value));
 
             if (!check(Token::Type::RightBrace)) {
                 expect(Token::Type::Comma);
@@ -581,7 +579,7 @@ export class Parser {
 
         expect(Token::Type::RightBrace);
 
-        return program.nodes.create<StructLiteralExpression>(
+        return context.nodes.create<StructLiteralExpression>(
             span, name, std::move(generic_arguments), std::move(fields));
     }
 
@@ -593,7 +591,7 @@ export class Parser {
         auto arguments = parse_arguments();
         expect(Token::Type::RightParen);
 
-        return program.nodes.create<CallExpression>(span, callee, std::move(generic_arguments),
+        return context.nodes.create<CallExpression>(span, callee, std::move(generic_arguments),
                                                     std::move(arguments));
     }
 
@@ -604,7 +602,7 @@ export class Parser {
         auto* index = parse_expression();
         expect(Token::Type::RightBracket);
 
-        return program.nodes.create<IndexExpression>(span, value, index);
+        return context.nodes.create<IndexExpression>(span, value, index);
     }
 
     MemberExpression* parse_member_expression(Expression* value) {
@@ -613,7 +611,7 @@ export class Parser {
         expect(Token::Type::Dot);
         auto member = std::string(expect(Token::Type::Identifier).value);
 
-        return program.nodes.create<MemberExpression>(span, value, std::move(member));
+        return context.nodes.create<MemberExpression>(span, value, std::move(member));
     }
 
     ImportStatement* parse_import_statement() {
@@ -625,15 +623,15 @@ export class Parser {
 
         auto first = expect(Token::Type::Identifier);
         path.push_back(
-            program.nodes.create<IdentifierExpression>(first.span, std::string(first.value)));
+            context.nodes.create<IdentifierExpression>(first.span, std::string(first.value)));
 
         while (match(Token::Type::Dot)) {
             auto part = expect(Token::Type::Identifier);
             path.push_back(
-                program.nodes.create<IdentifierExpression>(part.span, std::string(part.value)));
+                context.nodes.create<IdentifierExpression>(part.span, std::string(part.value)));
         }
 
-        return program.nodes.create<ImportStatement>(span, std::move(path));
+        return context.nodes.create<ImportStatement>(span, std::move(path));
     }
 
     StructDeclaration* parse_struct_declaration(Visibility::Type visibility) {
@@ -663,13 +661,13 @@ export class Parser {
             expect(Token::Type::Colon);
             auto* type_expression = parse_type_expression();
 
-            fields.push_back(program.nodes.create<StructField>(
+            fields.push_back(context.nodes.create<StructField>(
                 field_span, field_visibility, std::move(field_name), type_expression));
         }
 
         expect(Token::Type::RightBrace);
 
-        return program.nodes.create<StructDeclaration>(
+        return context.nodes.create<StructDeclaration>(
             span, visibility, std::move(name), std::move(generic_parameters), std::move(fields));
     }
 
@@ -690,7 +688,7 @@ export class Parser {
         expect(Token::Type::Colon);
         auto* return_type = parse_type_expression();
 
-        return program.nodes.create<FunctionPrototype>(span, std::move(name),
+        return context.nodes.create<FunctionPrototype>(span, std::move(name),
                                                        std::move(generic_parameters),
                                                        std::move(parameters), return_type);
     }
@@ -703,7 +701,7 @@ export class Parser {
         auto* prototype = parse_function_prototype();
         auto* body = parse_block_statement();
 
-        return program.nodes.create<FunctionDeclaration>(span, visibility, prototype, body);
+        return context.nodes.create<FunctionDeclaration>(span, visibility, prototype, body);
     }
 
     VarDeclaration* parse_var_declaration(Visibility::Type visibility) {
@@ -732,7 +730,7 @@ export class Parser {
             initializer = parse_expression();
         }
 
-        return program.nodes.create<VarDeclaration>(span, visibility, storage_kind, std::move(name),
+        return context.nodes.create<VarDeclaration>(span, visibility, storage_kind, std::move(name),
                                                     type_expression, initializer);
     }
 
@@ -746,7 +744,7 @@ export class Parser {
             value = parse_expression();
         }
 
-        return program.nodes.create<ReturnStatement>(span, value);
+        return context.nodes.create<ReturnStatement>(span, value);
     }
 
     BlockStatement* parse_block_statement() {
@@ -765,7 +763,7 @@ export class Parser {
 
         expect(Token::Type::RightBrace);
 
-        return program.nodes.create<BlockStatement>(span, std::move(statements));
+        return context.nodes.create<BlockStatement>(span, std::move(statements));
     }
 
     Statement* parse_extern_declaration(Visibility::Type visibility) {
@@ -778,7 +776,7 @@ export class Parser {
             advance();
 
             auto* prototype = parse_function_prototype();
-            return program.nodes.create<ExternFunctionDeclaration>(span, visibility, prototype);
+            return context.nodes.create<ExternFunctionDeclaration>(span, visibility, prototype);
         }
         case Token::Type::Var: {
             advance();
@@ -787,7 +785,7 @@ export class Parser {
             expect(Token::Type::Colon);
             auto* type_expression = parse_type_expression();
 
-            return program.nodes.create<ExternVarDeclaration>(span, visibility, std::move(name),
+            return context.nodes.create<ExternVarDeclaration>(span, visibility, std::move(name),
                                                               type_expression);
         }
         default:
@@ -801,7 +799,9 @@ export class Parser {
         : context(context), lexer(std::move(lexer)), logger(context.logger),
           current_token(this->lexer.next_token()), peek_token(this->lexer.next_token()) {}
 
-    Program* parse() {
+    Program parse() {
+        Program program;
+
         while (!check(Token::Type::Eof)) {
             program.statements.push_back(parse_statement());
 
@@ -810,6 +810,6 @@ export class Parser {
             }
         }
 
-        return &program;
+        return program;
     }
 };

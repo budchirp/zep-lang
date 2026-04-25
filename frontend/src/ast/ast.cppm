@@ -109,9 +109,9 @@ export class TypeExpression : public Expression {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::TypeExpression;
 
-    const Type* type;
-
-    TypeExpression(Span span, const Type* type) : Expression(static_kind, span), type(type) {}
+    TypeExpression(Span span, const Type* type) : Expression(static_kind, span) {
+        this->type = type;
+    }
 
     template <typename T>
     T accept(Visitor<T>& visitor) {

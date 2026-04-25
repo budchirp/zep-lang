@@ -20,6 +20,61 @@ export class TypeResolver {
 
     std::unordered_map<std::string, const Type*> substitutions;
 
+    std::vector<GenericParameterType>
+    substitute_generic_parameters(const std::vector<GenericParameterType>& parameters,
+                                  const std::unordered_map<std::string, const Type*>& map,
+                                  bool& changed) {
+        std::vector<GenericParameterType> result;
+        result.reserve(parameters.size());
+
+        for (const auto& parameter : parameters) {
+            const auto* substituted = substitute_type(parameter.constraint, map);
+            if (substituted != parameter.constraint) {
+                changed = true;
+            }
+
+            result.emplace_back(parameter.name, substituted);
+        }
+
+        return result;
+    }
+
+    std::vector<StructFieldType>
+    substitute_fields(const std::vector<StructFieldType>& fields,
+                      const std::unordered_map<std::string, const Type*>& map, bool& changed) {
+        std::vector<StructFieldType> result;
+        result.reserve(fields.size());
+
+        for (const auto& field : fields) {
+            const auto* substituted = substitute_type(field.type, map);
+            if (substituted != field.type) {
+                changed = true;
+            }
+
+            result.emplace_back(field.name, substituted);
+        }
+
+        return result;
+    }
+
+    std::vector<ParameterType>
+    substitute_parameters(const std::vector<ParameterType>& parameters,
+                          const std::unordered_map<std::string, const Type*>& map, bool& changed) {
+        std::vector<ParameterType> result;
+        result.reserve(parameters.size());
+
+        for (const auto& parameter : parameters) {
+            const auto* substituted = substitute_type(parameter.type, map);
+            if (substituted != parameter.type) {
+                changed = true;
+            }
+
+            result.emplace_back(parameter.name, substituted);
+        }
+
+        return result;
+    }
+
     const Type*
     substitute_type(const Type* type,
                     const std::unordered_map<std::string, const Type*>& substitution_map) {
@@ -64,18 +119,8 @@ export class TypeResolver {
         case Type::Kind::Type::Struct: {
             const auto* struct_type = type->as<StructType>();
 
-            std::vector<StructFieldType> new_fields;
-            new_fields.reserve(struct_type->fields.size());
             bool changed = false;
-            for (const StructFieldType& field : struct_type->fields) {
-                const auto* substituted = substitute_type(field.type, substitution_map);
-
-                if (substituted != field.type) {
-                    changed = true;
-                }
-
-                new_fields.emplace_back(field.name, substituted);
-            }
+            auto new_fields = substitute_fields(struct_type->fields, substitution_map, changed);
 
             if (!changed) {
                 return type;
@@ -89,18 +134,9 @@ export class TypeResolver {
             const auto* function_type = type->as<FunctionType>();
             const auto* return_type = substitute_type(function_type->return_type, substitution_map);
 
-            std::vector<ParameterType> new_parameters;
-            new_parameters.reserve(function_type->parameters.size());
             bool changed = return_type != function_type->return_type;
-            for (const ParameterType& parameter : function_type->parameters) {
-                const auto* substituted = substitute_type(parameter.type, substitution_map);
-
-                if (substituted != parameter.type) {
-                    changed = true;
-                }
-
-                new_parameters.emplace_back(parameter.name, substituted);
-            }
+            auto new_parameters =
+                substitute_parameters(function_type->parameters, substitution_map, changed);
 
             if (!changed) {
                 return type;
@@ -114,6 +150,23 @@ export class TypeResolver {
         default:
             return type;
         }
+    }
+
+    std::vector<GenericParameterType>
+    resolve_generic_parameters(const std::vector<GenericParameterType>& parameters, bool& changed) {
+        std::vector<GenericParameterType> result;
+        result.reserve(parameters.size());
+
+        for (const auto& parameter : parameters) {
+            const auto* resolved = resolve_type(parameter.constraint);
+            if (resolved != parameter.constraint) {
+                changed = true;
+            }
+
+            result.emplace_back(parameter.name, resolved);
+        }
+
+        return result;
     }
 
   public:
@@ -163,11 +216,8 @@ export class TypeResolver {
 
             if (!named->generic_arguments.empty()) {
                 const auto* struct_type = resolved_symbol_type->as<StructType>();
-                if (struct_type == nullptr) {
-                    return nullptr;
-                }
-
-                if (named->generic_arguments.size() == struct_type->generic_parameters.size()) {
+                if (struct_type != nullptr &&
+                    named->generic_arguments.size() == struct_type->generic_parameters.size()) {
                     std::unordered_map<std::string, const Type*> substitution_map;
 
                     for (std::size_t i = 0; i < named->generic_arguments.size(); ++i) {
@@ -207,36 +257,20 @@ export class TypeResolver {
         case Type::Kind::Type::Struct: {
             const auto* struct_type = type->as<StructType>();
 
+            bool changed = false;
+
             std::vector<StructFieldType> resolved_fields;
             resolved_fields.reserve(struct_type->fields.size());
-            bool changed = false;
 
             for (const StructFieldType& field : struct_type->fields) {
                 const auto* resolved_field_type = resolve_type(field.type);
-
                 if (resolved_field_type != field.type) {
                     changed = true;
                 }
-
                 resolved_fields.emplace_back(field.name, resolved_field_type);
             }
 
-            std::vector<GenericParameterType> resolved_params;
-            resolved_params.reserve(struct_type->generic_parameters.size());
-
-            for (const GenericParameterType& generic_parameter : struct_type->generic_parameters) {
-                const Type* resolved_constraint = nullptr;
-
-                if (generic_parameter.constraint != nullptr) {
-                    resolved_constraint = resolve_type(generic_parameter.constraint);
-                }
-
-                if (resolved_constraint != generic_parameter.constraint) {
-                    changed = true;
-                }
-
-                resolved_params.emplace_back(generic_parameter.name, resolved_constraint);
-            }
+            auto resolved_params = resolve_generic_parameters(struct_type->generic_parameters, changed);
 
             if (!changed) {
                 return type;
@@ -257,31 +291,14 @@ export class TypeResolver {
 
             for (const ParameterType& parameter : function_type->parameters) {
                 const auto* resolved_param_type = resolve_type(parameter.type);
-
                 if (resolved_param_type != parameter.type) {
                     changed = true;
                 }
-
                 resolved_parameters.emplace_back(parameter.name, resolved_param_type);
             }
 
-            std::vector<GenericParameterType> resolved_generic_params;
-            resolved_generic_params.reserve(function_type->generic_parameters.size());
-
-            for (const GenericParameterType& generic_parameter :
-                 function_type->generic_parameters) {
-                const Type* resolved_constraint = nullptr;
-
-                if (generic_parameter.constraint != nullptr) {
-                    resolved_constraint = resolve_type(generic_parameter.constraint);
-                }
-
-                if (resolved_constraint != generic_parameter.constraint) {
-                    changed = true;
-                }
-
-                resolved_generic_params.emplace_back(generic_parameter.name, resolved_constraint);
-            }
+            auto resolved_generic_params =
+                resolve_generic_parameters(function_type->generic_parameters, changed);
 
             if (!changed) {
                 return type;

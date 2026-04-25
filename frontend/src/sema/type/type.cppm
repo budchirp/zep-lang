@@ -34,6 +34,8 @@ export class Type {
   public:
     const Kind::Type kind;
 
+    virtual ~Type() = default;
+
     template <typename T>
     T* as() {
         if (kind == T::static_kind) {
@@ -61,7 +63,7 @@ export class Type {
 
     bool compatible(const Type* other) const;
 
-    std::string to_string() const;
+    virtual std::string to_string() const = 0;
 };
 
 // ---
@@ -106,6 +108,8 @@ export class AnyType : public Type {
     static constexpr Kind::Type static_kind = Kind::Type::Any;
 
     explicit AnyType() : Type(static_kind) {}
+
+    std::string to_string() const override { return "any"; }
 };
 
 export class VoidType : public Type {
@@ -113,6 +117,8 @@ export class VoidType : public Type {
     static constexpr Kind::Type static_kind = Kind::Type::Void;
 
     explicit VoidType() : Type(static_kind) {}
+
+    std::string to_string() const override { return "void"; }
 };
 
 export class StringType : public Type {
@@ -120,6 +126,8 @@ export class StringType : public Type {
     static constexpr Kind::Type static_kind = Kind::Type::String;
 
     explicit StringType() : Type(static_kind) {}
+
+    std::string to_string() const override { return "string"; }
 };
 
 export class BooleanType : public Type {
@@ -127,6 +135,8 @@ export class BooleanType : public Type {
     static constexpr Kind::Type static_kind = Kind::Type::Boolean;
 
     explicit BooleanType() : Type(static_kind) {}
+
+    std::string to_string() const override { return "bool"; }
 };
 
 export class IntegerType : public Type {
@@ -138,6 +148,8 @@ export class IntegerType : public Type {
 
     IntegerType(bool is_unsigned, std::uint8_t size)
         : Type(static_kind), is_unsigned(is_unsigned), size(size) {}
+
+    std::string to_string() const override { return (is_unsigned ? "u" : "i") + std::to_string(size); }
 };
 
 export class FloatType : public Type {
@@ -147,6 +159,8 @@ export class FloatType : public Type {
     std::uint8_t size;
 
     FloatType(std::uint8_t size) : Type(static_kind), size(size) {}
+
+    std::string to_string() const override { return "f" + std::to_string(size); }
 };
 
 export class NamedType : public Type {
@@ -159,6 +173,25 @@ export class NamedType : public Type {
     NamedType(std::string name, std::vector<GenericArgumentType> generic_arguments)
         : Type(static_kind), name(std::move(name)),
           generic_arguments(std::move(generic_arguments)) {}
+
+    std::string to_string() const override {
+        std::string result = name;
+        if (!generic_arguments.empty()) {
+            result += "[";
+            for (std::size_t i = 0; i < generic_arguments.size(); ++i) {
+                if (i != 0) {
+                    result += ", ";
+                }
+                const auto& arg = generic_arguments[i];
+                if (!arg.name.empty()) {
+                    result += arg.name + " = ";
+                }
+                result += arg.type == nullptr ? std::string("unknown") : arg.type->to_string();
+            }
+            result += "]";
+        }
+        return result;
+    }
 };
 
 export class ArrayType : public Type {
@@ -170,6 +203,16 @@ export class ArrayType : public Type {
 
     ArrayType(const Type* element, std::optional<std::size_t> size)
         : Type(static_kind), element(element), size(size) {}
+
+    std::string to_string() const override {
+        std::string inner = element == nullptr ? std::string("unknown") : element->to_string();
+        inner += "[";
+        if (size.has_value()) {
+            inner += std::to_string(*size);
+        }
+        inner += "]";
+        return inner;
+    }
 };
 
 export class PointerType : public Type {
@@ -181,6 +224,11 @@ export class PointerType : public Type {
 
     PointerType(const Type* element, bool is_mutable)
         : Type(static_kind), element(element), is_mutable(is_mutable) {}
+
+    std::string to_string() const override {
+        std::string inner = element == nullptr ? std::string("unknown") : element->to_string();
+        return is_mutable ? "*mut " + inner : "*" + inner;
+    }
 };
 
 export class StructType : public Type {
@@ -196,6 +244,19 @@ export class StructType : public Type {
                std::vector<StructFieldType> fields)
         : Type(static_kind), name(std::move(name)),
           generic_parameters(std::move(generic_parameters)), fields(std::move(fields)) {}
+
+    std::string to_string() const override {
+        std::string result = name;
+        if (!generic_parameters.empty()) {
+            result += "<";
+            for (std::size_t i = 0; i < generic_parameters.size(); ++i) {
+                if (i != 0) result += ", ";
+                result += generic_parameters[i].name;
+            }
+            result += ">";
+        }
+        return result;
+    }
 };
 
 export class FunctionType : public Type {
@@ -217,7 +278,48 @@ export class FunctionType : public Type {
           parameters(std::move(parameters)), generic_parameters(std::move(generic_parameters)),
           variadic(variadic) {}
 
-    bool conflicts_with(const FunctionType& other) const;
+    bool conflicts_with(const FunctionType& other) const {
+        if (parameters.size() != other.parameters.size()) {
+            return false;
+        }
+
+        for (std::size_t i = 0; i < parameters.size(); ++i) {
+            const auto* a = parameters[i].type;
+            const auto* b = other.parameters[i].type;
+            if (a != nullptr && b != nullptr && !a->compatible(b)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    std::string to_string() const override {
+        std::string result = "fn";
+        if (!name.empty()) {
+            result += " " + name;
+        }
+        if (!generic_parameters.empty()) {
+            result += "<";
+            for (std::size_t i = 0; i < generic_parameters.size(); ++i) {
+                if (i != 0) result += ", ";
+                result += generic_parameters[i].name;
+            }
+            result += ">";
+        }
+        result += "(";
+        for (std::size_t i = 0; i < parameters.size(); ++i) {
+            if (i != 0) result += ", ";
+            result += parameters[i].name + ": " +
+                      (parameters[i].type ? parameters[i].type->to_string() : "unknown");
+        }
+        if (variadic) {
+            if (!parameters.empty()) result += ", ";
+            result += "...";
+        }
+        result += "): " + (return_type ? return_type->to_string() : "unknown");
+        return result;
+    }
 };
 
 inline bool Type::compatible(const Type* other) const {
@@ -253,7 +355,7 @@ inline bool Type::compatible(const Type* other) const {
         const auto* left_pointer = as<PointerType>();
         const auto* right_pointer = other->as<PointerType>();
 
-        if (left_pointer->is_mutable != right_pointer->is_mutable) {
+        if (!left_pointer->is_mutable && right_pointer->is_mutable) {
             return false;
         }
 
@@ -360,90 +462,3 @@ inline bool Type::compatible(const Type* other) const {
     }
 }
 
-inline bool FunctionType::conflicts_with(const FunctionType& other) const {
-    if (parameters.size() != other.parameters.size()) {
-        return false;
-    }
-
-    for (std::size_t i = 0; i < parameters.size(); ++i) {
-        const Type* a = parameters[i].type;
-        const Type* b = other.parameters[i].type;
-        if (a != nullptr && b != nullptr && !a->compatible(b)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-inline std::string Type::to_string() const {
-    switch (kind) {
-    case Kind::Type::Any:
-        return "any";
-    case Kind::Type::Void:
-        return "void";
-    case Kind::Type::String:
-        return "string";
-    case Kind::Type::Boolean:
-        return "bool";
-    case Kind::Type::Integer: {
-        const IntegerType* integer = as<IntegerType>();
-        return (integer->is_unsigned ? "u" : "i") + std::to_string(integer->size);
-    }
-    case Kind::Type::Float: {
-        const FloatType* float_type = as<FloatType>();
-        return "f" + std::to_string(float_type->size);
-    }
-    case Kind::Type::Named: {
-        const NamedType* named = as<NamedType>();
-        std::string result = named->name;
-        if (!named->generic_arguments.empty()) {
-            result += "[";
-            for (std::size_t i = 0; i < named->generic_arguments.size(); ++i) {
-                if (i != 0) {
-                    result += ", ";
-                }
-                const GenericArgumentType& arg = named->generic_arguments[i];
-                if (!arg.name.empty()) {
-                    result += arg.name + " = ";
-                }
-                const auto arg_type = arg.type;
-                result += arg_type == nullptr ? std::string("unknown") : arg_type->to_string();
-            }
-            result += "]";
-        }
-        return result;
-    }
-    case Kind::Type::Array: {
-        const ArrayType* array = as<ArrayType>();
-        const auto element = array->element;
-        std::string inner = element == nullptr ? std::string("unknown") : element->to_string();
-        inner += "[";
-        if (array->size.has_value()) {
-            inner += std::to_string(*array->size);
-        }
-        inner += "]";
-        return inner;
-    }
-    case Kind::Type::Pointer: {
-        const PointerType* pointer = as<PointerType>();
-        const auto element = pointer->element;
-        std::string inner = element == nullptr ? std::string("unknown") : element->to_string();
-        return pointer->is_mutable ? "*mut " + inner : "*" + inner;
-    }
-    case Kind::Type::Struct: {
-        const StructType* struct_type = as<StructType>();
-        return struct_type->name;
-    }
-    case Kind::Type::Function: {
-        const FunctionType* function_type = as<FunctionType>();
-        const auto return_type = function_type->return_type;
-        std::string ret =
-            return_type == nullptr ? std::string("unknown") : return_type->to_string();
-        return "function( -> " + ret + ")";
-    }
-
-    default:
-        return "?";
-    }
-}

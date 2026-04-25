@@ -42,9 +42,7 @@ export class GenericResolver {
         bool all_valid = true;
 
         for (std::size_t i = 0; i < generic_arguments.size(); ++i) {
-            if (emit_errors) {
-                visitor.visit(*generic_arguments[i]);
-            }
+            visitor.visit(*generic_arguments[i]);
 
             const auto* argument_type = generic_arguments[i]->type->type;
             if (argument_type == nullptr) {
@@ -80,12 +78,21 @@ export class GenericResolver {
         return all_valid;
     }
 
-    void define_generic_parameters(const std::vector<GenericParameterType>& generic_parameters) {
+    void
+    activate_generic_parameters(const std::vector<GenericParameterType>& generic_parameters,
+                                bool as_self = false) {
         for (const auto& generic_parameter : generic_parameters) {
-            resolver.add_substitution(generic_parameter.name,
-                                      generic_parameter.constraint != nullptr
-                                          ? generic_parameter.constraint
-                                          : context.env.primitives["any"]);
+            if (as_self) {
+                resolver.add_substitution(
+                    generic_parameter.name,
+                    context.types.create<NamedType>(generic_parameter.name,
+                                                    std::vector<GenericArgumentType>{}));
+            } else {
+                resolver.add_substitution(generic_parameter.name,
+                                          generic_parameter.constraint != nullptr
+                                              ? generic_parameter.constraint
+                                              : context.env.primitives["any"]);
+            }
         }
     }
 };
