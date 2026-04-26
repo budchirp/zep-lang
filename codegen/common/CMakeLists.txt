@@ -1,0 +1,1 @@
+zep_add_module(zep_codegen_common DEPENDS zep_common zep_hir)

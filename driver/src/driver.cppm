@@ -16,9 +16,9 @@ import zep.hir.builder;
 import zep.hir.node.program;
 import zep.hir.debug.dumper;
 import zep.codegen;
+import zep.codegen.driver;
 
 export class Driver {
-  private:
   public:
     Driver() = default;
 
@@ -43,7 +43,7 @@ export class Driver {
         HIRDumper dumper;
         dumper.dump_program(hir_program);
 
-        Codegen codegen;
+        Codegen codegen(Backend::Type::LLVM);
         codegen.generate(hir_program);
     }
 };

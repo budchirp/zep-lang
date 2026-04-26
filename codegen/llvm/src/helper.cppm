@@ -8,22 +8,22 @@ module;
 #include <unordered_map>
 #include <vector>
 
-export module zep.codegen.helper;
+export module zep.codegen.llvm.helper;
 
-import zep.codegen.context;
+import zep.codegen.llvm.context;
 import zep.frontend.sema.type;
 import zep.frontend.sema.scope;
 import zep.frontend.sema.symbol;
 import zep.frontend.sema.kind;
 import zep.common.logger;
 
-export class CodegenHelper {
+export class LLVMCodegenHelper {
   private:
-    CodegenContext& context;
+    LLVMCodegenContext& context;
     std::unordered_map<std::string, llvm::StructType*> struct_types;
 
   public:
-    explicit CodegenHelper(CodegenContext& context) : context(context) {}
+    explicit LLVMCodegenHelper(LLVMCodegenContext& context) : context(context) {}
 
     llvm::Type* get_llvm_type(const Type* type) {
         if (type == nullptr) {

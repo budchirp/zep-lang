@@ -5,15 +5,15 @@ module;
 #include <llvm/IR/Module.h>
 #include <memory>
 
-export module zep.codegen.context;
+export module zep.codegen.llvm.context;
 
-export class CodegenContext {
+export class LLVMCodegenContext {
   public:
     llvm::LLVMContext llvm_context;
     llvm::IRBuilder<> builder;
     std::unique_ptr<llvm::Module> module;
 
-    explicit CodegenContext()
+    explicit LLVMCodegenContext()
         : builder(llvm_context),
           module(std::make_unique<llvm::Module>("zep", llvm_context)) {}
 };

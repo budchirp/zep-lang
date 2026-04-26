@@ -6,7 +6,7 @@ module;
 #include <unordered_map>
 #include <vector>
 
-export module zep.codegen.scope;
+export module zep.codegen.llvm.scope;
 
 export class CodegenScope {
   private:
