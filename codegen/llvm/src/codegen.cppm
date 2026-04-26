@@ -4,11 +4,18 @@ module;
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Value.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/MC/TargetRegistry.h>
+#include <llvm/Support/FileSystem.h>
 #include <llvm/Support/raw_ostream.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/Target/TargetOptions.h>
+#include <llvm/TargetParser/Host.h>
 #include <memory>
 #include <string>
 #include <vector>
@@ -38,9 +45,7 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
         return context.builder.CreateStore(value, pointer);
     }
 
-    llvm::Value* allocate(llvm::Type* type) {
-        return context.builder.CreateAlloca(type, nullptr);
-    }
+    llvm::Value* allocate(llvm::Type* type) { return context.builder.CreateAlloca(type, nullptr); }
 
     llvm::Value* address_of(HIRExpression* node) {
         if (node == nullptr) {
@@ -179,17 +184,28 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
         }
 
         switch (node.op) {
-        case BinaryExpression::Operator::Type::Plus:        return builder.CreateAdd(left, right);
-        case BinaryExpression::Operator::Type::Minus:       return builder.CreateSub(left, right);
-        case BinaryExpression::Operator::Type::Asterisk:    return builder.CreateMul(left, right);
-        case BinaryExpression::Operator::Type::Divide:      return builder.CreateSDiv(left, right);
-        case BinaryExpression::Operator::Type::Equals:      return builder.CreateICmpEQ(left, right);
-        case BinaryExpression::Operator::Type::NotEquals:   return builder.CreateICmpNE(left, right);
-        case BinaryExpression::Operator::Type::LessThan:    return builder.CreateICmpSLT(left, right);
-        case BinaryExpression::Operator::Type::GreaterThan: return builder.CreateICmpSGT(left, right);
-        case BinaryExpression::Operator::Type::LessEqual:   return builder.CreateICmpSLE(left, right);
-        case BinaryExpression::Operator::Type::GreaterEqual:return builder.CreateICmpSGE(left, right);
-        default:                                             return nullptr;
+        case BinaryExpression::Operator::Type::Plus:
+            return builder.CreateAdd(left, right);
+        case BinaryExpression::Operator::Type::Minus:
+            return builder.CreateSub(left, right);
+        case BinaryExpression::Operator::Type::Asterisk:
+            return builder.CreateMul(left, right);
+        case BinaryExpression::Operator::Type::Divide:
+            return builder.CreateSDiv(left, right);
+        case BinaryExpression::Operator::Type::Equals:
+            return builder.CreateICmpEQ(left, right);
+        case BinaryExpression::Operator::Type::NotEquals:
+            return builder.CreateICmpNE(left, right);
+        case BinaryExpression::Operator::Type::LessThan:
+            return builder.CreateICmpSLT(left, right);
+        case BinaryExpression::Operator::Type::GreaterThan:
+            return builder.CreateICmpSGT(left, right);
+        case BinaryExpression::Operator::Type::LessEqual:
+            return builder.CreateICmpSLE(left, right);
+        case BinaryExpression::Operator::Type::GreaterEqual:
+            return builder.CreateICmpSGE(left, right);
+        default:
+            return nullptr;
         }
     }
 
@@ -202,11 +218,16 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
         auto& builder = context.builder;
 
         switch (node.op) {
-        case UnaryExpression::Operator::Type::Minus:       return builder.CreateNeg(operand);
-        case UnaryExpression::Operator::Type::Not:         return builder.CreateNot(operand);
-        case UnaryExpression::Operator::Type::Dereference: return load(helper.get_llvm_type(node.type), operand);
-        case UnaryExpression::Operator::Type::AddressOf:   return address_of(node.operand);
-        default:                                           return nullptr;
+        case UnaryExpression::Operator::Type::Minus:
+            return builder.CreateNeg(operand);
+        case UnaryExpression::Operator::Type::Not:
+            return builder.CreateNot(operand);
+        case UnaryExpression::Operator::Type::Dereference:
+            return load(helper.get_llvm_type(node.type), operand);
+        case UnaryExpression::Operator::Type::AddressOf:
+            return address_of(node.operand);
+        default:
+            return nullptr;
         }
     }
 
@@ -288,7 +309,7 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
             for (std::size_t i = 0; i < fields.size(); ++i) {
                 if (fields[i].name == field.name) {
                     auto* field_ptr = context.builder.CreateStructGEP(llvm_type, allocation,
-                                                                       static_cast<unsigned>(i));
+                                                                      static_cast<unsigned>(i));
                     store(value, field_ptr);
                     break;
                 }
@@ -421,12 +442,51 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
   public:
     LLVMCodegen() : helper(context) {}
 
-    void generate(HIRProgram& program) override {
+    void generate(HIRProgram& program, const std::string& output_path) override {
         helper.declare_types(*program.global_scope);
         helper.declare_functions(*program.global_scope);
 
         for (auto* statement : program.statements) {
             statement->accept(*this);
         }
+
+        context.module->print(llvm::errs(), nullptr);
+
+        llvm::InitializeAllTargetInfos();
+        llvm::InitializeAllTargets();
+        llvm::InitializeAllTargetMCs();
+        llvm::InitializeAllAsmParsers();
+        llvm::InitializeAllAsmPrinters();
+
+        llvm::Triple target_triple(llvm::sys::getDefaultTargetTriple());
+        context.module->setTargetTriple(target_triple);
+
+        std::string error;
+        const auto* target = llvm::TargetRegistry::lookupTarget(target_triple, error);
+        if (!target) {
+            throw std::runtime_error("failed to lookup target: " + error);
+        }
+
+        llvm::TargetOptions opt;
+
+        auto rm = std::optional<llvm::Reloc::Model>(llvm::Reloc::PIC_);
+        auto* target_machine = target->createTargetMachine(target_triple, "generic", "", opt, rm);
+        context.module->setDataLayout(target_machine->createDataLayout());
+
+        std::error_code ec;
+
+        llvm::raw_fd_ostream output(output_path, ec, llvm::sys::fs::OF_None);
+        if (ec) {
+            throw std::runtime_error("could not open output file: " + ec.message());
+        }
+
+        llvm::legacy::PassManager pass;
+        if (target_machine->addPassesToEmitFile(pass, output, nullptr,
+                                                llvm::CodeGenFileType::ObjectFile)) {
+            throw std::runtime_error("target machine can't emit a file of this type");
+        }
+
+        pass.run(*context.module);
+        output.flush();
     }
 };

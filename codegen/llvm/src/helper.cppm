@@ -84,7 +84,6 @@ export class LLVMCodegenHelper {
             return llvm_struct;
         }
 
-
         return context.builder.getInt32Ty();
     }
 
@@ -95,7 +94,6 @@ export class LLVMCodegenHelper {
                     llvm::StructType::create(context.llvm_context, struct_type->name);
             }
         }
-
 
         for (const auto& [name, symbol] : global_scope.types) {
             if (const auto* struct_type = symbol->type->as<StructType>(); struct_type != nullptr) {
@@ -132,6 +130,8 @@ export class LLVMCodegenHelper {
                                             llvm_parameter_types, symbol->function_type->variadic);
 
                 auto llvm_linkage = symbol->linkage == Linkage::Type::External
+                                        ? llvm::Function::ExternalLinkage
+                                    : symbol->visibility == Visibility::Type::Public
                                         ? llvm::Function::ExternalLinkage
                                         : llvm::Function::InternalLinkage;
 

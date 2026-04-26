@@ -20,5 +20,5 @@ export class Codegen {
         }
     }
 
-    void generate(HIRProgram& program) { driver->generate(program); }
+    void generate(HIRProgram& program, const std::string& output_path) { driver->generate(program, output_path); }
 };

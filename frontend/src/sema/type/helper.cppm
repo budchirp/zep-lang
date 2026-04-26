@@ -74,8 +74,7 @@ export class TypeHelper {
         const auto* type = builder.build_struct(node);
         node.type = type;
 
-        auto* symbol =
-            sema.symbols.create<TypeSymbol>(node.name, node.span, node.visibility, type);
+        auto* symbol = sema.symbols.create<TypeSymbol>(node.name, node.span, node.visibility, type);
 
         if (!sema.env.current_scope->define_type(node.name, symbol)) {
             context.diagnostics.add_error(node.span, "redefinition of type '" + node.name + "'");
@@ -148,7 +147,7 @@ export class TypeHelper {
         node.type = type;
 
         auto* symbol = sema.symbols.create<VarSymbol>(node.name, node.span, node.visibility,
-                                                         node.storage_kind, type);
+                                                      node.storage_kind, type);
 
         if (!sema.env.current_scope->define_var(node.name, symbol)) {
             context.diagnostics.add_error(node.span,
@@ -167,7 +166,7 @@ export class TypeHelper {
         node.type = type;
 
         auto* symbol = sema.symbols.create<VarSymbol>(node.name, node.span, node.visibility,
-                                                         StorageKind::Type::Var, type);
+                                                      StorageKind::Type::Var, type);
 
         if (!sema.env.current_scope->define_var(node.name, symbol)) {
             context.diagnostics.add_error(node.span,

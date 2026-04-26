@@ -19,27 +19,26 @@ export class CompileCommand : public argman::Command {
                 .description = "Compile a Zep source file",
                 .options = {
                     argman::Option("input", "Input source file", std::string("")),
+                    argman::Option("libs", "List of external .zep source files", std::vector<std::string>{}),
+                    argman::Option("obs", "List of external object files (.o) to link", std::vector<std::string>{}),
+                    argman::Option("main", "Entry point symbol or file", std::string("main")),
+                    argman::Option("out", "Output binary name/path", std::string("program")),
                 }};
     }
 
     void execute() override {
-        auto filename = get<std::string>("input");
-        if (filename.empty()) {
+        CompileOptions options;
+        options.input = get<std::string>("input");
+        options.libs = get<std::vector<std::string>>("libs");
+        options.obs = get<std::vector<std::string>>("obs");
+        options.main_symbol = get<std::string>("main");
+        options.out = get<std::string>("out");
+
+        if (options.input.empty()) {
             throw std::invalid_argument("no input file specified (use --input <file>)");
         }
 
-        std::ifstream file(filename);
-        if (!file.is_open()) {
-            throw std::runtime_error("could not open file '" + filename + "'");
-        }
-
-        std::ostringstream buffer;
-        buffer << file.rdbuf();
-        auto content = buffer.str();
-
-        Source source(filename, content);
-
         Driver driver;
-        driver.run(source);
+        driver.run(options);
     }
 };

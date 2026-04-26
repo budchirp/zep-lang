@@ -1,6 +1,7 @@
 module;
 
 #include <cstdint>
+#include <string>
 
 export module zep.codegen.driver;
 
@@ -14,5 +15,5 @@ export class Backend {
 export class CodegenDriver {
   public:
     virtual ~CodegenDriver() = default;
-    virtual void generate(HIRProgram& program) = 0;
+    virtual void generate(HIRProgram& program, const std::string& output_path) = 0;
 };

@@ -67,8 +67,8 @@ export class HIRBuilder : public Visitor<HIRNode*> {
 
   private:
     HIRNode* visit(TypeExpression& node) override {
-        return program.context.arena.create<HIRTypeExpression>(node.span,
-                                                               lowerer.lower_type(node.type, node.span));
+        return program.context.arena.create<HIRTypeExpression>(
+            node.span, lowerer.lower_type(node.type, node.span));
     }
 
     HIRNode* visit(GenericParameter& node [[maybe_unused]]) override { return nullptr; }
@@ -80,23 +80,23 @@ export class HIRBuilder : public Visitor<HIRNode*> {
     HIRNode* visit(StructLiteralField& node [[maybe_unused]]) override { return nullptr; }
 
     HIRNode* visit(NumberLiteral& node) override {
-        return program.context.arena.create<HIRNumberLiteral>(node.span, node.value,
-                                                              lowerer.lower_type(node.type, node.span));
+        return program.context.arena.create<HIRNumberLiteral>(
+            node.span, node.value, lowerer.lower_type(node.type, node.span));
     }
 
     HIRNode* visit(FloatLiteral& node) override {
-        return program.context.arena.create<HIRFloatLiteral>(node.span, node.value,
-                                                             lowerer.lower_type(node.type, node.span));
+        return program.context.arena.create<HIRFloatLiteral>(
+            node.span, node.value, lowerer.lower_type(node.type, node.span));
     }
 
     HIRNode* visit(StringLiteral& node) override {
-        return program.context.arena.create<HIRStringLiteral>(node.span, node.value,
-                                                              lowerer.lower_type(node.type, node.span));
+        return program.context.arena.create<HIRStringLiteral>(
+            node.span, node.value, lowerer.lower_type(node.type, node.span));
     }
 
     HIRNode* visit(BooleanLiteral& node) override {
-        return program.context.arena.create<HIRBooleanLiteral>(node.span, node.value,
-                                                               lowerer.lower_type(node.type, node.span));
+        return program.context.arena.create<HIRBooleanLiteral>(
+            node.span, node.value, lowerer.lower_type(node.type, node.span));
     }
 
     HIRNode* visit(IdentifierExpression& node) override {
@@ -122,7 +122,8 @@ export class HIRBuilder : public Visitor<HIRNode*> {
 
     HIRNode* visit(UnaryExpression& node) override {
         return program.context.arena.create<HIRUnaryExpression>(
-            node.span, node.op, lower_expression(*node.operand), lowerer.lower_type(node.type, node.span));
+            node.span, node.op, lower_expression(*node.operand),
+            lowerer.lower_type(node.type, node.span));
     }
 
     HIRNode* visit(CallExpression& node) override {
@@ -150,7 +151,8 @@ export class HIRBuilder : public Visitor<HIRNode*> {
 
             if (original != nullptr) {
                 auto sub_scope = resolver.scoped_substitutions();
-                lowerer.apply_generic_substitutions(original->prototype->generic_parameters, generic_args);
+                lowerer.apply_generic_substitutions(original->prototype->generic_parameters,
+                                                    generic_args);
                 concrete_callee_type = lowerer.lower_type(original->type, node.span);
             }
 
@@ -235,8 +237,8 @@ export class HIRBuilder : public Visitor<HIRNode*> {
     HIRNode* visit(VarDeclaration& node) override {
         auto* hir_initializer =
             node.initializer != nullptr ? lower_expression(*node.initializer) : nullptr;
-        const auto* var_type =
-            lowerer.lower_type(node.annotation != nullptr ? node.annotation->type : node.type, node.span);
+        const auto* var_type = lowerer.lower_type(
+            node.annotation != nullptr ? node.annotation->type : node.type, node.span);
 
         return program.context.arena.create<HIRVarDeclaration>(
             node.span, node.visibility, node.storage_kind, node.name, var_type, hir_initializer);
@@ -275,8 +277,9 @@ export class HIRBuilder : public Visitor<HIRNode*> {
 
         return program.context.arena.create<HIRFunctionDeclaration>(
             node.span, node.visibility, Linkage::Type::External, node.prototype->name,
-            std::move(hir_parameters), lowerer.lower_type(node.prototype->return_type->type, node.span),
-            nullptr, is_variadic, type);
+            std::move(hir_parameters),
+            lowerer.lower_type(node.prototype->return_type->type, node.span), nullptr, is_variadic,
+            type);
     }
 
     HIRNode* visit(StructDeclaration& node) override {
@@ -293,7 +296,8 @@ export class HIRBuilder : public Visitor<HIRNode*> {
 
   public:
     explicit HIRBuilder(SemaContext& sema)
-        : resolver(sema.types, sema.env), mono_cache(), sema(sema), lowerer(program, resolver, mono_cache, sema, *this) {}
+        : resolver(sema.types, sema.env), mono_cache(), sema(sema),
+          lowerer(program, resolver, mono_cache, sema, *this) {}
 
     HIRProgram lower(Program& ast_program) {
         for (auto& statement : ast_program.statements) {
@@ -301,7 +305,10 @@ export class HIRBuilder : public Visitor<HIRNode*> {
                 function != nullptr && !function->prototype->generic_parameters.empty()) {
                 mono_cache.register_function(function->prototype->name, function);
             } else {
-                visit_statement(*statement);
+                auto* lowered = visit_statement(*statement);
+                if (lowered != nullptr) {
+                    program.statements.push_back(static_cast<HIRStatement*>(lowered));
+                }
             }
         }
 
