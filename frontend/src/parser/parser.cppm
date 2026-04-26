@@ -25,7 +25,6 @@ import zep.frontend.sema.kind;
 
 export class Parser {
   private:
-    Context& context;
     SemaContext& sema;
 
     Lexer lexer;
@@ -186,8 +185,7 @@ export class Parser {
                 auto generic_arguments = parse_generic_arguments();
 
                 if (check(Token::Type::LeftParen)) {
-                    auto* callee =
-                        sema.nodes.create<IdentifierExpression>(span, std::move(name));
+                    auto* callee = sema.nodes.create<IdentifierExpression>(span, std::move(name));
                     return parse_call_expression(callee, std::move(generic_arguments));
                 }
 
@@ -305,8 +303,8 @@ export class Parser {
             expect(Token::Type::Colon);
             auto* type_expression = parse_type_expression();
 
-            parameters.push_back(sema.nodes.create<Parameter>(span, is_variadic, std::move(name),
-                                                                 type_expression));
+            parameters.push_back(
+                sema.nodes.create<Parameter>(span, is_variadic, std::move(name), type_expression));
 
             if (!check(Token::Type::RightParen)) {
                 expect(Token::Type::Comma);
@@ -581,8 +579,8 @@ export class Parser {
 
         expect(Token::Type::RightBrace);
 
-        return sema.nodes.create<StructLiteralExpression>(
-            span, name, std::move(generic_arguments), std::move(fields));
+        return sema.nodes.create<StructLiteralExpression>(span, name, std::move(generic_arguments),
+                                                          std::move(fields));
     }
 
     CallExpression* parse_call_expression(Expression* callee,
@@ -594,7 +592,7 @@ export class Parser {
         expect(Token::Type::RightParen);
 
         return sema.nodes.create<CallExpression>(span, callee, std::move(generic_arguments),
-                                                    std::move(arguments));
+                                                 std::move(arguments));
     }
 
     IndexExpression* parse_index_expression(Expression* value) {
@@ -691,8 +689,8 @@ export class Parser {
         auto* return_type = parse_type_expression();
 
         return sema.nodes.create<FunctionPrototype>(span, std::move(name),
-                                                       std::move(generic_parameters),
-                                                       std::move(parameters), return_type);
+                                                    std::move(generic_parameters),
+                                                    std::move(parameters), return_type);
     }
 
     FunctionDeclaration* parse_function_declaration(Visibility::Type visibility) {
@@ -733,7 +731,7 @@ export class Parser {
         }
 
         return sema.nodes.create<VarDeclaration>(span, visibility, storage_kind, std::move(name),
-                                                    type_expression, initializer);
+                                                 type_expression, initializer);
     }
 
     ReturnStatement* parse_return_statement() {
@@ -788,7 +786,7 @@ export class Parser {
             auto* type_expression = parse_type_expression();
 
             return sema.nodes.create<ExternVarDeclaration>(span, visibility, std::move(name),
-                                                              type_expression);
+                                                           type_expression);
         }
         default:
             logger.error(span, "expected 'fn' or 'var' after 'extern'");
@@ -798,7 +796,7 @@ export class Parser {
 
   public:
     Parser(Context& context, SemaContext& sema, Lexer lexer)
-        : context(context), sema(sema), lexer(std::move(lexer)), logger(context.logger),
+        : sema(sema), lexer(std::move(lexer)), logger(context.logger),
           current_token(this->lexer.next_token()), peek_token(this->lexer.next_token()) {}
 
     Program parse() {

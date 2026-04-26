@@ -1,5 +1,6 @@
 module;
 
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -129,25 +130,14 @@ export class CallResolver {
         int match_count = 0;
 
         for (const auto* symbol : overloads) {
-            const auto* symbol_type = symbol->type;
-            if (symbol_type == nullptr) {
-                continue;
-            }
-
-            const auto* function_type = symbol_type->as<FunctionType>();
-            if (function_type == nullptr) {
-                continue;
-            }
-
-            if (is_valid(function_type, false)) {
+            if (is_valid(symbol->function_type, false)) {
                 best_match = symbol;
                 match_count = match_count + 1;
             }
         }
 
         if (match_count > 1) {
-            context.diagnostics.add_error(node.span, "ambiguous call to '" + name + "'");
-            return nullptr;
+            context.diagnostics.add_warning(node.span, "ambiguous call to '" + name + "'");
         }
 
         if (match_count == 1 && best_match != nullptr) {

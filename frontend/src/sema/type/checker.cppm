@@ -78,8 +78,8 @@ export class TypeChecker : public Visitor<void> {
   public:
     explicit TypeChecker(Context& context, SemaContext& sema)
         : context(context), sema(sema), resolver(sema.types, sema.env),
-          builder(*this, context, sema, resolver),
-          helper(*this, context, sema, resolver, builder) {}
+          builder(*this, context, sema, resolver), helper(*this, context, sema, resolver, builder) {
+    }
 
     void check(Program& program) {
         helper.register_declarations(program);
@@ -543,7 +543,7 @@ export class TypeChecker : public Visitor<void> {
         } else if (!sema.env.current_scope->has_variable(node.name)) {
             sema.env.current_scope->define_var(
                 node.name, sema.symbols.create<VarSymbol>(node.name, node.span, node.visibility,
-                                                             node.storage_kind, var_type));
+                                                          node.storage_kind, var_type));
         }
 
         node.type = var_type;
@@ -571,9 +571,9 @@ export class TypeChecker : public Visitor<void> {
             }
 
             sema.env.current_scope->define_var(
-                parameter.name, sema.symbols.create<VarSymbol>(
-                                    parameter.name, node.span, Visibility::Type::Private,
-                                    StorageKind::Type::Var, parameter_type));
+                parameter.name,
+                sema.symbols.create<VarSymbol>(parameter.name, node.span, Visibility::Type::Private,
+                                               StorageKind::Type::Var, parameter_type));
         }
 
         visit(*node.body);

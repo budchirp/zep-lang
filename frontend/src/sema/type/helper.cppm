@@ -120,7 +120,14 @@ export class TypeHelper {
 
     void define_extern_function(ExternFunctionDeclaration& node) {
         if (node.type != nullptr) {
-            return;
+            for (auto* symbol :
+                 sema.env.current_scope->lookup_function_overloads(node.prototype->name)) {
+                if (symbol->type == node.type) {
+                    return;
+                }
+
+                return;
+            }
         }
 
         const auto* type = builder.build_function(*node.prototype);

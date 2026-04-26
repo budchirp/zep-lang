@@ -19,9 +19,10 @@ export class CompileCommand : public argman::Command {
                 .description = "Compile a Zep source file",
                 .options = {
                     argman::Option("input", "Input source file", std::string("")),
-                    argman::Option("libs", "List of external .zep source files", std::vector<std::string>{}),
-                    argman::Option("obs", "List of external object files (.o) to link", std::vector<std::string>{}),
-                    argman::Option("main", "Entry point symbol or file", std::string("main")),
+                    argman::Option("libs", "List of external .zep source files",
+                                   std::vector<std::string>{}),
+                    argman::Option("objs", "List of external object files (.o) to link",
+                                   std::vector<std::string>{}),
                     argman::Option("out", "Output binary name/path", std::string("program")),
                 }};
     }
@@ -30,8 +31,7 @@ export class CompileCommand : public argman::Command {
         CompileOptions options;
         options.input = get<std::string>("input");
         options.libs = get<std::vector<std::string>>("libs");
-        options.obs = get<std::vector<std::string>>("obs");
-        options.main_symbol = get<std::string>("main");
+        options.objs = get<std::vector<std::string>>("objs");
         options.out = get<std::string>("out");
 
         if (options.input.empty()) {

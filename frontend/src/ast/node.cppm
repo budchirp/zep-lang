@@ -683,7 +683,6 @@ export class FunctionDeclaration : public Statement {
 };
 
 export class ExternFunctionDeclaration : public Statement {
-
   public:
     static constexpr Kind::Type static_kind = Kind::Type::ExternFunctionDeclaration;
 

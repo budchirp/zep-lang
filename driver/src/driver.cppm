@@ -3,12 +3,12 @@ module;
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
+#include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
-#include <stdexcept>
-#include <memory>
-#include <iostream>
 
 export module zep.driver;
 
@@ -26,11 +26,13 @@ import zep.hir.debug.dumper;
 import zep.codegen;
 import zep.codegen.driver;
 
-export struct CompileOptions {
+export class CompileOptions {
+  public:
     std::string input;
+
     std::vector<std::string> libs;
-    std::vector<std::string> obs;
-    std::string main_symbol;
+    std::vector<std::string> objs;
+
     std::string out;
 };
 
@@ -93,7 +95,7 @@ export class Driver {
         for (const auto& obj : generated_objects) {
             link_command += obj + " ";
         }
-        for (const auto& obj : options.obs) {
+        for (const auto& obj : options.objs) {
             link_command += obj + " ";
         }
         link_command += "-o " + options.out;
