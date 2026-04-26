@@ -18,73 +18,65 @@ export module zep.codegen;
 import zep.hir.node;
 import zep.hir.node.program;
 import zep.frontend.sema.type;
+import zep.frontend.node;
 import zep.codegen.context;
+import zep.codegen.scope;
 import zep.codegen.helper;
 import zep.common.logger;
 
 export class Codegen : public HIRVisitor<llvm::Value*> {
   private:
     CodegenContext context;
+    CodegenScope scope;
     CodegenHelper helper;
 
-  public:
-    explicit Codegen() : context(), helper(context) {}
-
-    void generate(HIRProgram& program) {
-        helper.declare_types(*program.global_scope);
-        helper.declare_functions(*program.global_scope);
-
-        for (auto* statement : program.statements) {
-            statement->accept(*this);
-        }
+    llvm::Value* load(llvm::Type* type, llvm::Value* pointer) {
+        return context.builder.CreateLoad(type, pointer);
     }
 
-    int get_member_index(const StructType* struct_type, const std::string& member) {
-        for (std::size_t i = 0; i < struct_type->fields.size(); ++i) {
-            if (struct_type->fields[i].name == member) {
-                return static_cast<int>(i);
-            }
-        }
-
-        return -1;
+    llvm::Value* store(llvm::Value* value, llvm::Value* pointer) {
+        return context.builder.CreateStore(value, pointer);
     }
 
-    llvm::Value* get_address(HIRExpression* node) {
+    llvm::Value* allocate(llvm::Type* type) { return context.builder.CreateAlloca(type, nullptr); }
+
+    llvm::Value* address_of(HIRExpression* node) {
         if (node == nullptr) {
             return nullptr;
         }
 
         if (auto* identifier = node->as<HIRIdentifierExpression>(); identifier != nullptr) {
-            return context.lookup(identifier->name);
+            return scope.lookup(identifier->name);
         }
 
         if (auto* member = node->as<HIRMemberExpression>(); member != nullptr) {
-            auto* type = member->object->type;
-            if (type == nullptr) {
-                return nullptr;
-            }
-
-            const auto* struct_type = type->as<StructType>();
+            const auto* struct_type = member->object->type->as<StructType>();
             if (struct_type == nullptr) {
                 return nullptr;
             }
 
-            auto* address = get_address(member->object);
+            auto* object_address = address_of(member->object);
 
-            if (address == nullptr) {
+            if (object_address == nullptr) {
                 auto* value = member->object->accept(*this);
-                address = context.builder.CreateAlloca(helper.get_llvm_type(struct_type));
-                context.builder.CreateStore(value, address);
+                object_address = allocate(helper.get_llvm_type(struct_type));
+                store(value, object_address);
             }
 
-            auto index = get_member_index(struct_type, member->member);
+            auto* llvm_struct_type = helper.get_llvm_type(struct_type);
+            const auto& fields = struct_type->fields;
+            for (std::size_t i = 0; i < fields.size(); ++i) {
+                if (fields[i].name == member->member) {
+                    return context.builder.CreateStructGEP(llvm_struct_type, object_address,
+                                                           static_cast<unsigned>(i));
+                }
+            }
 
-            return context.builder.CreateStructGEP(helper.get_llvm_type(struct_type), address,
-                                                   static_cast<unsigned>(index));
+            return nullptr;
         }
 
         if (auto* unary = node->as<HIRUnaryExpression>();
-            unary != nullptr && unary->op == HIRUnaryExpression::Operator::Type::Dereference) {
+            unary != nullptr && unary->op == UnaryExpression::Operator::Type::Dereference) {
             return unary->operand->accept(*this);
         }
 
@@ -92,16 +84,14 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
     }
 
     llvm::Value* visit(HIRBlockStatement& node) override {
-        context.enter_scope();
+        scope.enter();
 
         llvm::Value* last = nullptr;
-
         for (auto* statement : node.statements) {
             last = statement->accept(*this);
         }
 
-        context.exit_scope();
-
+        scope.exit();
         return last;
     }
 
@@ -135,12 +125,12 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
     }
 
     llvm::Value* visit(HIRIdentifierExpression& node) override {
-        auto* allocation = context.lookup(node.name);
+        auto* allocation = scope.lookup(node.name);
         if (allocation == nullptr) {
             return nullptr;
         }
 
-        return context.builder.CreateLoad(helper.get_llvm_type(node.type), allocation);
+        return load(helper.get_llvm_type(node.type), allocation);
     }
 
     llvm::Value* visit(HIRBinaryExpression& node) override {
@@ -149,40 +139,36 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
             return nullptr;
         }
 
-        if (node.op == HIRBinaryExpression::Operator::Type::As) {
-            auto* target_llvm_type = helper.get_llvm_type(node.type);
-            if (target_llvm_type == nullptr) {
+        auto& builder = context.builder;
+
+        if (node.op == BinaryExpression::Operator::Type::As) {
+            auto* target_type = helper.get_llvm_type(node.type);
+            if (target_type == nullptr) {
                 return nullptr;
             }
 
-            auto& builder = context.builder;
             auto* source_type = left->getType();
 
-            if (source_type->isIntegerTy() && target_llvm_type->isIntegerTy()) {
-                return builder.CreateIntCast(left, target_llvm_type, true);
+            if (source_type->isIntegerTy() && target_type->isIntegerTy()) {
+                return builder.CreateIntCast(left, target_type, true);
+            }
+            if (source_type->isFloatingPointTy() && target_type->isFloatingPointTy()) {
+                return builder.CreateFPCast(left, target_type);
+            }
+            if (source_type->isIntegerTy() && target_type->isFloatingPointTy()) {
+                return builder.CreateSIToFP(left, target_type);
+            }
+            if (source_type->isFloatingPointTy() && target_type->isIntegerTy()) {
+                return builder.CreateFPToSI(left, target_type);
+            }
+            if (source_type->isIntegerTy() && target_type->isPointerTy()) {
+                return builder.CreateIntToPtr(left, target_type);
+            }
+            if (source_type->isPointerTy() && target_type->isIntegerTy()) {
+                return builder.CreatePtrToInt(left, target_type);
             }
 
-            if (source_type->isFloatingPointTy() && target_llvm_type->isFloatingPointTy()) {
-                return builder.CreateFPCast(left, target_llvm_type);
-            }
-
-            if (source_type->isIntegerTy() && target_llvm_type->isFloatingPointTy()) {
-                return builder.CreateSIToFP(left, target_llvm_type);
-            }
-
-            if (source_type->isFloatingPointTy() && target_llvm_type->isIntegerTy()) {
-                return builder.CreateFPToSI(left, target_llvm_type);
-            }
-
-            if (source_type->isIntegerTy() && target_llvm_type->isPointerTy()) {
-                return builder.CreateIntToPtr(left, target_llvm_type);
-            }
-
-            if (source_type->isPointerTy() && target_llvm_type->isIntegerTy()) {
-                return builder.CreatePtrToInt(left, target_llvm_type);
-            }
-
-            return builder.CreateBitCast(left, target_llvm_type);
+            return builder.CreateBitCast(left, target_type);
         }
 
         auto* right = node.right->accept(*this);
@@ -190,28 +176,26 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
             return nullptr;
         }
 
-        auto& builder = context.builder;
-
         switch (node.op) {
-        case HIRBinaryExpression::Operator::Type::Plus:
+        case BinaryExpression::Operator::Type::Plus:
             return builder.CreateAdd(left, right);
-        case HIRBinaryExpression::Operator::Type::Minus:
+        case BinaryExpression::Operator::Type::Minus:
             return builder.CreateSub(left, right);
-        case HIRBinaryExpression::Operator::Type::Asterisk:
+        case BinaryExpression::Operator::Type::Asterisk:
             return builder.CreateMul(left, right);
-        case HIRBinaryExpression::Operator::Type::Divide:
+        case BinaryExpression::Operator::Type::Divide:
             return builder.CreateSDiv(left, right);
-        case HIRBinaryExpression::Operator::Type::Equals:
+        case BinaryExpression::Operator::Type::Equals:
             return builder.CreateICmpEQ(left, right);
-        case HIRBinaryExpression::Operator::Type::NotEquals:
+        case BinaryExpression::Operator::Type::NotEquals:
             return builder.CreateICmpNE(left, right);
-        case HIRBinaryExpression::Operator::Type::LessThan:
+        case BinaryExpression::Operator::Type::LessThan:
             return builder.CreateICmpSLT(left, right);
-        case HIRBinaryExpression::Operator::Type::GreaterThan:
+        case BinaryExpression::Operator::Type::GreaterThan:
             return builder.CreateICmpSGT(left, right);
-        case HIRBinaryExpression::Operator::Type::LessEqual:
+        case BinaryExpression::Operator::Type::LessEqual:
             return builder.CreateICmpSLE(left, right);
-        case HIRBinaryExpression::Operator::Type::GreaterEqual:
+        case BinaryExpression::Operator::Type::GreaterEqual:
             return builder.CreateICmpSGE(left, right);
         default:
             return nullptr;
@@ -227,14 +211,14 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
         auto& builder = context.builder;
 
         switch (node.op) {
-        case HIRUnaryExpression::Operator::Type::Minus:
+        case UnaryExpression::Operator::Type::Minus:
             return builder.CreateNeg(operand);
-        case HIRUnaryExpression::Operator::Type::Not:
+        case UnaryExpression::Operator::Type::Not:
             return builder.CreateNot(operand);
-        case HIRUnaryExpression::Operator::Type::Dereference:
-            return builder.CreateLoad(helper.get_llvm_type(node.type), operand);
-        case HIRUnaryExpression::Operator::Type::AddressOf:
-            return get_address(node.operand);
+        case UnaryExpression::Operator::Type::Dereference:
+            return load(helper.get_llvm_type(node.type), operand);
+        case UnaryExpression::Operator::Type::AddressOf:
+            return address_of(node.operand);
         default:
             return nullptr;
         }
@@ -252,6 +236,8 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
         }
 
         std::vector<llvm::Value*> arguments;
+        arguments.reserve(node.arguments.size());
+
         for (auto* arg : node.arguments) {
             auto* value = arg->accept(*this);
             if (value == nullptr) {
@@ -263,6 +249,7 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
 
         return context.builder.CreateCall(callee, arguments);
     }
+
     llvm::Value* visit(HIRIndexExpression& node) override {
         auto* object = node.object->accept(*this);
         auto* index = node.index->accept(*this);
@@ -270,59 +257,61 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
             return nullptr;
         }
 
-        auto& builder = context.builder;
         auto* element_type = helper.get_llvm_type(node.type);
 
         if (object->getType()->isPointerTy()) {
-            auto* pointer = builder.CreateGEP(element_type, object, {index});
-            return builder.CreateLoad(element_type, pointer);
+            auto* pointer = context.builder.CreateGEP(element_type, object, {index});
+            return load(element_type, pointer);
         }
 
         return nullptr;
     }
+
     llvm::Value* visit(HIRMemberExpression& node) override {
-        auto* address = get_address(&node);
+        auto* address = address_of(&node);
         if (address == nullptr) {
             return nullptr;
         }
 
-        return context.builder.CreateLoad(helper.get_llvm_type(node.type), address);
+        return load(helper.get_llvm_type(node.type), address);
     }
+
     llvm::Value* visit(HIRAssignExpression& node) override {
         auto* value = node.value->accept(*this);
-        auto* address = get_address(node.target);
+        auto* address = address_of(node.target);
 
-        if (address == nullptr) {
+        if (value == nullptr || address == nullptr) {
             return nullptr;
         }
 
-        if (value == nullptr) {
-            return nullptr;
-        }
-
-        return context.builder.CreateStore(value, address);
+        return store(value, address);
     }
-    llvm::Value* visit(HIRStructLiteralExpression& node) override {
-        auto* struct_type = node.type->as<StructType>();
-        auto* llvm_type = helper.get_llvm_type(struct_type);
-        auto& builder = context.builder;
 
-        auto* allocation = builder.CreateAlloca(llvm_type, nullptr);
+    llvm::Value* visit(HIRStructLiteralExpression& node) override {
+        const auto* struct_type = node.type->as<StructType>();
+        auto* llvm_type = helper.get_llvm_type(struct_type);
+        auto* allocation = allocate(llvm_type);
 
         for (const auto& field : node.fields) {
-            int index = get_member_index(struct_type, field.name);
             auto* value = field.value->accept(*this);
             if (value == nullptr) {
                 return nullptr;
             }
 
-            auto* field_pointer =
-                builder.CreateStructGEP(llvm_type, allocation, static_cast<unsigned>(index));
-            builder.CreateStore(value, field_pointer);
+            const auto& fields = struct_type->fields;
+            for (std::size_t i = 0; i < fields.size(); ++i) {
+                if (fields[i].name == field.name) {
+                    auto* field_ptr = context.builder.CreateStructGEP(llvm_type, allocation,
+                                                                      static_cast<unsigned>(i));
+                    store(value, field_ptr);
+                    break;
+                }
+            }
         }
 
-        return builder.CreateLoad(llvm_type, allocation);
+        return load(llvm_type, allocation);
     }
+
     llvm::Value* visit(HIRIfExpression& node) override {
         auto* condition = node.condition->accept(*this);
         if (condition == nullptr) {
@@ -368,6 +357,7 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
 
         return nullptr;
     }
+
     llvm::Value* visit(HIRTypeExpression& node [[maybe_unused]]) override { return nullptr; }
 
     llvm::Value* visit(HIRExpressionStatement& node) override {
@@ -393,9 +383,8 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
             return nullptr;
         }
 
-        auto& builder = context.builder;
-        auto* allocation = builder.CreateAlloca(type, nullptr);
-        context.set(node.name, allocation);
+        auto* allocation = allocate(type);
+        scope.set(node.name, allocation);
 
         if (node.initializer != nullptr) {
             auto* value = node.initializer->accept(*this);
@@ -403,7 +392,7 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
                 return nullptr;
             }
 
-            builder.CreateStore(value, allocation);
+            store(value, allocation);
         }
 
         return allocation;
@@ -411,11 +400,7 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
 
     llvm::Value* visit(HIRFunctionDeclaration& node) override {
         auto* function = context.module->getFunction(node.name);
-        if (function == nullptr) {
-            return nullptr;
-        }
-
-        if (node.body == nullptr) {
+        if (function == nullptr || node.body == nullptr) {
             return function;
         }
 
@@ -423,20 +408,20 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
         auto* entry = llvm::BasicBlock::Create(context.llvm_context, "", function);
         builder.SetInsertPoint(entry);
 
-        context.enter_scope();
+        scope.enter();
 
         for (std::size_t i = 0; i < node.parameters.size(); ++i) {
             auto& param = node.parameters[i];
             auto* argument = function->getArg(static_cast<unsigned>(i));
             argument->setName(param.name);
 
-            auto* allocation = builder.CreateAlloca(helper.get_llvm_type(param.type), nullptr);
-            builder.CreateStore(argument, allocation);
-            context.set(param.name, allocation);
+            auto* allocation = allocate(helper.get_llvm_type(param.type));
+            store(argument, allocation);
+            scope.set(param.name, allocation);
         }
 
         node.body->accept(*this);
-        context.exit_scope();
+        scope.exit();
 
         if (node.return_type->is<VoidType>() &&
             builder.GetInsertBlock()->getTerminator() == nullptr) {
@@ -445,5 +430,17 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
 
         llvm::verifyFunction(*function);
         return function;
+    }
+
+  public:
+    explicit Codegen() : helper(context) {}
+
+    void generate(HIRProgram& program) {
+        helper.declare_types(*program.global_scope);
+        helper.declare_functions(*program.global_scope);
+
+        for (auto* statement : program.statements) {
+            statement->accept(*this);
+        }
     }
 };

@@ -59,3 +59,4 @@ cmake --build cmake-build-release
 - KEEP CODE SPACIOUS: add blank lines between logical blocks.
 - Add code examples to the plans that you make for lower intelligence model to understand
 - Use `lldb` to debug code.
+- DO NOT USE PYTHON OR BASH FOR REFACTORING.

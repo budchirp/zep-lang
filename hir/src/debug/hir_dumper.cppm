@@ -12,6 +12,7 @@ import zep.frontend.sema.kind;
 import zep.frontend.sema.scope;
 import zep.frontend.sema.symbol;
 import zep.frontend.debug.sema_dumper;
+import zep.frontend.node;
 import zep.hir.node;
 import zep.hir.node.program;
 
@@ -262,7 +263,7 @@ export class HIRDumper : public HIRVisitor<void> {
         Logger::print("BinaryExpression(\n");
 
         Logger::print_indent(depth + 1);
-        Logger::print("op: ", HIRBinaryExpression::Operator::to_string(node.op), ",\n");
+        Logger::print("op: ", BinaryExpression::Operator::to_string(node.op), ",\n");
 
         Logger::print_indent(depth + 1);
         Logger::print("type: ");
@@ -291,7 +292,7 @@ export class HIRDumper : public HIRVisitor<void> {
         Logger::print("UnaryExpression(\n");
 
         Logger::print_indent(depth + 1);
-        Logger::print("op: ", HIRUnaryExpression::Operator::to_string(node.op), ",\n");
+        Logger::print("op: ", UnaryExpression::Operator::to_string(node.op), ",\n");
 
         Logger::print_indent(depth + 1);
         Logger::print("type: ");

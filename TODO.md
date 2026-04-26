@@ -1,9 +1,6 @@
 # TODO
 
-- [ ] CLEANUP CODE
-- [ ] Refactor lowerer/hir builder
-
-- [ ] Fix ai slop in dump functions
+- [ ] Fix ai slop
 
 - [ ] For loops (needs `ForStatement` AST node)
 - [ ] While loops (needs `WhileStatement` AST node)

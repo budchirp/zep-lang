@@ -11,6 +11,7 @@ import zep.common.position;
 import zep.common.span;
 import zep.frontend.sema.kind;
 import zep.frontend.sema.type;
+import zep.frontend.node;
 import zep.common.arena;
 
 export template <typename T>
@@ -187,70 +188,14 @@ export class HIRBinaryExpression : public HIRExpression {
   public:
     static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::BinaryExpression;
 
-    class Operator {
-      public:
-        enum class Type : std::uint8_t {
-            Plus,
-            Minus,
-            Asterisk,
-            Divide,
-            Modulo,
-            Equals,
-            NotEquals,
-            LessThan,
-            GreaterThan,
-            LessEqual,
-            GreaterEqual,
-            And,
-            Or,
-            As,
-            Is,
-        };
-
-        static std::string to_string(Type op) {
-            switch (op) {
-            case Type::Plus:
-                return "+";
-            case Type::Minus:
-                return "-";
-            case Type::Asterisk:
-                return "*";
-            case Type::Divide:
-                return "/";
-            case Type::Modulo:
-                return "%";
-            case Type::Equals:
-                return "==";
-            case Type::NotEquals:
-                return "!=";
-            case Type::LessThan:
-                return "<";
-            case Type::GreaterThan:
-                return ">";
-            case Type::LessEqual:
-                return "<=";
-            case Type::GreaterEqual:
-                return ">=";
-            case Type::And:
-                return "&&";
-            case Type::Or:
-                return "||";
-            case Type::As:
-                return "as";
-            case Type::Is:
-                return "is";
-            }
-            return "?";
-        }
-    };
-
     HIRExpression* left;
-    Operator::Type op;
+    BinaryExpression::Operator::Type op;
     HIRExpression* right;
 
-    HIRBinaryExpression(Span span, HIRExpression* left, Operator::Type op, HIRExpression* right,
+    HIRBinaryExpression(Span span, HIRExpression* left, BinaryExpression::Operator::Type op, HIRExpression* right,
                         const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), left(left), op(op), right(right) {}
+
 
     template <typename T>
     T accept(HIRVisitor<T>& visitor) {
@@ -262,37 +207,10 @@ export class HIRUnaryExpression : public HIRExpression {
   public:
     static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::UnaryExpression;
 
-    class Operator {
-      public:
-        enum class Type : std::uint8_t {
-            Plus,
-            Minus,
-            Not,
-            Dereference,
-            AddressOf,
-        };
-
-        static std::string to_string(Type op) {
-            switch (op) {
-            case Type::Plus:
-                return "+";
-            case Type::Minus:
-                return "-";
-            case Type::Not:
-                return "!";
-            case Type::Dereference:
-                return "*";
-            case Type::AddressOf:
-                return "&";
-            }
-            return "?";
-        }
-    };
-
-    Operator::Type op;
+    UnaryExpression::Operator::Type op;
     HIRExpression* operand;
 
-    HIRUnaryExpression(Span span, Operator::Type op, HIRExpression* operand,
+    HIRUnaryExpression(Span span, UnaryExpression::Operator::Type op, HIRExpression* operand,
                        const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), op(op), operand(operand) {}
 
