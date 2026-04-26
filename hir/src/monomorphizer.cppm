@@ -9,9 +9,9 @@ module;
 export module zep.hir.monomorphizer;
 
 import zep.frontend.sema.type;
-import zep.frontend.ast;
+import zep.frontend.node;
 import zep.frontend.sema.mangler;
-import zep.hir.ir;
+import zep.hir.node;
 
 export class MonoCacheResult {
   public:

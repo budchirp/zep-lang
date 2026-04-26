@@ -8,8 +8,8 @@ module;
 export module zep.frontend.debug.ast_dumper;
 
 import zep.common.logger;
-import zep.frontend.ast;
-import zep.frontend.ast.program;
+import zep.frontend.node;
+import zep.frontend.node.program;
 import zep.frontend.sema.type;
 import zep.frontend.arena;
 import zep.frontend.sema.scope;
@@ -40,7 +40,8 @@ export class AstDumper : public Visitor<void> {
         trailing_newline = saved_newline;
     }
 
-    void dump_type(const Type* type, int depth, bool with_indent = true, bool trailing_newline = true) {
+    void dump_type(const Type* type, int depth, bool with_indent = true,
+                   bool trailing_newline = true) {
         sema_dumper.dump_type(type, depth, with_indent, trailing_newline);
     }
 
@@ -64,7 +65,7 @@ export class AstDumper : public Visitor<void> {
             Logger::print("])\n");
         }
     }
-    
+
     void visit(TypeExpression& node) override {
         if (with_indent) {
             Logger::print_indent(depth);

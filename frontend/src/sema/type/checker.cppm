@@ -7,11 +7,12 @@ module;
 export module zep.frontend.sema.type.checker;
 
 import zep.frontend.sema.type;
-import zep.frontend.ast;
-import zep.frontend.ast.program;
+import zep.frontend.node;
+import zep.frontend.node.program;
 import zep.common.logger.diagnostic;
 import zep.frontend.sema.type.resolver;
 import zep.frontend.sema.type.helper;
+import zep.common.context;
 import zep.frontend.sema.context;
 import zep.frontend.sema.env;
 import zep.frontend.sema.scope;
@@ -25,6 +26,7 @@ import zep.frontend.sema.resolver.structure;
 export class TypeChecker : public Visitor<void> {
   private:
     Context& context;
+    SemaContext& sema;
 
     TypeResolver resolver;
     TypeBuilder builder;
@@ -34,7 +36,7 @@ export class TypeChecker : public Visitor<void> {
         switch (expression.kind) {
         case Expression::Kind::Type::IdentifierExpression: {
             const auto* symbol =
-                context.env.current_scope->lookup_var(expression.as<IdentifierExpression>()->name);
+                sema.env.current_scope->lookup_var(expression.as<IdentifierExpression>()->name);
 
             if (symbol != nullptr) {
                 return symbol->storage_kind == StorageKind::Type::VarMut;
@@ -74,9 +76,10 @@ export class TypeChecker : public Visitor<void> {
     }
 
   public:
-    explicit TypeChecker(Context& context)
-        : context(context), resolver(context.types, context.env), builder(*this, context, resolver),
-          helper(*this, context, resolver, builder) {}
+    explicit TypeChecker(Context& context, SemaContext& sema)
+        : context(context), sema(sema), resolver(sema.types, sema.env),
+          builder(*this, context, sema, resolver),
+          helper(*this, context, sema, resolver, builder) {}
 
     void check(Program& program) {
         helper.register_declarations(program);
@@ -86,7 +89,7 @@ export class TypeChecker : public Visitor<void> {
         }
     }
 
-    void visit(TypeExpression& node) override { node.type = resolver.resolve_type(node.type); }
+    void visit(TypeExpression& node) override { node.type = resolver.resolve(node.type); }
 
     void visit(GenericParameter& node) override {
         if (node.constraint != nullptr) {
@@ -116,28 +119,28 @@ export class TypeChecker : public Visitor<void> {
 
     void visit(StructLiteralField& node) override { visit_expression(*node.value); }
 
-    void visit(NumberLiteral& node) override { node.type = context.env.primitives["i32"]; }
+    void visit(NumberLiteral& node) override { node.type = sema.env.primitives["i32"]; }
 
-    void visit(FloatLiteral& node) override { node.type = context.env.primitives["f64"]; }
+    void visit(FloatLiteral& node) override { node.type = sema.env.primitives["f64"]; }
 
-    void visit(StringLiteral& node) override { node.type = context.env.primitives["string"]; }
+    void visit(StringLiteral& node) override { node.type = sema.env.primitives["string"]; }
 
-    void visit(BooleanLiteral& node) override { node.type = context.env.primitives["boolean"]; }
+    void visit(BooleanLiteral& node) override { node.type = sema.env.primitives["boolean"]; }
 
     void visit(IdentifierExpression& node) override {
-        const auto* var_symbol = context.env.current_scope->lookup_var(node.name);
+        const auto* var_symbol = sema.env.current_scope->lookup_var(node.name);
         if (var_symbol != nullptr) {
             node.type = var_symbol->type;
             return;
         }
 
-        const auto* type_symbol = context.env.current_scope->lookup_type(node.name);
+        const auto* type_symbol = sema.env.current_scope->lookup_type(node.name);
         if (type_symbol != nullptr) {
             node.type = type_symbol->type;
             return;
         }
 
-        const auto& overloads = context.env.current_scope->lookup_function_overloads(node.name);
+        const auto& overloads = sema.env.current_scope->lookup_function_overloads(node.name);
         if (!overloads.empty()) {
             node.type = overloads.front()->type;
             return;
@@ -163,9 +166,9 @@ export class TypeChecker : public Visitor<void> {
         case Op::As:
         case Op::Is: {
             if (node.op == Op::As) {
-                node.type = resolver.resolve_type(right_type);
+                node.type = resolver.resolve(right_type);
             } else {
-                node.type = context.types.create<BooleanType>();
+                node.type = sema.types.create<BooleanType>();
             }
 
             break;
@@ -214,14 +217,14 @@ export class TypeChecker : public Visitor<void> {
                 return;
             }
 
-            node.type = context.types.create<BooleanType>();
+            node.type = sema.types.create<BooleanType>();
 
             break;
         }
         case Op::And:
         case Op::Or: {
             if (left_type->is<BooleanType>() && right_type->is<BooleanType>()) {
-                node.type = context.types.create<BooleanType>();
+                node.type = sema.types.create<BooleanType>();
                 break;
             }
 
@@ -266,7 +269,7 @@ export class TypeChecker : public Visitor<void> {
                 return;
             }
 
-            node.type = context.types.create<BooleanType>();
+            node.type = sema.types.create<BooleanType>();
 
             break;
         }
@@ -283,7 +286,7 @@ export class TypeChecker : public Visitor<void> {
             break;
         }
         case Op::AddressOf: {
-            node.type = context.types.create<PointerType>(operand_type, false);
+            node.type = sema.types.create<PointerType>(operand_type, false);
 
             break;
         }
@@ -312,15 +315,15 @@ export class TypeChecker : public Visitor<void> {
         auto scope = resolver.scoped_substitutions();
 
         const auto& overloads =
-            context.env.current_scope->lookup_function_overloads(function_type->name);
-        CallResolver call_resolver(context, resolver, *this, node);
+            sema.env.current_scope->lookup_function_overloads(function_type->name);
+        CallResolver call_resolver(context, sema, resolver, *this, node);
         if (overloads.size() > 1) {
             function_type = call_resolver.resolve_overload(function_type->name);
         }
 
         if (function_type != nullptr) {
             call_resolver.is_valid(function_type, true);
-            node.type = resolver.resolve_type(function_type->return_type);
+            node.type = resolver.resolve(function_type->return_type);
         }
     }
 
@@ -369,7 +372,7 @@ export class TypeChecker : public Visitor<void> {
 
         for (const auto& field : struct_type->fields) {
             if (field.name == node.member) {
-                node.type = resolver.resolve_type(field.type);
+                node.type = resolver.resolve(field.type);
                 return;
             }
         }
@@ -411,10 +414,10 @@ export class TypeChecker : public Visitor<void> {
             return;
         }
 
-        StructureResolver structure_resolver(context, resolver, *this, node);
+        StructureResolver structure_resolver(context, sema, resolver, *this, node);
         structure_resolver.is_valid(struct_type);
 
-        node.type = resolver.resolve_type(struct_type);
+        node.type = resolver.resolve(struct_type);
     }
 
     void visit(BlockStatement& node) override {
@@ -425,7 +428,7 @@ export class TypeChecker : public Visitor<void> {
             return_type = statement->type;
         }
 
-        node.type = (return_type == nullptr) ? context.env.primitives["void"] : return_type;
+        node.type = (return_type == nullptr) ? sema.env.primitives["void"] : return_type;
     }
 
     void visit(ExpressionStatement& node) override {
@@ -467,7 +470,7 @@ export class TypeChecker : public Visitor<void> {
 
             node.type = then_type;
         } else {
-            node.type = context.env.primitives["void"];
+            node.type = sema.env.primitives["void"];
         }
     }
 
@@ -478,7 +481,7 @@ export class TypeChecker : public Visitor<void> {
         }
 
         const auto* return_type =
-            resolver.resolve_type(helper.current_function->function_type->return_type);
+            resolver.resolve(helper.current_function->function_type->return_type);
         if (return_type == nullptr) {
             return;
         }
@@ -517,7 +520,7 @@ export class TypeChecker : public Visitor<void> {
 
         const Type* var_type = nullptr;
         if (node.annotation != nullptr) {
-            var_type = resolver.resolve_type(node.annotation->type);
+            var_type = resolver.resolve(node.annotation->type);
         }
 
         if (node.initializer != nullptr) {
@@ -537,9 +540,9 @@ export class TypeChecker : public Visitor<void> {
         if (var_type == nullptr) {
             context.diagnostics.add_error(node.span,
                                           "cannot determine type of variable '" + node.name + "'");
-        } else if (!context.env.current_scope->has_variable(node.name)) {
-            context.env.current_scope->define_var(
-                node.name, context.symbols.create<VarSymbol>(node.name, node.span, node.visibility,
+        } else if (!sema.env.current_scope->has_variable(node.name)) {
+            sema.env.current_scope->define_var(
+                node.name, sema.symbols.create<VarSymbol>(node.name, node.span, node.visibility,
                                                              node.storage_kind, var_type));
         }
 
@@ -547,7 +550,7 @@ export class TypeChecker : public Visitor<void> {
     }
 
     void visit(FunctionDeclaration& node) override {
-        if (!context.env.current_scope->is_global()) {
+        if (!sema.env.current_scope->is_global()) {
             context.diagnostics.add_error(node.span,
                                           "functions can only be declared in global scope");
             return;
@@ -557,18 +560,18 @@ export class TypeChecker : public Visitor<void> {
         helper.current_function = symbol;
 
         auto scope = resolver.scoped_substitutions();
-        GenericResolver generic_resolver(context, resolver, *this);
+        GenericResolver generic_resolver(context, sema, resolver, *this);
         generic_resolver.activate_generic_parameters(symbol->function_type->generic_parameters);
 
         for (const auto& parameter : symbol->function_type->parameters) {
-            const auto* parameter_type = resolver.resolve_type(parameter.type);
+            const auto* parameter_type = resolver.resolve(parameter.type);
             if (parameter_type == nullptr) {
                 context.diagnostics.add_error(node.span, "cannot determine type of parameter '" +
                                                              parameter.name + "'");
             }
 
-            context.env.current_scope->define_var(
-                parameter.name, context.symbols.create<VarSymbol>(
+            sema.env.current_scope->define_var(
+                parameter.name, sema.symbols.create<VarSymbol>(
                                     parameter.name, node.span, Visibility::Type::Private,
                                     StorageKind::Type::Var, parameter_type));
         }

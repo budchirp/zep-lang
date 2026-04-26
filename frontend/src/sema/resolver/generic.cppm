@@ -7,9 +7,10 @@ export module zep.frontend.sema.resolver.generic;
 
 import zep.common.span;
 import zep.frontend.sema.type;
-import zep.frontend.ast;
+import zep.frontend.node;
 import zep.common.logger.diagnostic;
 import zep.frontend.sema.type.resolver;
+import zep.common.context;
 import zep.frontend.sema.context;
 import zep.frontend.sema.env;
 import zep.frontend.sema.scope;
@@ -19,11 +20,13 @@ export class GenericResolver {
     Visitor<void>& visitor;
 
     Context& context;
+    SemaContext& sema;
     TypeResolver& resolver;
 
   public:
-    explicit GenericResolver(Context& context, TypeResolver& resolver, Visitor<void>& visitor)
-        : visitor(visitor), context(context), resolver(resolver) {}
+    explicit GenericResolver(Context& context, SemaContext& sema, TypeResolver& resolver,
+                             Visitor<void>& visitor)
+        : visitor(visitor), context(context), sema(sema), resolver(resolver) {}
 
     bool check_generic_arguments(std::vector<GenericArgument*>& generic_arguments,
                                  const std::vector<GenericParameterType>& generic_parameters,
@@ -78,20 +81,19 @@ export class GenericResolver {
         return all_valid;
     }
 
-    void
-    activate_generic_parameters(const std::vector<GenericParameterType>& generic_parameters,
-                                bool as_self = false) {
+    void activate_generic_parameters(const std::vector<GenericParameterType>& generic_parameters,
+                                     bool as_self = false) {
         for (const auto& generic_parameter : generic_parameters) {
             if (as_self) {
                 resolver.add_substitution(
                     generic_parameter.name,
-                    context.types.create<NamedType>(generic_parameter.name,
-                                                    std::vector<GenericArgumentType>{}));
+                    sema.types.create<NamedType>(generic_parameter.name,
+                                                 std::vector<GenericArgumentType>{}));
             } else {
                 resolver.add_substitution(generic_parameter.name,
                                           generic_parameter.constraint != nullptr
                                               ? generic_parameter.constraint
-                                              : context.env.primitives["any"]);
+                                              : sema.env.primitives["any"]);
             }
         }
     }

@@ -141,7 +141,8 @@ export class TypeResolver {
             const auto* struct_type = type->as<StructType>();
 
             bool changed = false;
-            auto new_params = substitute_generic_parameters(struct_type->generic_parameters, substitution_map, changed);
+            auto new_params = substitute_generic_parameters(struct_type->generic_parameters,
+                                                            substitution_map, changed);
             auto new_fields = substitute_fields(struct_type->fields, substitution_map, changed);
 
             if (!changed) {
@@ -159,15 +160,16 @@ export class TypeResolver {
             bool changed = return_type != function_type->return_type;
             auto new_parameters =
                 substitute_parameters(function_type->parameters, substitution_map, changed);
-            auto new_params = substitute_generic_parameters(function_type->generic_parameters, substitution_map, changed);
+            auto new_params = substitute_generic_parameters(function_type->generic_parameters,
+                                                            substitution_map, changed);
 
             if (!changed) {
                 return type;
             }
 
-            return type_arena.create<FunctionType>(
-                function_type->name, return_type, std::move(new_parameters),
-                std::move(new_params), function_type->variadic);
+            return type_arena.create<FunctionType>(function_type->name, return_type,
+                                                   std::move(new_parameters), std::move(new_params),
+                                                   function_type->variadic);
         }
 
         default:
@@ -186,7 +188,7 @@ export class TypeResolver {
                 continue;
             }
 
-            const auto* resolved = resolve_type(parameter.constraint);
+            const auto* resolved = resolve(parameter.constraint);
             if (resolved != parameter.constraint) {
                 changed = true;
             }
@@ -221,7 +223,7 @@ export class TypeResolver {
 
     void add_substitution(const std::string& name, const Type* type) { substitutions[name] = type; }
 
-    const Type* resolve_type(const Type* type) {
+    const Type* resolve(const Type* type) {
         if (type == nullptr) {
             return nullptr;
         }
@@ -250,10 +252,10 @@ export class TypeResolver {
 
                     for (std::size_t i = 0; i < named->generic_arguments.size(); ++i) {
                         substitution_map[struct_type->generic_parameters[i].name] =
-                            resolve_type(named->generic_arguments[i].type);
+                            resolve(named->generic_arguments[i].type);
                     }
 
-                    return resolve_type(substitute_type(resolved_symbol_type, substitution_map));
+                    return resolve(substitute_type(resolved_symbol_type, substitution_map));
                 }
             }
 
@@ -262,7 +264,7 @@ export class TypeResolver {
 
         case Type::Kind::Type::Pointer: {
             const auto* pointer = type->as<PointerType>();
-            const auto* element = resolve_type(pointer->element);
+            const auto* element = resolve(pointer->element);
 
             if (element == pointer->element) {
                 return type;
@@ -273,7 +275,7 @@ export class TypeResolver {
 
         case Type::Kind::Type::Array: {
             const auto* array = type->as<ArrayType>();
-            const auto* element = resolve_type(array->element);
+            const auto* element = resolve(array->element);
 
             if (element == array->element) {
                 return type;
@@ -291,14 +293,15 @@ export class TypeResolver {
             resolved_fields.reserve(struct_type->fields.size());
 
             for (const StructFieldType& field : struct_type->fields) {
-                const auto* resolved_field_type = resolve_type(field.type);
+                const auto* resolved_field_type = resolve(field.type);
                 if (resolved_field_type != field.type) {
                     changed = true;
                 }
                 resolved_fields.emplace_back(field.name, resolved_field_type);
             }
 
-            auto resolved_params = resolve_generic_parameters(struct_type->generic_parameters, changed);
+            auto resolved_params =
+                resolve_generic_parameters(struct_type->generic_parameters, changed);
 
             if (!changed) {
                 return type;
@@ -311,14 +314,14 @@ export class TypeResolver {
         case Type::Kind::Type::Function: {
             const auto* function_type = type->as<FunctionType>();
 
-            const auto* resolved_return = resolve_type(function_type->return_type);
+            const auto* resolved_return = resolve(function_type->return_type);
             bool changed = resolved_return != function_type->return_type;
 
             std::vector<ParameterType> resolved_parameters;
             resolved_parameters.reserve(function_type->parameters.size());
 
             for (const ParameterType& parameter : function_type->parameters) {
-                const auto* resolved_param_type = resolve_type(parameter.type);
+                const auto* resolved_param_type = resolve(parameter.type);
                 if (resolved_param_type != parameter.type) {
                     changed = true;
                 }

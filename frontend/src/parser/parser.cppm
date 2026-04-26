@@ -10,14 +10,15 @@ module;
 export module zep.frontend.parser;
 
 import zep.common.span;
-import zep.frontend.ast;
-import zep.frontend.ast.program;
+import zep.frontend.node;
+import zep.frontend.node.program;
 import zep.frontend.arena;
 import zep.frontend.arena;
 import zep.frontend.token;
 import zep.frontend.lexer;
 import zep.frontend.parser.precedence;
 import zep.common.logger;
+import zep.common.context;
 import zep.frontend.sema.context;
 import zep.frontend.sema.type;
 import zep.frontend.sema.kind;
@@ -25,6 +26,7 @@ import zep.frontend.sema.kind;
 export class Parser {
   private:
     Context& context;
+    SemaContext& sema;
 
     Lexer lexer;
 
@@ -92,26 +94,26 @@ export class Parser {
 
     const Type* resolve_primitive(const std::string& name) {
         if (name == "void") {
-            return context.env.primitives["void"];
+            return sema.env.primitives["void"];
         }
 
         if (name == "string") {
-            return context.env.primitives["string"];
+            return sema.env.primitives["string"];
         }
 
         if (name == "boolean") {
-            return context.env.primitives["boolean"];
+            return sema.env.primitives["boolean"];
         }
 
         if (name.size() >= 2 && (name[0] == 'i' || name[0] == 'u')) {
-            return context.env.primitives[name[0] + name.substr(1)];
+            return sema.env.primitives[name[0] + name.substr(1)];
         }
 
         if (name.size() >= 2 && name[0] == 'f') {
-            return context.env.primitives["f" + name.substr(1)];
+            return sema.env.primitives["f" + name.substr(1)];
         }
 
-        return context.types.create<NamedType>(name, std::vector<GenericArgumentType>{});
+        return sema.types.create<NamedType>(name, std::vector<GenericArgumentType>{});
     }
 
     Statement* parse_statement() {
@@ -133,7 +135,7 @@ export class Parser {
         case Token::Type::LeftBrace:
             return parse_block_statement();
         default: {
-            return context.nodes.create<ExpressionStatement>(parse_expression());
+            return sema.nodes.create<ExpressionStatement>(parse_expression());
         }
         }
     }
@@ -156,25 +158,25 @@ export class Parser {
             auto value = std::string(current_token.value);
             advance();
 
-            return context.nodes.create<StringLiteral>(span, std::move(value));
+            return sema.nodes.create<StringLiteral>(span, std::move(value));
         }
         case Token::Type::Number: {
             auto value = std::string(current_token.value);
             advance();
 
-            return context.nodes.create<NumberLiteral>(span, std::move(value));
+            return sema.nodes.create<NumberLiteral>(span, std::move(value));
         }
         case Token::Type::Float: {
             auto value = std::string(current_token.value);
             advance();
 
-            return context.nodes.create<FloatLiteral>(span, std::move(value));
+            return sema.nodes.create<FloatLiteral>(span, std::move(value));
         }
         case Token::Type::Boolean: {
             auto value = current_token.value == "true";
             advance();
 
-            return context.nodes.create<BooleanLiteral>(span, value);
+            return sema.nodes.create<BooleanLiteral>(span, value);
         }
         case Token::Type::Identifier: {
             auto name = std::string(current_token.value);
@@ -185,13 +187,13 @@ export class Parser {
 
                 if (check(Token::Type::LeftParen)) {
                     auto* callee =
-                        context.nodes.create<IdentifierExpression>(span, std::move(name));
+                        sema.nodes.create<IdentifierExpression>(span, std::move(name));
                     return parse_call_expression(callee, std::move(generic_arguments));
                 }
 
                 if (check(Token::Type::LeftBrace)) {
                     auto* type_name =
-                        context.nodes.create<IdentifierExpression>(span, std::move(name));
+                        sema.nodes.create<IdentifierExpression>(span, std::move(name));
                     return parse_struct_literal(type_name, std::move(generic_arguments));
                 }
 
@@ -199,11 +201,11 @@ export class Parser {
             }
 
             if (check(Token::Type::LeftBrace)) {
-                auto* type_name = context.nodes.create<IdentifierExpression>(span, std::move(name));
+                auto* type_name = sema.nodes.create<IdentifierExpression>(span, std::move(name));
                 return parse_struct_literal(type_name, {});
             }
 
-            return context.nodes.create<IdentifierExpression>(span, std::move(name));
+            return sema.nodes.create<IdentifierExpression>(span, std::move(name));
         }
         case Token::Type::LeftParen: {
             advance();
@@ -247,7 +249,7 @@ export class Parser {
 
             auto* right = parse_expression(
                 static_cast<Precedence::Type>(static_cast<int>(Precedence::Type::Assignment) - 1));
-            return context.nodes.create<AssignExpression>(span, left, right);
+            return sema.nodes.create<AssignExpression>(span, left, right);
         }
         case Token::Type::LeftParen:
         case Token::Type::LeftBracket:
@@ -303,7 +305,7 @@ export class Parser {
             expect(Token::Type::Colon);
             auto* type_expression = parse_type_expression();
 
-            parameters.push_back(context.nodes.create<Parameter>(span, is_variadic, std::move(name),
+            parameters.push_back(sema.nodes.create<Parameter>(span, is_variadic, std::move(name),
                                                                  type_expression));
 
             if (!check(Token::Type::RightParen)) {
@@ -321,7 +323,7 @@ export class Parser {
             auto span = current_token.span;
             auto* value = parse_expression();
 
-            arguments.push_back(context.nodes.create<Argument>(span, "", value));
+            arguments.push_back(sema.nodes.create<Argument>(span, "", value));
 
             if (!check(Token::Type::RightParen)) {
                 expect(Token::Type::Comma);
@@ -346,7 +348,7 @@ export class Parser {
             }
 
             generic_parameters.push_back(
-                context.nodes.create<GenericParameter>(span, std::move(name), constraint));
+                sema.nodes.create<GenericParameter>(span, std::move(name), constraint));
 
             if (!check(Token::Type::GreaterThan)) {
                 expect(Token::Type::Comma);
@@ -367,7 +369,7 @@ export class Parser {
             auto* type_expression = parse_type_expression();
 
             generic_arguments.push_back(
-                context.nodes.create<GenericArgument>(span, "", type_expression));
+                sema.nodes.create<GenericArgument>(span, "", type_expression));
 
             if (!check(Token::Type::GreaterThan)) {
                 expect(Token::Type::Comma);
@@ -394,8 +396,8 @@ export class Parser {
 
             auto* element = parse_type_expression();
 
-            const auto* pointer_type = context.types.create<PointerType>(element->type, is_mutable);
-            return context.nodes.create<TypeExpression>(span, pointer_type);
+            const auto* pointer_type = sema.types.create<PointerType>(element->type, is_mutable);
+            return sema.nodes.create<TypeExpression>(span, pointer_type);
         }
 
         auto name = std::string(expect(Token::Type::Identifier).value);
@@ -412,7 +414,7 @@ export class Parser {
                     generic_argument_types.emplace_back("", generic_argument->type->type);
                 }
 
-                type = context.types.create<NamedType>(name, std::move(generic_argument_types));
+                type = sema.types.create<NamedType>(name, std::move(generic_argument_types));
             }
         }
 
@@ -427,10 +429,10 @@ export class Parser {
 
             expect(Token::Type::RightBracket);
 
-            type = context.types.create<ArrayType>(type, size);
+            type = sema.types.create<ArrayType>(type, size);
         }
 
-        return context.nodes.create<TypeExpression>(span, type);
+        return sema.nodes.create<TypeExpression>(span, type);
     }
 
     Expression* parse_unary_expression() {
@@ -462,7 +464,7 @@ export class Parser {
         advance();
 
         auto* operand = parse_expression(Precedence::Type::Unary);
-        return context.nodes.create<UnaryExpression>(span, op, operand);
+        return sema.nodes.create<UnaryExpression>(span, op, operand);
     }
 
     Expression* parse_binary_expression(Expression* left) {
@@ -528,11 +530,11 @@ export class Parser {
         if (op == BinaryExpression::Operator::Type::As ||
             op == BinaryExpression::Operator::Type::Is) {
             auto* right = parse_type_expression();
-            return context.nodes.create<BinaryExpression>(span, left, op, right);
+            return sema.nodes.create<BinaryExpression>(span, left, op, right);
         }
 
         auto* right = parse_expression(precedence);
-        return context.nodes.create<BinaryExpression>(span, left, op, right);
+        return sema.nodes.create<BinaryExpression>(span, left, op, right);
     }
 
     IfExpression* parse_if_expression() {
@@ -551,7 +553,7 @@ export class Parser {
             else_branch = parse_block_statement();
         }
 
-        return context.nodes.create<IfExpression>(span, condition, then_branch, else_branch);
+        return sema.nodes.create<IfExpression>(span, condition, then_branch, else_branch);
     }
 
     StructLiteralExpression*
@@ -570,7 +572,7 @@ export class Parser {
             auto* value = parse_expression();
 
             fields.push_back(
-                context.nodes.create<StructLiteralField>(field_span, std::move(field_name), value));
+                sema.nodes.create<StructLiteralField>(field_span, std::move(field_name), value));
 
             if (!check(Token::Type::RightBrace)) {
                 expect(Token::Type::Comma);
@@ -579,7 +581,7 @@ export class Parser {
 
         expect(Token::Type::RightBrace);
 
-        return context.nodes.create<StructLiteralExpression>(
+        return sema.nodes.create<StructLiteralExpression>(
             span, name, std::move(generic_arguments), std::move(fields));
     }
 
@@ -591,7 +593,7 @@ export class Parser {
         auto arguments = parse_arguments();
         expect(Token::Type::RightParen);
 
-        return context.nodes.create<CallExpression>(span, callee, std::move(generic_arguments),
+        return sema.nodes.create<CallExpression>(span, callee, std::move(generic_arguments),
                                                     std::move(arguments));
     }
 
@@ -602,7 +604,7 @@ export class Parser {
         auto* index = parse_expression();
         expect(Token::Type::RightBracket);
 
-        return context.nodes.create<IndexExpression>(span, value, index);
+        return sema.nodes.create<IndexExpression>(span, value, index);
     }
 
     MemberExpression* parse_member_expression(Expression* value) {
@@ -611,7 +613,7 @@ export class Parser {
         expect(Token::Type::Dot);
         auto member = std::string(expect(Token::Type::Identifier).value);
 
-        return context.nodes.create<MemberExpression>(span, value, std::move(member));
+        return sema.nodes.create<MemberExpression>(span, value, std::move(member));
     }
 
     ImportStatement* parse_import_statement() {
@@ -623,15 +625,15 @@ export class Parser {
 
         auto first = expect(Token::Type::Identifier);
         path.push_back(
-            context.nodes.create<IdentifierExpression>(first.span, std::string(first.value)));
+            sema.nodes.create<IdentifierExpression>(first.span, std::string(first.value)));
 
         while (match(Token::Type::Dot)) {
             auto part = expect(Token::Type::Identifier);
             path.push_back(
-                context.nodes.create<IdentifierExpression>(part.span, std::string(part.value)));
+                sema.nodes.create<IdentifierExpression>(part.span, std::string(part.value)));
         }
 
-        return context.nodes.create<ImportStatement>(span, std::move(path));
+        return sema.nodes.create<ImportStatement>(span, std::move(path));
     }
 
     StructDeclaration* parse_struct_declaration(Visibility::Type visibility) {
@@ -661,13 +663,13 @@ export class Parser {
             expect(Token::Type::Colon);
             auto* type_expression = parse_type_expression();
 
-            fields.push_back(context.nodes.create<StructField>(
+            fields.push_back(sema.nodes.create<StructField>(
                 field_span, field_visibility, std::move(field_name), type_expression));
         }
 
         expect(Token::Type::RightBrace);
 
-        return context.nodes.create<StructDeclaration>(
+        return sema.nodes.create<StructDeclaration>(
             span, visibility, std::move(name), std::move(generic_parameters), std::move(fields));
     }
 
@@ -688,7 +690,7 @@ export class Parser {
         expect(Token::Type::Colon);
         auto* return_type = parse_type_expression();
 
-        return context.nodes.create<FunctionPrototype>(span, std::move(name),
+        return sema.nodes.create<FunctionPrototype>(span, std::move(name),
                                                        std::move(generic_parameters),
                                                        std::move(parameters), return_type);
     }
@@ -701,7 +703,7 @@ export class Parser {
         auto* prototype = parse_function_prototype();
         auto* body = parse_block_statement();
 
-        return context.nodes.create<FunctionDeclaration>(span, visibility, prototype, body);
+        return sema.nodes.create<FunctionDeclaration>(span, visibility, prototype, body);
     }
 
     VarDeclaration* parse_var_declaration(Visibility::Type visibility) {
@@ -730,7 +732,7 @@ export class Parser {
             initializer = parse_expression();
         }
 
-        return context.nodes.create<VarDeclaration>(span, visibility, storage_kind, std::move(name),
+        return sema.nodes.create<VarDeclaration>(span, visibility, storage_kind, std::move(name),
                                                     type_expression, initializer);
     }
 
@@ -744,7 +746,7 @@ export class Parser {
             value = parse_expression();
         }
 
-        return context.nodes.create<ReturnStatement>(span, value);
+        return sema.nodes.create<ReturnStatement>(span, value);
     }
 
     BlockStatement* parse_block_statement() {
@@ -763,7 +765,7 @@ export class Parser {
 
         expect(Token::Type::RightBrace);
 
-        return context.nodes.create<BlockStatement>(span, std::move(statements));
+        return sema.nodes.create<BlockStatement>(span, std::move(statements));
     }
 
     Statement* parse_extern_declaration(Visibility::Type visibility) {
@@ -776,7 +778,7 @@ export class Parser {
             advance();
 
             auto* prototype = parse_function_prototype();
-            return context.nodes.create<ExternFunctionDeclaration>(span, visibility, prototype);
+            return sema.nodes.create<ExternFunctionDeclaration>(span, visibility, prototype);
         }
         case Token::Type::Var: {
             advance();
@@ -785,7 +787,7 @@ export class Parser {
             expect(Token::Type::Colon);
             auto* type_expression = parse_type_expression();
 
-            return context.nodes.create<ExternVarDeclaration>(span, visibility, std::move(name),
+            return sema.nodes.create<ExternVarDeclaration>(span, visibility, std::move(name),
                                                               type_expression);
         }
         default:
@@ -795,8 +797,8 @@ export class Parser {
     }
 
   public:
-    Parser(Context& context, Lexer lexer)
-        : context(context), lexer(std::move(lexer)), logger(context.logger),
+    Parser(Context& context, SemaContext& sema, Lexer lexer)
+        : context(context), sema(sema), lexer(std::move(lexer)), logger(context.logger),
           current_token(this->lexer.next_token()), peek_token(this->lexer.next_token()) {}
 
     Program parse() {

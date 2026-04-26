@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.30)
 project(zep
     VERSION 0.1.0
     DESCRIPTION "The Zep programming language compiler"
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 find_program(CCACHE ccache)
@@ -18,6 +18,13 @@ include(cmake/Standards.cmake)
 include(cmake/Flags.cmake)
 include(cmake/Sanitizers.cmake)
 include(cmake/Modules.cmake)
+
+find_package(LLVM REQUIRED CONFIG)
+message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
+message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+include_directories(${LLVM_INCLUDE_DIRS})
+link_directories(${LLVM_LIBRARY_DIRS})
+add_definitions(${LLVM_DEFINITIONS})
 
 add_subdirectory(common)
 add_subdirectory(frontend)

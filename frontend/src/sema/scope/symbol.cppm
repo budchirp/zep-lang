@@ -84,9 +84,12 @@ export class FunctionSymbol : public Symbol {
 
     const FunctionType* function_type;
 
-    FunctionSymbol(std::string name, Span span, Visibility::Type visibility, const Type* type)
+    const Linkage::Type linkage;
+
+    FunctionSymbol(std::string name, Span span, Visibility::Type visibility, Linkage::Type linkage,
+                   const Type* type)
         : Symbol(static_kind, std::move(name), span, visibility, type),
-          function_type(type->as<FunctionType>()) {}
+          function_type(type->as<FunctionType>()), linkage(linkage) {}
 };
 
 export class TypeSymbol : public Symbol {

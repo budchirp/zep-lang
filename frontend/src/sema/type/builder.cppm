@@ -6,8 +6,9 @@ export module zep.frontend.sema.type.builder;
 
 import zep.frontend.sema.type;
 import zep.frontend.arena;
-import zep.frontend.ast;
-import zep.frontend.ast.program;
+import zep.frontend.node;
+import zep.frontend.node.program;
+import zep.common.context;
 import zep.frontend.sema.context;
 import zep.frontend.sema.type.resolver;
 import zep.frontend.sema.env;
@@ -18,11 +19,13 @@ export class TypeBuilder {
     Visitor<void>& visitor;
 
     Context& context;
+    SemaContext& sema;
     TypeResolver& resolver;
 
   public:
-    explicit TypeBuilder(Visitor<void>& visitor, Context& context, TypeResolver& resolver)
-        : visitor(visitor), context(context), resolver(resolver) {}
+    explicit TypeBuilder(Visitor<void>& visitor, Context& context, SemaContext& sema,
+                         TypeResolver& resolver)
+        : visitor(visitor), context(context), sema(sema), resolver(resolver) {}
 
     std::vector<GenericParameterType>
     build_generic_parameters(std::vector<GenericParameter*>& generic_parameters) {
@@ -46,7 +49,7 @@ export class TypeBuilder {
         auto generic_parameter_types = build_generic_parameters(node.generic_parameters);
 
         auto scope = resolver.scoped_substitutions();
-        GenericResolver generic_resolver(context, resolver, visitor);
+        GenericResolver generic_resolver(context, sema, resolver, visitor);
         generic_resolver.activate_generic_parameters(generic_parameter_types, true);
 
         std::vector<StructFieldType> field_types;
@@ -57,7 +60,7 @@ export class TypeBuilder {
             field_types.emplace_back(field->name, field->type->type);
         }
 
-        return context.types.create<StructType>(node.name, std::move(generic_parameter_types),
+        return sema.types.create<StructType>(node.name, std::move(generic_parameter_types),
                                                 std::move(field_types));
     }
 
@@ -65,7 +68,7 @@ export class TypeBuilder {
         auto generic_parameter_types = build_generic_parameters(prototype.generic_parameters);
 
         auto scope = resolver.scoped_substitutions();
-        GenericResolver generic_resolver(context, resolver, visitor);
+        GenericResolver generic_resolver(context, sema, resolver, visitor);
         generic_resolver.activate_generic_parameters(generic_parameter_types, true);
 
         std::vector<ParameterType> parameter_types;
@@ -85,7 +88,7 @@ export class TypeBuilder {
 
         visitor.visit(*prototype.return_type);
 
-        return context.types.create<FunctionType>(prototype.name, prototype.return_type->type,
+        return sema.types.create<FunctionType>(prototype.name, prototype.return_type->type,
                                                   std::move(parameter_types),
                                                   std::move(generic_parameter_types), is_variadic);
     }

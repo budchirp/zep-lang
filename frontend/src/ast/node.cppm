@@ -6,7 +6,7 @@ module;
 #include <utility>
 #include <vector>
 
-export module zep.frontend.ast;
+export module zep.frontend.node;
 
 import zep.common.position;
 import zep.common.span;

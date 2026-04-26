@@ -4,8 +4,9 @@ module;
 
 export module zep.frontend.sema.type.helper;
 
+import zep.common.context;
 import zep.frontend.sema.context;
-import zep.frontend.ast;
+import zep.frontend.node;
 import zep.frontend.sema.symbol;
 import zep.frontend.sema.type;
 import zep.frontend.sema.type.builder;
@@ -13,13 +14,14 @@ import zep.frontend.sema.scope;
 import zep.frontend.sema.type.resolver;
 import zep.frontend.sema.kind;
 import zep.frontend.sema.env;
-import zep.frontend.ast.program;
+import zep.frontend.node.program;
 
 export class TypeHelper {
   private:
     Visitor<void>& visitor;
 
     Context& context;
+    SemaContext& sema;
 
     TypeResolver& resolver;
     TypeBuilder& builder;
@@ -27,9 +29,9 @@ export class TypeHelper {
   public:
     const FunctionSymbol* current_function = nullptr;
 
-    explicit TypeHelper(Visitor<void>& visitor, Context& context, TypeResolver& resolver,
-                        TypeBuilder& builder)
-        : visitor(visitor), context(context), resolver(resolver), builder(builder) {}
+    explicit TypeHelper(Visitor<void>& visitor, Context& context, SemaContext& sema,
+                        TypeResolver& resolver, TypeBuilder& builder)
+        : visitor(visitor), context(context), sema(sema), resolver(resolver), builder(builder) {}
 
     void register_declarations(Program& program) {
         for (auto* statement : program.statements) {
@@ -73,9 +75,9 @@ export class TypeHelper {
         node.type = type;
 
         auto* symbol =
-            context.symbols.create<TypeSymbol>(node.name, node.span, node.visibility, type);
+            sema.symbols.create<TypeSymbol>(node.name, node.span, node.visibility, type);
 
-        if (!context.env.current_scope->define_type(node.name, symbol)) {
+        if (!sema.env.current_scope->define_type(node.name, symbol)) {
             context.diagnostics.add_error(node.span, "redefinition of type '" + node.name + "'");
         }
     }
@@ -83,7 +85,7 @@ export class TypeHelper {
     FunctionSymbol* define_function(FunctionDeclaration& node) {
         if (node.type != nullptr) {
             for (auto* symbol :
-                 context.env.current_scope->lookup_function_overloads(node.prototype->name)) {
+                 sema.env.current_scope->lookup_function_overloads(node.prototype->name)) {
                 if (symbol->type == node.type) {
                     return symbol;
                 }
@@ -96,7 +98,7 @@ export class TypeHelper {
         node.type = type;
 
         for (auto* symbol :
-             context.env.current_scope->lookup_function_overloads(node.prototype->name)) {
+             sema.env.current_scope->lookup_function_overloads(node.prototype->name)) {
             const auto* function_type = symbol->type->as<FunctionType>();
             if (function_type == nullptr) {
                 continue;
@@ -109,10 +111,10 @@ export class TypeHelper {
             }
         }
 
-        auto* symbol = context.symbols.create<FunctionSymbol>(node.prototype->name, node.span,
-                                                              node.visibility, type);
+        auto* symbol = sema.symbols.create<FunctionSymbol>(
+            node.prototype->name, node.span, node.visibility, Linkage::Type::Internal, type);
 
-        context.env.current_scope->define_function(node.prototype->name, symbol);
+        sema.env.current_scope->define_function(node.prototype->name, symbol);
 
         return symbol;
     }
@@ -125,9 +127,9 @@ export class TypeHelper {
         const auto* type = builder.build_function(*node.prototype);
         node.type = type;
 
-        auto* symbol = context.symbols.create<FunctionSymbol>(node.prototype->name, node.span,
-                                                              node.visibility, type);
-        context.env.current_scope->define_function(node.prototype->name, symbol);
+        auto* symbol = sema.symbols.create<FunctionSymbol>(
+            node.prototype->name, node.span, node.visibility, Linkage::Type::External, type);
+        sema.env.current_scope->define_function(node.prototype->name, symbol);
     }
 
     void define_variable(VarDeclaration& node) {
@@ -141,14 +143,14 @@ export class TypeHelper {
 
         const Type* type = nullptr;
         if (node.annotation != nullptr) {
-            type = resolver.resolve_type(node.annotation->type);
+            type = resolver.resolve(node.annotation->type);
         }
         node.type = type;
 
-        auto* symbol = context.symbols.create<VarSymbol>(node.name, node.span, node.visibility,
+        auto* symbol = sema.symbols.create<VarSymbol>(node.name, node.span, node.visibility,
                                                          node.storage_kind, type);
 
-        if (!context.env.current_scope->define_var(node.name, symbol)) {
+        if (!sema.env.current_scope->define_var(node.name, symbol)) {
             context.diagnostics.add_error(node.span,
                                           "redefinition of variable '" + node.name + "'");
         }
@@ -161,13 +163,13 @@ export class TypeHelper {
 
         visitor.visit(*node.annotation);
 
-        const auto* type = resolver.resolve_type(node.annotation->type);
+        const auto* type = resolver.resolve(node.annotation->type);
         node.type = type;
 
-        auto* symbol = context.symbols.create<VarSymbol>(node.name, node.span, node.visibility,
+        auto* symbol = sema.symbols.create<VarSymbol>(node.name, node.span, node.visibility,
                                                          StorageKind::Type::Var, type);
 
-        if (!context.env.current_scope->define_var(node.name, symbol)) {
+        if (!sema.env.current_scope->define_var(node.name, symbol)) {
             context.diagnostics.add_error(node.span,
                                           "redefinition of variable '" + node.name + "'");
         }
