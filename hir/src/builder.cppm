@@ -46,17 +46,17 @@ export class HIRBuilder : public Visitor<HIRNode*> {
             return nullptr;
         }
 
-        if (auto* pointer = const_cast<Type*>(type)->as<PointerType>(); pointer != nullptr) {
+        if (const auto* pointer = type->as<PointerType>(); pointer != nullptr) {
             return sema.types.create<PointerType>(lower_type(pointer->element, span),
                                                   pointer->is_mutable);
         }
 
-        if (auto* array = const_cast<Type*>(type)->as<ArrayType>(); array != nullptr) {
+        if (const auto* array = type->as<ArrayType>(); array != nullptr) {
             return sema.types.create<ArrayType>(lower_type(array->element, span), array->size);
         }
 
-        if (auto* function = const_cast<Type*>(type)->as<FunctionType>(); function != nullptr) {
-            auto parameters = std::vector<ParameterType>();
+        if (const auto* function = type->as<FunctionType>(); function != nullptr) {
+            std::vector<ParameterType> parameters;
             for (const auto& param : function->parameters) {
                 parameters.emplace_back(param.name, lower_type(param.type, span));
             }
@@ -65,19 +65,19 @@ export class HIRBuilder : public Visitor<HIRNode*> {
                 function->generic_parameters, function->variadic);
         }
 
-        auto* resolved = resolver.resolve(type);
+        const auto* resolved = resolver.resolve(type);
 
-        if (auto* st = const_cast<Type*>(resolved)->as<StructType>(); st != nullptr) {
+        if (const auto* st = resolved->as<StructType>(); st != nullptr) {
             std::vector<const Type*> generic_args;
             bool is_specialization = false;
 
-            if (auto* named = const_cast<Type*>(type)->as<NamedType>();
+            if (const auto* named = type->as<NamedType>();
                 named != nullptr && !named->generic_arguments.empty()) {
                 is_specialization = true;
                 for (const auto& arg : named->generic_arguments) {
                     generic_args.push_back(lower_type(arg.type, span));
                 }
-            } else if (auto* original = mono_cache.get_struct(st->name)) {
+            } else if (const auto* original = mono_cache.get_struct(st->name)) {
                 is_specialization = true;
                 for (const auto& param : original->generic_parameters) {
                     generic_args.push_back(resolver.resolve(
@@ -148,10 +148,10 @@ export class HIRBuilder : public Visitor<HIRNode*> {
     }
 
     HIRNode* visit(IdentifierExpression& node) override {
-        auto* type = lower_type(node.type, node.span);
+        const auto* type = lower_type(node.type, node.span);
         auto name = node.name;
 
-        if (auto* ft = const_cast<Type*>(type)->as<FunctionType>(); ft != nullptr) {
+        if (const auto* ft = type->as<FunctionType>(); ft != nullptr) {
             auto* symbol = program.global_scope->lookup_function(name);
 
             if (symbol == nullptr || symbol->linkage != Linkage::Type::External) {
@@ -244,7 +244,7 @@ export class HIRBuilder : public Visitor<HIRNode*> {
     }
 
     HIRNode* visit(CallExpression& node) override {
-        auto hir_arguments = std::vector<HIRExpression*>();
+        std::vector<HIRExpression*> hir_arguments;
 
         for (auto* argument : node.arguments) {
             hir_arguments.push_back(lower_expression(*argument->value));
@@ -252,7 +252,7 @@ export class HIRBuilder : public Visitor<HIRNode*> {
 
         if (auto* identifier = node.callee->as<IdentifierExpression>(); identifier != nullptr) {
             if (!node.generic_arguments.empty()) {
-                auto generic_args = std::vector<const Type*>();
+                std::vector<const Type*> generic_args;
 
                 for (const auto& argument : node.generic_arguments) {
                     generic_args.push_back(lower_type(argument->type->type, node.span));
@@ -291,7 +291,7 @@ export class HIRBuilder : public Visitor<HIRNode*> {
                 auto* type = lower_type(node.callee->type, node.span);
                 auto name = identifier->name;
 
-                if (auto* ft = const_cast<Type*>(type)->as<FunctionType>(); ft != nullptr) {
+                if (const auto* ft = type->as<FunctionType>(); ft != nullptr) {
                     auto* symbol = program.global_scope->lookup_function(name);
 
                     if (symbol == nullptr || symbol->linkage != Linkage::Type::External) {
@@ -330,7 +330,7 @@ export class HIRBuilder : public Visitor<HIRNode*> {
     }
 
     HIRNode* visit(StructLiteralExpression& node) override {
-        auto hir_fields = std::vector<HIRStructLiteralField>();
+        std::vector<HIRStructLiteralField> hir_fields;
         hir_fields.reserve(node.fields.size());
 
         for (auto& field : node.fields) {
@@ -357,7 +357,7 @@ export class HIRBuilder : public Visitor<HIRNode*> {
     }
 
     HIRNode* visit(BlockStatement& node) override {
-        auto hir_statements = std::vector<HIRStatement*>();
+        std::vector<HIRStatement*> hir_statements;
 
         for (auto& child : node.statements) {
             auto* hir_statement = lower_statement(*child);
@@ -419,7 +419,7 @@ export class HIRBuilder : public Visitor<HIRNode*> {
     }
 
     HIRNode* visit(ExternFunctionDeclaration& node) override {
-        auto hir_parameters = std::vector<HIRParameter>();
+        std::vector<HIRParameter> hir_parameters;
 
         for (const auto& parameter : node.prototype->parameters) {
             hir_parameters.emplace_back(parameter->name, lower_type(parameter->type->type, node.span));
@@ -463,7 +463,7 @@ export class HIRBuilder : public Visitor<HIRNode*> {
             }
         }
 
-        auto hir_parameters = std::vector<HIRParameter>();
+        std::vector<HIRParameter> hir_parameters;
         hir_parameters.reserve(declaration.prototype->parameters.size());
 
         for (const auto& parameter : declaration.prototype->parameters) {
@@ -529,7 +529,7 @@ export class HIRBuilder : public Visitor<HIRNode*> {
         }
 
         while (true) {
-            auto pending = std::vector<HIRFunctionDeclaration*>();
+            std::vector<HIRFunctionDeclaration*> pending;
             mono_cache.drain_pending_specializations_into(pending);
 
             if (pending.empty()) {

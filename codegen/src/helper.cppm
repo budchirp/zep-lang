@@ -84,15 +84,11 @@ export class CodegenHelper {
             return llvm_struct;
         }
 
-        if (type->is<StringType>()) {
-            return context.builder.getPtrTy();
-        }
 
         return context.builder.getInt32Ty();
     }
 
     void declare_types(const Scope& global_scope) {
-        // First pass: create all opaque struct types
         for (const auto& [name, symbol] : global_scope.types) {
             if (const auto* struct_type = symbol->type->as<StructType>(); struct_type != nullptr) {
                 struct_types[struct_type->name] =
@@ -100,7 +96,7 @@ export class CodegenHelper {
             }
         }
 
-        // Second pass: set bodies for all struct types
+
         for (const auto& [name, symbol] : global_scope.types) {
             if (const auto* struct_type = symbol->type->as<StructType>(); struct_type != nullptr) {
                 auto* llvm_struct = struct_types[struct_type->name];
@@ -111,8 +107,6 @@ export class CodegenHelper {
                 for (const auto& field : struct_type->fields) {
                     auto* field_type = get_llvm_type(field.type);
                     if (field_type == nullptr) {
-                        Logger::print_stderr("Error: Could not get LLVM type for field " +
-                                             field.name + " in struct " + struct_type->name + "\n");
                         continue;
                     }
                     llvm_field_types.push_back(field_type);

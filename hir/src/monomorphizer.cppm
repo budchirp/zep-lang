@@ -39,21 +39,23 @@ export class MonomorphizationCache {
     }
 
     bool is_generic_function(const std::string& name) const {
-        return functions.find(name) != functions.end();
+        return functions.contains(name);
     }
 
     bool is_generic_struct(const std::string& name) const {
-        return structs.find(name) != structs.end();
+        return structs.contains(name);
     }
 
     const FunctionDeclaration* get_function(const std::string& name) const {
-        auto iterator = functions.find(name);
-        return iterator != functions.end() ? iterator->second : nullptr;
+        auto it = functions.find(name);
+
+        return it != functions.end() ? it->second : nullptr;
     }
 
     const StructDeclaration* get_struct(const std::string& name) const {
-        auto iterator = structs.find(name);
-        return iterator != structs.end() ? iterator->second : nullptr;
+        auto it = structs.find(name);
+
+        return it != structs.end() ? it->second : nullptr;
     }
 
     void clear_pending_specializations() { pending_specializations.clear(); }
@@ -70,7 +72,7 @@ export class MonomorphizationCache {
     }
 
     MonoCacheResult get_or_create(const std::string& name, const std::vector<const Type*>& types) {
-        std::string full = NameMangler::mangle(name, types);
+        auto full = NameMangler::mangle(name, types);
 
         if (specializations.contains(full)) {
             return MonoCacheResult(full, true);
