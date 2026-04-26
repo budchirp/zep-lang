@@ -776,282 +776,235 @@ class Visitor {
     virtual T visit(ExternVarDeclaration& node) = 0;
     virtual T visit(ImportStatement& node) = 0;
 
-    void visit_expression(Expression& expression) {
+    T visit_expression(Expression& expression) {
         NumberLiteral* number_literal = expression.as<NumberLiteral>();
         if (number_literal != nullptr) {
-            visit(*number_literal);
-            return;
+            return visit(*number_literal);
         }
         FloatLiteral* float_literal = expression.as<FloatLiteral>();
         if (float_literal != nullptr) {
-            visit(*float_literal);
-            return;
+            return visit(*float_literal);
         }
         StringLiteral* string_literal = expression.as<StringLiteral>();
         if (string_literal != nullptr) {
-            visit(*string_literal);
-            return;
+            return visit(*string_literal);
         }
         BooleanLiteral* boolean_literal = expression.as<BooleanLiteral>();
         if (boolean_literal != nullptr) {
-            visit(*boolean_literal);
-            return;
+            return visit(*boolean_literal);
         }
         IdentifierExpression* identifier_expression = expression.as<IdentifierExpression>();
         if (identifier_expression != nullptr) {
-            visit(*identifier_expression);
-            return;
+            return visit(*identifier_expression);
         }
         BinaryExpression* binary_expression = expression.as<BinaryExpression>();
         if (binary_expression != nullptr) {
-            visit(*binary_expression);
-            return;
+            return visit(*binary_expression);
         }
         UnaryExpression* unary_expression = expression.as<UnaryExpression>();
         if (unary_expression != nullptr) {
-            visit(*unary_expression);
-            return;
+            return visit(*unary_expression);
         }
         CallExpression* call_expression = expression.as<CallExpression>();
         if (call_expression != nullptr) {
-            visit(*call_expression);
-            return;
+            return visit(*call_expression);
         }
         IndexExpression* index_expression = expression.as<IndexExpression>();
         if (index_expression != nullptr) {
-            visit(*index_expression);
-            return;
+            return visit(*index_expression);
         }
         MemberExpression* member_expression = expression.as<MemberExpression>();
         if (member_expression != nullptr) {
-            visit(*member_expression);
-            return;
+            return visit(*member_expression);
         }
         AssignExpression* assign_expression = expression.as<AssignExpression>();
         if (assign_expression != nullptr) {
-            visit(*assign_expression);
-            return;
+            return visit(*assign_expression);
         }
         StructLiteralExpression* struct_literal_expression =
             expression.as<StructLiteralExpression>();
         if (struct_literal_expression != nullptr) {
-            visit(*struct_literal_expression);
-            return;
+            return visit(*struct_literal_expression);
         }
         IfExpression* if_expression = expression.as<IfExpression>();
         if (if_expression != nullptr) {
-            visit(*if_expression);
-            return;
+            return visit(*if_expression);
         }
         TypeExpression* type_expression = expression.as<TypeExpression>();
         if (type_expression != nullptr) {
-            visit(*type_expression);
-            return;
+            return visit(*type_expression);
         }
+
+        return T();
     }
 
-    void visit_statement(Statement& statement) {
+    T visit_statement(Statement& statement) {
         BlockStatement* block_statement = statement.as<BlockStatement>();
         if (block_statement != nullptr) {
-            visit(*block_statement);
-            return;
+            return visit(*block_statement);
         }
         ExpressionStatement* expression_statement = statement.as<ExpressionStatement>();
         if (expression_statement != nullptr) {
-            visit(*expression_statement);
-            return;
+            return visit(*expression_statement);
         }
         ReturnStatement* return_statement = statement.as<ReturnStatement>();
         if (return_statement != nullptr) {
-            visit(*return_statement);
-            return;
+            return visit(*return_statement);
         }
         StructDeclaration* struct_declaration = statement.as<StructDeclaration>();
         if (struct_declaration != nullptr) {
-            visit(*struct_declaration);
-            return;
+            return visit(*struct_declaration);
         }
         VarDeclaration* var_declaration = statement.as<VarDeclaration>();
         if (var_declaration != nullptr) {
-            visit(*var_declaration);
-            return;
+            return visit(*var_declaration);
         }
         FunctionDeclaration* function_declaration = statement.as<FunctionDeclaration>();
         if (function_declaration != nullptr) {
-            visit(*function_declaration);
-            return;
+            return visit(*function_declaration);
         }
         ExternFunctionDeclaration* extern_function_declaration =
             statement.as<ExternFunctionDeclaration>();
         if (extern_function_declaration != nullptr) {
-            visit(*extern_function_declaration);
-            return;
+            return visit(*extern_function_declaration);
         }
         ExternVarDeclaration* extern_var_declaration = statement.as<ExternVarDeclaration>();
         if (extern_var_declaration != nullptr) {
-            visit(*extern_var_declaration);
-            return;
+            return visit(*extern_var_declaration);
         }
         ImportStatement* import_statement = statement.as<ImportStatement>();
         if (import_statement != nullptr) {
-            visit(*import_statement);
-            return;
+            return visit(*import_statement);
         }
+
+        return T();
     }
 
-    void visit_node(Node& node) {
+    T visit_node(Node& node) {
         TypeExpression* type_expression = node.as<TypeExpression>();
         if (type_expression != nullptr) {
-            visit(*type_expression);
-            return;
+            return visit(*type_expression);
         }
         GenericParameter* generic_parameter = node.as<GenericParameter>();
         if (generic_parameter != nullptr) {
-            visit(*generic_parameter);
-            return;
+            return visit(*generic_parameter);
         }
         GenericArgument* generic_argument = node.as<GenericArgument>();
         if (generic_argument != nullptr) {
-            visit(*generic_argument);
-            return;
+            return visit(*generic_argument);
         }
         Parameter* parameter = node.as<Parameter>();
         if (parameter != nullptr) {
-            visit(*parameter);
-            return;
+            return visit(*parameter);
         }
         Argument* argument = node.as<Argument>();
         if (argument != nullptr) {
-            visit(*argument);
-            return;
+            return visit(*argument);
         }
         FunctionPrototype* function_prototype = node.as<FunctionPrototype>();
         if (function_prototype != nullptr) {
-            visit(*function_prototype);
-            return;
+            return visit(*function_prototype);
         }
         StructField* struct_field = node.as<StructField>();
         if (struct_field != nullptr) {
-            visit(*struct_field);
-            return;
+            return visit(*struct_field);
         }
         StructLiteralField* struct_literal_field = node.as<StructLiteralField>();
         if (struct_literal_field != nullptr) {
-            visit(*struct_literal_field);
-            return;
+            return visit(*struct_literal_field);
         }
 
         NumberLiteral* number_literal = node.as<NumberLiteral>();
         if (number_literal != nullptr) {
-            visit(*number_literal);
-            return;
+            return visit(*number_literal);
         }
         FloatLiteral* float_literal = node.as<FloatLiteral>();
         if (float_literal != nullptr) {
-            visit(*float_literal);
-            return;
+            return visit(*float_literal);
         }
         StringLiteral* string_literal = node.as<StringLiteral>();
         if (string_literal != nullptr) {
-            visit(*string_literal);
-            return;
+            return visit(*string_literal);
         }
         BooleanLiteral* boolean_literal = node.as<BooleanLiteral>();
         if (boolean_literal != nullptr) {
-            visit(*boolean_literal);
-            return;
+            return visit(*boolean_literal);
         }
         IdentifierExpression* identifier_expression = node.as<IdentifierExpression>();
         if (identifier_expression != nullptr) {
-            visit(*identifier_expression);
-            return;
+            return visit(*identifier_expression);
         }
         BinaryExpression* binary_expression = node.as<BinaryExpression>();
         if (binary_expression != nullptr) {
-            visit(*binary_expression);
-            return;
+            return visit(*binary_expression);
         }
         UnaryExpression* unary_expression = node.as<UnaryExpression>();
         if (unary_expression != nullptr) {
-            visit(*unary_expression);
-            return;
+            return visit(*unary_expression);
         }
         CallExpression* call_expression = node.as<CallExpression>();
         if (call_expression != nullptr) {
-            visit(*call_expression);
-            return;
+            return visit(*call_expression);
         }
         IndexExpression* index_expression = node.as<IndexExpression>();
         if (index_expression != nullptr) {
-            visit(*index_expression);
-            return;
+            return visit(*index_expression);
         }
         MemberExpression* member_expression = node.as<MemberExpression>();
         if (member_expression != nullptr) {
-            visit(*member_expression);
-            return;
+            return visit(*member_expression);
         }
         AssignExpression* assign_expression = node.as<AssignExpression>();
         if (assign_expression != nullptr) {
-            visit(*assign_expression);
-            return;
+            return visit(*assign_expression);
         }
         StructLiteralExpression* struct_literal_expression = node.as<StructLiteralExpression>();
         if (struct_literal_expression != nullptr) {
-            visit(*struct_literal_expression);
-            return;
+            return visit(*struct_literal_expression);
         }
         IfExpression* if_expression = node.as<IfExpression>();
         if (if_expression != nullptr) {
-            visit(*if_expression);
-            return;
+            return visit(*if_expression);
         }
 
         BlockStatement* block_statement = node.as<BlockStatement>();
         if (block_statement != nullptr) {
-            visit(*block_statement);
-            return;
+            return visit(*block_statement);
         }
         ExpressionStatement* expression_statement = node.as<ExpressionStatement>();
         if (expression_statement != nullptr) {
-            visit(*expression_statement);
-            return;
+            return visit(*expression_statement);
         }
         ReturnStatement* return_statement = node.as<ReturnStatement>();
         if (return_statement != nullptr) {
-            visit(*return_statement);
-            return;
+            return visit(*return_statement);
         }
         StructDeclaration* struct_declaration = node.as<StructDeclaration>();
         if (struct_declaration != nullptr) {
-            visit(*struct_declaration);
-            return;
+            return visit(*struct_declaration);
         }
         VarDeclaration* var_declaration = node.as<VarDeclaration>();
         if (var_declaration != nullptr) {
-            visit(*var_declaration);
-            return;
+            return visit(*var_declaration);
         }
         FunctionDeclaration* function_declaration = node.as<FunctionDeclaration>();
         if (function_declaration != nullptr) {
-            visit(*function_declaration);
-            return;
+            return visit(*function_declaration);
         }
         ExternFunctionDeclaration* extern_function_declaration =
             node.as<ExternFunctionDeclaration>();
         if (extern_function_declaration != nullptr) {
-            visit(*extern_function_declaration);
-            return;
+            return visit(*extern_function_declaration);
         }
         ExternVarDeclaration* extern_var_declaration = node.as<ExternVarDeclaration>();
         if (extern_var_declaration != nullptr) {
-            visit(*extern_var_declaration);
-            return;
+            return visit(*extern_var_declaration);
         }
         ImportStatement* import_statement = node.as<ImportStatement>();
         if (import_statement != nullptr) {
-            visit(*import_statement);
-            return;
+            return visit(*import_statement);
         }
+
+        return T();
     }
 };

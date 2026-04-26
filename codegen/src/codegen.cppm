@@ -20,6 +20,7 @@ import zep.hir.node.program;
 import zep.frontend.sema.type;
 import zep.codegen.context;
 import zep.codegen.helper;
+import zep.common.logger;
 
 export class Codegen : public HIRVisitor<llvm::Value*> {
   private:
@@ -30,12 +31,13 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
     explicit Codegen() : context(), helper(context) {}
 
     void generate(HIRProgram& program) {
-        if (program.global_scope != nullptr) {
-            helper.declare_types(*program.global_scope);
-            helper.declare_functions(*program.global_scope);
-        }
+        helper.declare_types(*program.global_scope);
+        helper.declare_functions(*program.global_scope);
 
         for (auto* statement : program.statements) {
+            if (auto* function = statement->as<HIRFunctionDeclaration>(); function != nullptr) {
+                Logger::print_stderr("Visiting function: " + function->name + "\n");
+            }
             statement->accept(*this);
         }
 
@@ -58,7 +60,7 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
         }
 
         if (auto* identifier = node->as<HIRIdentifierExpression>(); identifier != nullptr) {
-            return context.lookup_local(identifier->name);
+            return context.lookup(identifier->name);
         }
 
         if (auto* member = node->as<HIRMemberExpression>(); member != nullptr) {
@@ -96,6 +98,7 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
 
     llvm::Value* visit(HIRBlockStatement& node) override {
         context.enter_scope();
+
         llvm::Value* last = nullptr;
 
         for (auto* statement : node.statements) {
@@ -103,6 +106,7 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
         }
 
         context.exit_scope();
+
         return last;
     }
 
@@ -112,8 +116,8 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
             return nullptr;
         }
 
-        return llvm::ConstantInt::get(llvm_type, llvm::APInt(llvm_type->getIntegerBitWidth(),
-                                                           std::stoll(node.value), true));
+        return llvm::ConstantInt::get(
+            llvm_type, llvm::APInt(llvm_type->getIntegerBitWidth(), std::stoll(node.value), true));
     }
 
     llvm::Value* visit(HIRFloatLiteral& node) override {
@@ -124,18 +128,22 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
 
         return llvm::ConstantFP::get(llvm_type, llvm::APFloat(std::stod(node.value)));
     }
+
     llvm::Value* visit(HIRStringLiteral& node) override {
         return context.builder.CreateGlobalString(node.value);
     }
+
     llvm::Value* visit(HIRBooleanLiteral& node) override {
         return llvm::ConstantInt::get(context.llvm_context,
                                       llvm::APInt(1, node.value ? 1 : 0, false));
     }
+
     llvm::Value* visit(HIRIdentifierExpression& node) override {
-        auto* allocation = context.lookup_local(node.name);
+        auto* allocation = context.lookup(node.name);
         if (allocation == nullptr) {
             return nullptr;
         }
+
         return context.builder.CreateLoad(helper.get_llvm_type(node.type), allocation);
     }
 
@@ -239,11 +247,13 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
     llvm::Value* visit(HIRCallExpression& node) override {
         auto* callee_id = node.callee->as<HIRIdentifierExpression>();
         if (callee_id == nullptr) {
+            Logger::print_stderr("Error: Call callee is not an identifier\n");
             return nullptr;
         }
 
         auto* callee = context.module->getFunction(callee_id->name);
         if (callee == nullptr) {
+            Logger::print_stderr("Error: Function not found in LLVM module: " + callee_id->name + "\n");
             return nullptr;
         }
 
@@ -251,8 +261,10 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
         for (auto* arg : node.arguments) {
             auto* value = arg->accept(*this);
             if (value == nullptr) {
+                Logger::print_stderr("Error: Failed to generate code for argument in call to " + callee_id->name + "\n");
                 return nullptr;
             }
+
             arguments.push_back(value);
         }
 
@@ -288,7 +300,13 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
         auto* value = node.value->accept(*this);
         auto* address = get_address(node.target);
 
-        if (address == nullptr || value == nullptr) {
+        if (address == nullptr) {
+            Logger::print_stderr("Error: Failed to get address for assignment target");
+            return nullptr;
+        }
+
+        if (value == nullptr) {
+            Logger::print_stderr("Error: Failed to generate code for assignment value");
             return nullptr;
         }
 
@@ -304,6 +322,11 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
         for (const auto& field : node.fields) {
             int index = get_member_index(struct_type, field.name);
             auto* value = field.value->accept(*this);
+            if (value == nullptr) {
+                Logger::print_stderr("Error: Failed to generate code for field " + field.name + " in struct literal " + struct_type->name);
+                return nullptr;
+            }
+
             auto* field_pointer =
                 builder.CreateStructGEP(llvm_type, allocation, static_cast<unsigned>(index));
             builder.CreateStore(value, field_pointer);
@@ -363,18 +386,37 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
     }
 
     llvm::Value* visit(HIRReturnStatement& node) override {
+        if (node.value == nullptr) {
+            return context.builder.CreateRetVoid();
+        }
+
         auto* value = node.value->accept(*this);
+        if (value == nullptr) {
+            Logger::print_stderr("Error: Failed to generate code for return value");
+            return nullptr;
+        }
+
         return context.builder.CreateRet(value);
     }
 
     llvm::Value* visit(HIRVarDeclaration& node) override {
         auto* type = helper.get_llvm_type(node.type);
+        if (type == nullptr) {
+            Logger::print_stderr("Error: Could not get LLVM type for variable: " + node.name);
+            return nullptr;
+        }
+
         auto& builder = context.builder;
         auto* allocation = builder.CreateAlloca(type, nullptr);
-        context.define_local(node.name, allocation);
+        context.set(node.name, allocation);
 
         if (node.initializer != nullptr) {
             auto* value = node.initializer->accept(*this);
+            if (value == nullptr) {
+                Logger::print_stderr("Error: Failed to generate code for initializer of variable: " + node.name);
+                return nullptr;
+            }
+
             builder.CreateStore(value, allocation);
         }
 
@@ -404,7 +446,7 @@ export class Codegen : public HIRVisitor<llvm::Value*> {
 
             auto* allocation = builder.CreateAlloca(helper.get_llvm_type(param.type), nullptr);
             builder.CreateStore(argument, allocation);
-            context.define_local(param.name, allocation);
+            context.set(param.name, allocation);
         }
 
         node.body->accept(*this);

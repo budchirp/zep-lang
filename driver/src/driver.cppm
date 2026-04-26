@@ -37,8 +37,11 @@ export class Driver {
             std::exit(1);
         }
 
-        HIRBuilder hir_builder(context, sema);
+        HIRBuilder hir_builder(sema);
         auto hir_program = hir_builder.lower(program);
+
+        HIRDumper dumper;
+        dumper.dump_program(hir_program);
 
         Codegen codegen;
         codegen.generate(hir_program);

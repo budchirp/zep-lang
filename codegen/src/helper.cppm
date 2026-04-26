@@ -5,6 +5,7 @@ module;
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 export module zep.codegen.helper;
@@ -14,10 +15,12 @@ import zep.frontend.sema.type;
 import zep.frontend.sema.scope;
 import zep.frontend.sema.symbol;
 import zep.frontend.sema.kind;
+import zep.common.logger;
 
 export class CodegenHelper {
   private:
     CodegenContext& context;
+    std::unordered_map<std::string, llvm::StructType*> struct_types;
 
   public:
     explicit CodegenHelper(CodegenContext& context) : context(context) {}
@@ -28,16 +31,22 @@ export class CodegenHelper {
         }
 
         if (type->is<IntegerType>()) {
-            auto* integer_type = type->as<IntegerType>();
+            const auto* integer_type = type->as<IntegerType>();
             return context.builder.getIntNTy(static_cast<unsigned>(integer_type->size));
         }
 
         if (type->is<FloatType>()) {
-            auto* float_type = type->as<FloatType>();
-            if (float_type->size == 16) return context.builder.getHalfTy();
-            if (float_type->size == 32) return context.builder.getFloatTy();
-            if (float_type->size == 64) return context.builder.getDoubleTy();
-            return context.builder.getFloatTy();
+            const auto* float_type = type->as<FloatType>();
+            switch (float_type->size) {
+            case 16:
+                return context.builder.getHalfTy();
+            case 32:
+                return context.builder.getFloatTy();
+            case 64:
+                return context.builder.getDoubleTy();
+            default:
+                return context.builder.getFloatTy();
+            }
         }
 
         if (type->is<BooleanType>()) {
@@ -53,39 +62,63 @@ export class CodegenHelper {
         }
 
         if (type->is<StructType>()) {
-            auto* struct_type = type->as<StructType>();
-            auto* llvm_type = llvm::StructType::getTypeByName(context.llvm_context, struct_type->name);
-            if (llvm_type != nullptr) {
-                return llvm_type;
+            const auto* struct_type = type->as<StructType>();
+
+            auto it = struct_types.find(struct_type->name);
+            if (it != struct_types.end()) {
+                return it->second;
             }
+
+            auto* llvm_struct = llvm::StructType::create(context.llvm_context, struct_type->name);
+            struct_types[struct_type->name] = llvm_struct;
+
+            std::vector<llvm::Type*> field_types;
+            field_types.reserve(struct_type->fields.size());
+
+            for (const auto& field : struct_type->fields) {
+                field_types.push_back(get_llvm_type(field.type));
+            }
+
+            llvm_struct->setBody(field_types);
+
+            return llvm_struct;
+        }
+
+        if (type->is<StringType>()) {
+            return context.builder.getPtrTy();
         }
 
         return context.builder.getInt32Ty();
     }
 
     void declare_types(const Scope& global_scope) {
-        // Pass 1: Create opaque types
+        // First pass: create all opaque struct types
         for (const auto& [name, symbol] : global_scope.types) {
-            if (auto* struct_type = symbol->type->as<StructType>(); struct_type != nullptr) {
-                if (llvm::StructType::getTypeByName(context.llvm_context, struct_type->name) ==
-                    nullptr) {
+            if (const auto* struct_type = symbol->type->as<StructType>(); struct_type != nullptr) {
+                struct_types[struct_type->name] =
                     llvm::StructType::create(context.llvm_context, struct_type->name);
-                }
             }
         }
 
-        // Pass 2: Set bodies
+        // Second pass: set bodies for all struct types
         for (const auto& [name, symbol] : global_scope.types) {
-            if (auto* struct_type = symbol->type->as<StructType>(); struct_type != nullptr) {
-                auto* llvm_structure =
-                    llvm::StructType::getTypeByName(context.llvm_context, struct_type->name);
-                if (llvm_structure != nullptr && llvm_structure->isOpaque()) {
-                    std::vector<llvm::Type*> field_types;
-                    for (const auto& field : struct_type->fields) {
-                        field_types.push_back(get_llvm_type(field.type));
+            if (const auto* struct_type = symbol->type->as<StructType>(); struct_type != nullptr) {
+                auto* llvm_struct = struct_types[struct_type->name];
+
+                std::vector<llvm::Type*> llvm_field_types;
+                llvm_field_types.reserve(struct_type->fields.size());
+
+                for (const auto& field : struct_type->fields) {
+                    auto* field_type = get_llvm_type(field.type);
+                    if (field_type == nullptr) {
+                        Logger::print_stderr("Error: Could not get LLVM type for field " +
+                                             field.name + " in struct " + struct_type->name + "\n");
+                        continue;
                     }
-                    llvm_structure->setBody(field_types);
+                    llvm_field_types.push_back(field_type);
                 }
+
+                llvm_struct->setBody(llvm_field_types);
             }
         }
     }
@@ -93,18 +126,16 @@ export class CodegenHelper {
     void declare_functions(const Scope& global_scope) {
         for (const auto& [name, overloads] : global_scope.functions) {
             for (const auto* symbol : overloads) {
-                auto* function_type = symbol->type->as<FunctionType>();
-                if (function_type == nullptr) {
-                    continue;
+                std::vector<llvm::Type*> llvm_parameter_types;
+                llvm_parameter_types.reserve(symbol->function_type->parameters.size());
+
+                for (const auto& param : symbol->function_type->parameters) {
+                    llvm_parameter_types.push_back(get_llvm_type(param.type));
                 }
 
-                std::vector<llvm::Type*> parameter_types;
-                for (const auto& param : function_type->parameters) {
-                    parameter_types.push_back(get_llvm_type(param.type));
-                }
-
-                auto* llvm_function_type = llvm::FunctionType::get(
-                    get_llvm_type(function_type->return_type), parameter_types, function_type->variadic);
+                auto* llvm_function_type =
+                    llvm::FunctionType::get(get_llvm_type(symbol->function_type->return_type),
+                                            llvm_parameter_types, symbol->function_type->variadic);
 
                 auto llvm_linkage = symbol->linkage == Linkage::Type::External
                                         ? llvm::Function::ExternalLinkage

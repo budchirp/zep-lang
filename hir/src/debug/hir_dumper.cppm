@@ -135,17 +135,6 @@ export class HIRDumper : public HIRVisitor<void> {
         Logger::print_indent(1);
         Logger::print("],\n");
 
-        Logger::print_indent(1);
-        Logger::print("functions: [\n");
-
-        for (std::size_t i = 0; i < program.functions.size(); ++i) {
-            visit_child(*program.functions[i], 2, true);
-            Logger::print((i + 1 < program.functions.size() ? ",\n" : "\n"));
-        }
-
-        Logger::print_indent(1);
-        Logger::print("]\n");
-
         Logger::print_indent(0);
         Logger::print(")\n");
     }
@@ -639,7 +628,11 @@ export class HIRDumper : public HIRVisitor<void> {
 
         Logger::print_indent(depth + 1);
         Logger::print("body: ");
-        visit_child(*node.body, depth + 1, false);
+        if (node.body != nullptr) {
+            visit_child(*node.body, depth + 1, false);
+        } else {
+            Logger::print("null");
+        }
         Logger::print("\n");
 
         Logger::print_indent(depth);

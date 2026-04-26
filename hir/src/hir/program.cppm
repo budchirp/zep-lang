@@ -16,7 +16,6 @@ export class HIRProgram {
     Scope* global_scope;
 
     std::vector<HIRStatement*> statements;
-    std::vector<HIRFunctionDeclaration*> functions;
 
     explicit HIRProgram()
         : global_scope(

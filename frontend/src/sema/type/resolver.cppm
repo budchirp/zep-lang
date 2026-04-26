@@ -142,7 +142,7 @@ export class TypeResolver {
 
             bool changed = false;
             auto new_params = substitute_generic_parameters(struct_type->generic_parameters,
-                                                            substitution_map, changed);
+                                                             substitution_map, changed);
             auto new_fields = substitute_fields(struct_type->fields, substitution_map, changed);
 
             if (!changed) {

@@ -6,6 +6,7 @@ module;
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Value.h>
 #include <memory>
+#include <ranges>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -14,7 +15,7 @@ export module zep.codegen.context;
 
 export class CodegenContext {
   private:
-    std::vector<std::unordered_map<std::string, llvm::Value*>> scopes;
+    std::vector<std::unordered_map<std::string, llvm::Value*>> values;
 
   public:
     llvm::LLVMContext llvm_context;
@@ -26,18 +27,19 @@ export class CodegenContext {
         enter_scope();
     }
 
-    void enter_scope() { scopes.emplace_back(); }
+    void enter_scope() { values.emplace_back(); }
 
-    void exit_scope() { scopes.pop_back(); }
+    void exit_scope() { values.pop_back(); }
 
-    void define_local(const std::string& name, llvm::Value* value) { scopes.back()[name] = value; }
+    void set(const std::string& name, llvm::Value* value) { values.back()[name] = value; }
 
-    llvm::Value* lookup_local(const std::string& name) {
-        for (auto iterator = scopes.rbegin(); iterator != scopes.rend(); ++iterator) {
-            if (iterator->contains(name)) {
-                return (*iterator)[name];
+    llvm::Value* lookup(const std::string& name) {
+        for (auto& value : std::views::reverse(values)) {
+            if (value.contains(name)) {
+                return value[name];
             }
         }
+
         return nullptr;
     }
 };

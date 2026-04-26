@@ -579,11 +579,11 @@ T HIRNode::accept(HIRVisitor<T>& visitor) {
         return static_cast<HIRTypeExpression*>(this)->accept(visitor);
     case HIRNodeKind::Type::ExpressionStatement:
         return static_cast<HIRExpressionStatement*>(this)->accept(visitor);
-    case HIRReturnStatement::static_kind:
+    case HIRNodeKind::Type::ReturnStatement:
         return static_cast<HIRReturnStatement*>(this)->accept(visitor);
-    case HIRVarDeclaration::static_kind:
+    case HIRNodeKind::Type::VarDeclaration:
         return static_cast<HIRVarDeclaration*>(this)->accept(visitor);
-    case HIRFunctionDeclaration::static_kind:
+    case HIRNodeKind::Type::FunctionDeclaration:
         return static_cast<HIRFunctionDeclaration*>(this)->accept(visitor);
     }
 

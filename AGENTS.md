@@ -48,7 +48,7 @@ cmake --build cmake-build-release
 - DO NOT add explicit types. use `auto` whenever you can. Function return types MUST be explicit no `auto` allowed there.
 - 1. `private`, 2. `protected` and 3. `public` class order should be like this. DO NOT create methods like `get_x` and `set_x`.
 - Use `auto` when the type can be deduced; DO NOT use `auto` when creating instances (e.g., `Parser parser`)
-- DO NOT use shortcut names (e.g., `ty` for type)
+- DO NOT use shortcut names (e.g., `ty` for type). ONLY `ptr` for pointers is allowed.
 - ALWAYS use classes (never structs); use explicit constructors to ensure all members are initialized.
 - ALWAYS ASK QUESTIONS. Do not change code for unrelated issues; ask and I will guide you.
 - Use modern C++ features. Use `Logger::print` / `Logger::print_stderr` for console output; do not use `std::print` or `std::println` outside the logger module.
@@ -58,3 +58,4 @@ cmake --build cmake-build-release
 - ALWAYS check pointers explicitly with `== nullptr` or `!= nullptr`; do not rely on truthiness.
 - KEEP CODE SPACIOUS: add blank lines between logical blocks.
 - Add code examples to the plans that you make for lower intelligence model to understand
+- Use `lldb` to debug code.
