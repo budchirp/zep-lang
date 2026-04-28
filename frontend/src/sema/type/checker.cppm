@@ -75,20 +75,6 @@ export class TypeChecker : public Visitor<void> {
         }
     }
 
-  public:
-    explicit TypeChecker(Context& context, SemaContext& sema)
-        : context(context), sema(sema), resolver(sema.types, sema.env),
-          builder(*this, context, sema, resolver), helper(*this, context, sema, resolver, builder) {
-    }
-
-    void check(Program& program) {
-        helper.register_declarations(program);
-
-        for (auto* statement : program.statements) {
-            visit_statement(*statement);
-        }
-    }
-
     void visit(TypeExpression& node) override { node.type = resolver.resolve(node.type); }
 
     void visit(GenericParameter& node) override {
@@ -585,4 +571,18 @@ export class TypeChecker : public Visitor<void> {
     void visit(ExternVarDeclaration& node) override { helper.define_extern_variable(node); }
 
     void visit(ImportStatement& node [[maybe_unused]]) override {}
+
+  public:
+    explicit TypeChecker(Context& context, SemaContext& sema)
+        : context(context), sema(sema), resolver(sema.types, sema.env),
+          builder(*this, context, sema, resolver), helper(*this, context, sema, resolver, builder) {
+    }
+
+    void check(Program& program) {
+        helper.register_declarations(program);
+
+        for (auto* statement : program.statements) {
+            visit_statement(*statement);
+        }
+    }
 };

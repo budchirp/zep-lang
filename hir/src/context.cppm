@@ -9,7 +9,7 @@ import zep.frontend.sema.symbol;
 
 export class HIRContext {
   public:
-    HIRArena arena;
+    HIRNodeArena nodes;
 
     SymbolArena symbol_arena;
     ScopeArena scope_arena;

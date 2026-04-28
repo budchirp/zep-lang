@@ -33,6 +33,8 @@ export class Symbol {
     const std::string name;
     const Type* const type;
 
+    virtual ~Symbol() = default;
+
     Symbol(const Symbol&) = delete;
     Symbol& operator=(const Symbol&) = delete;
     Symbol(Symbol&&) = delete;

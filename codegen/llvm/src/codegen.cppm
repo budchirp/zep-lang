@@ -11,6 +11,7 @@ module;
 #include <llvm/IR/Verifier.h>
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/FileSystem.h>
+#include <llvm/Support/ManagedStatic.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Target/TargetMachine.h>
@@ -33,19 +34,20 @@ import zep.codegen.llvm.helper;
 import zep.common.logger;
 
 export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*> {
+  private:
     LLVMCodegenContext context;
     CodegenScope scope;
     LLVMCodegenHelper helper;
 
     llvm::Value* load(llvm::Type* type, llvm::Value* pointer) {
-        return context.builder.CreateLoad(type, pointer);
+        return context.builder->CreateLoad(type, pointer);
     }
 
     llvm::Value* store(llvm::Value* value, llvm::Value* pointer) {
-        return context.builder.CreateStore(value, pointer);
+        return context.builder->CreateStore(value, pointer);
     }
 
-    llvm::Value* allocate(llvm::Type* type) { return context.builder.CreateAlloca(type, nullptr); }
+    llvm::Value* allocate(llvm::Type* type) { return context.builder->CreateAlloca(type, nullptr); }
 
     llvm::Value* address_of(HIRExpression* node) {
         if (node == nullptr) {
@@ -65,7 +67,7 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
             auto* object_address = address_of(member->object);
 
             if (object_address == nullptr) {
-                auto* value = member->object->accept(*this);
+                auto* value = visit_expression(*member->object);
                 object_address = allocate(helper.get_llvm_type(struct_type));
                 store(value, object_address);
             }
@@ -74,8 +76,8 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
             const auto& fields = struct_type->fields;
             for (std::size_t i = 0; i < fields.size(); ++i) {
                 if (fields[i].name == member->member) {
-                    return context.builder.CreateStructGEP(llvm_struct_type, object_address,
-                                                           static_cast<unsigned>(i));
+                    return context.builder->CreateStructGEP(llvm_struct_type, object_address,
+                                                            static_cast<unsigned>(i));
                 }
             }
 
@@ -84,7 +86,7 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
 
         if (auto* unary = node->as<HIRUnaryExpression>();
             unary != nullptr && unary->op == UnaryExpression::Operator::Type::Dereference) {
-            return unary->operand->accept(*this);
+            return visit_expression(*unary->operand);
         }
 
         return nullptr;
@@ -95,7 +97,7 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
 
         llvm::Value* last = nullptr;
         for (auto* statement : node.statements) {
-            last = statement->accept(*this);
+            last = visit_statement(*statement);
         }
 
         scope.exit();
@@ -123,11 +125,11 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
     }
 
     llvm::Value* visit(HIRStringLiteral& node) override {
-        return context.builder.CreateGlobalString(node.value);
+        return context.builder->CreateGlobalString(node.value);
     }
 
     llvm::Value* visit(HIRBooleanLiteral& node) override {
-        return llvm::ConstantInt::get(context.llvm_context,
+        return llvm::ConstantInt::get(*context.llvm_context,
                                       llvm::APInt(1, node.value ? 1 : 0, false));
     }
 
@@ -141,12 +143,12 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
     }
 
     llvm::Value* visit(HIRBinaryExpression& node) override {
-        auto* left = node.left->accept(*this);
+        auto* left = visit_expression(*node.left);
         if (left == nullptr) {
             return nullptr;
         }
 
-        auto& builder = context.builder;
+        auto& builder = *context.builder;
 
         if (node.op == BinaryExpression::Operator::Type::As) {
             auto* target_type = helper.get_llvm_type(node.type);
@@ -178,7 +180,7 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
             return builder.CreateBitCast(left, target_type);
         }
 
-        auto* right = node.right->accept(*this);
+        auto* right = visit_expression(*node.right);
         if (right == nullptr) {
             return nullptr;
         }
@@ -210,12 +212,12 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
     }
 
     llvm::Value* visit(HIRUnaryExpression& node) override {
-        auto* operand = node.operand->accept(*this);
+        auto* operand = visit_expression(*node.operand);
         if (operand == nullptr) {
             return nullptr;
         }
 
-        auto& builder = context.builder;
+        auto& builder = *context.builder;
 
         switch (node.op) {
         case UnaryExpression::Operator::Type::Minus:
@@ -246,7 +248,7 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
         arguments.reserve(node.arguments.size());
 
         for (auto* arg : node.arguments) {
-            auto* value = arg->accept(*this);
+            auto* value = visit_expression(*arg);
             if (value == nullptr) {
                 return nullptr;
             }
@@ -254,12 +256,12 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
             arguments.push_back(value);
         }
 
-        return context.builder.CreateCall(callee, arguments);
+        return context.builder->CreateCall(callee, arguments);
     }
 
     llvm::Value* visit(HIRIndexExpression& node) override {
-        auto* object = node.object->accept(*this);
-        auto* index = node.index->accept(*this);
+        auto* object = visit_expression(*node.object);
+        auto* index = visit_expression(*node.index);
         if (object == nullptr || index == nullptr) {
             return nullptr;
         }
@@ -267,7 +269,7 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
         auto* element_type = helper.get_llvm_type(node.type);
 
         if (object->getType()->isPointerTy()) {
-            auto* pointer = context.builder.CreateGEP(element_type, object, {index});
+            auto* pointer = context.builder->CreateGEP(element_type, object, {index});
             return load(element_type, pointer);
         }
 
@@ -284,7 +286,7 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
     }
 
     llvm::Value* visit(HIRAssignExpression& node) override {
-        auto* value = node.value->accept(*this);
+        auto* value = visit_expression(*node.value);
         auto* address = address_of(node.target);
 
         if (value == nullptr || address == nullptr) {
@@ -300,7 +302,7 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
         auto* allocation = allocate(llvm_type);
 
         for (const auto& field : node.fields) {
-            auto* value = field.value->accept(*this);
+            auto* value = visit_expression(*field.value);
             if (value == nullptr) {
                 return nullptr;
             }
@@ -308,8 +310,8 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
             const auto& fields = struct_type->fields;
             for (std::size_t i = 0; i < fields.size(); ++i) {
                 if (fields[i].name == field.name) {
-                    auto* field_ptr = context.builder.CreateStructGEP(llvm_type, allocation,
-                                                                      static_cast<unsigned>(i));
+                    auto* field_ptr = context.builder->CreateStructGEP(llvm_type, allocation,
+                                                                       static_cast<unsigned>(i));
                     store(value, field_ptr);
                     break;
                 }
@@ -320,22 +322,22 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
     }
 
     llvm::Value* visit(HIRIfExpression& node) override {
-        auto* condition = node.condition->accept(*this);
+        auto* condition = visit_expression(*node.condition);
         if (condition == nullptr) {
             return nullptr;
         }
 
-        auto& builder = context.builder;
+        auto& builder = *context.builder;
         auto* function = builder.GetInsertBlock()->getParent();
 
-        auto* then_block = llvm::BasicBlock::Create(context.llvm_context, "", function);
-        auto* else_block = llvm::BasicBlock::Create(context.llvm_context, "");
-        auto* merge_block = llvm::BasicBlock::Create(context.llvm_context, "");
+        auto* then_block = llvm::BasicBlock::Create(*context.llvm_context, "", function);
+        auto* else_block = llvm::BasicBlock::Create(*context.llvm_context, "");
+        auto* merge_block = llvm::BasicBlock::Create(*context.llvm_context, "");
 
         builder.CreateCondBr(condition, then_block, else_block);
 
         builder.SetInsertPoint(then_block);
-        auto* then_value = node.then_branch->accept(*this);
+        auto* then_value = visit_statement(*node.then_branch);
         if (builder.GetInsertBlock()->getTerminator() == nullptr) {
             builder.CreateBr(merge_block);
         }
@@ -345,7 +347,7 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
         builder.SetInsertPoint(else_block);
         llvm::Value* else_value = nullptr;
         if (node.else_branch != nullptr) {
-            else_value = node.else_branch->accept(*this);
+            else_value = visit_statement(*node.else_branch);
         }
         if (builder.GetInsertBlock()->getTerminator() == nullptr) {
             builder.CreateBr(merge_block);
@@ -368,20 +370,20 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
     llvm::Value* visit(HIRTypeExpression& node [[maybe_unused]]) override { return nullptr; }
 
     llvm::Value* visit(HIRExpressionStatement& node) override {
-        return node.expression->accept(*this);
+        return visit_expression(*node.expression);
     }
 
     llvm::Value* visit(HIRReturnStatement& node) override {
         if (node.value == nullptr) {
-            return context.builder.CreateRetVoid();
+            return context.builder->CreateRetVoid();
         }
 
-        auto* value = node.value->accept(*this);
+        auto* value = visit_expression(*node.value);
         if (value == nullptr) {
             return nullptr;
         }
 
-        return context.builder.CreateRet(value);
+        return context.builder->CreateRet(value);
     }
 
     llvm::Value* visit(HIRVarDeclaration& node) override {
@@ -394,7 +396,7 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
         scope.set(node.name, allocation);
 
         if (node.initializer != nullptr) {
-            auto* value = node.initializer->accept(*this);
+            auto* value = visit_expression(*node.initializer);
             if (value == nullptr) {
                 return nullptr;
             }
@@ -411,8 +413,8 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
             return function;
         }
 
-        auto& builder = context.builder;
-        auto* entry = llvm::BasicBlock::Create(context.llvm_context, "", function);
+        auto& builder = *context.builder;
+        auto* entry = llvm::BasicBlock::Create(*context.llvm_context, "", function);
         builder.SetInsertPoint(entry);
 
         scope.enter();
@@ -427,7 +429,7 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
             scope.set(param.name, allocation);
         }
 
-        node.body->accept(*this);
+        visit_statement(*node.body);
         scope.exit();
 
         if (node.return_type->is<VoidType>() &&
@@ -439,19 +441,7 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
         return function;
     }
 
-  public:
-    LLVMCodegen() : helper(context) {}
-
-    void generate(HIRProgram& program, const std::string& output_path) override {
-        helper.declare_types(*program.global_scope);
-        helper.declare_functions(*program.global_scope);
-
-        for (auto* statement : program.statements) {
-            statement->accept(*this);
-        }
-
-        context.module->print(llvm::errs(), nullptr);
-
+    void initialize() {
         llvm::InitializeAllTargetInfos();
         llvm::InitializeAllTargets();
         llvm::InitializeAllTargetMCs();
@@ -463,15 +453,38 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
 
         std::string error;
         const auto* target = llvm::TargetRegistry::lookupTarget(target_triple, error);
-        if (!target) {
+        if (target == nullptr) {
             throw std::runtime_error("failed to lookup target: " + error);
         }
 
         llvm::TargetOptions opt;
 
         auto rm = std::optional<llvm::Reloc::Model>(llvm::Reloc::PIC_);
-        auto* target_machine = target->createTargetMachine(target_triple, "generic", "", opt, rm);
-        context.module->setDataLayout(target_machine->createDataLayout());
+        context.target_machine.reset(
+            target->createTargetMachine(target_triple, "generic", "", opt, rm));
+        if (context.target_machine == nullptr) {
+            throw std::runtime_error("failed to create target machine");
+        }
+
+        context.module->setDataLayout(context.target_machine->createDataLayout());
+    }
+
+  public:
+    LLVMCodegen() : helper(context) {}
+
+    ~LLVMCodegen() override { llvm::llvm_shutdown(); }
+
+    void generate(HIRProgram& program, const std::string& output_path) override {
+        helper.declare_types(*program.global_scope);
+        helper.declare_functions(*program.global_scope);
+
+        for (auto* statement : program.statements) {
+            visit_statement(*statement);
+        }
+
+        context.module->print(llvm::errs(), nullptr);
+
+        initialize();
 
         std::error_code ec;
 
@@ -481,8 +494,8 @@ export class LLVMCodegen : public CodegenDriver, public HIRVisitor<llvm::Value*>
         }
 
         llvm::legacy::PassManager pass;
-        if (target_machine->addPassesToEmitFile(pass, output, nullptr,
-                                                llvm::CodeGenFileType::ObjectFile)) {
+        if (context.target_machine->addPassesToEmitFile(pass, output, nullptr,
+                                                        llvm::CodeGenFileType::ObjectFile)) {
             throw std::runtime_error("target machine can't emit a file of this type");
         }
 

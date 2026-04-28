@@ -28,7 +28,7 @@ export class HIRDumper : public HIRVisitor<void> {
 
         depth = new_depth;
         with_indent = new_with_indent;
-        node.accept(*this);
+        visit_node(node);
 
         depth = saved_depth;
         with_indent = saved_with_indent;

@@ -32,33 +32,33 @@ export class LLVMCodegenHelper {
 
         if (type->is<IntegerType>()) {
             const auto* integer_type = type->as<IntegerType>();
-            return context.builder.getIntNTy(static_cast<unsigned>(integer_type->size));
+            return context.builder->getIntNTy(static_cast<unsigned>(integer_type->size));
         }
 
         if (type->is<FloatType>()) {
             const auto* float_type = type->as<FloatType>();
             switch (float_type->size) {
             case 16:
-                return context.builder.getHalfTy();
+                return context.builder->getHalfTy();
             case 32:
-                return context.builder.getFloatTy();
+                return context.builder->getFloatTy();
             case 64:
-                return context.builder.getDoubleTy();
+                return context.builder->getDoubleTy();
             default:
-                return context.builder.getFloatTy();
+                return context.builder->getFloatTy();
             }
         }
 
         if (type->is<BooleanType>()) {
-            return context.builder.getInt1Ty();
+            return context.builder->getInt1Ty();
         }
 
         if (type->is<VoidType>()) {
-            return context.builder.getVoidTy();
+            return context.builder->getVoidTy();
         }
 
         if (type->is<PointerType>() || type->is<StringType>()) {
-            return context.builder.getPtrTy();
+            return context.builder->getPtrTy();
         }
 
         if (type->is<StructType>()) {
@@ -69,7 +69,7 @@ export class LLVMCodegenHelper {
                 return it->second;
             }
 
-            auto* llvm_struct = llvm::StructType::create(context.llvm_context, struct_type->name);
+            auto* llvm_struct = llvm::StructType::create(*context.llvm_context, struct_type->name);
             struct_types[struct_type->name] = llvm_struct;
 
             std::vector<llvm::Type*> field_types;
@@ -84,14 +84,14 @@ export class LLVMCodegenHelper {
             return llvm_struct;
         }
 
-        return context.builder.getInt32Ty();
+        return context.builder->getInt32Ty();
     }
 
     void declare_types(const Scope& global_scope) {
         for (const auto& [name, symbol] : global_scope.types) {
             if (const auto* struct_type = symbol->type->as<StructType>(); struct_type != nullptr) {
                 struct_types[struct_type->name] =
-                    llvm::StructType::create(context.llvm_context, struct_type->name);
+                    llvm::StructType::create(*context.llvm_context, struct_type->name);
             }
         }
 

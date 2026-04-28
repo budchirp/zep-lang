@@ -73,10 +73,9 @@ export class HIRNode {
         }
         return nullptr;
     }
-
-    template <typename T>
-    auto accept(HIRVisitor<T>& visitor) -> T;
 };
+
+export using HIRNodeArena = Arena<HIRNode>;
 
 export class HIRExpression : public HIRNode {
   public:
@@ -192,10 +191,9 @@ export class HIRBinaryExpression : public HIRExpression {
     BinaryExpression::Operator::Type op;
     HIRExpression* right;
 
-    HIRBinaryExpression(Span span, HIRExpression* left, BinaryExpression::Operator::Type op, HIRExpression* right,
-                        const Type* type = nullptr)
+    HIRBinaryExpression(Span span, HIRExpression* left, BinaryExpression::Operator::Type op,
+                        HIRExpression* right, const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), left(left), op(op), right(right) {}
-
 
     template <typename T>
     T accept(HIRVisitor<T>& visitor) {
@@ -409,7 +407,6 @@ export class HIRParameter {
     HIRParameter(std::string name, const Type* type) : name(std::move(name)), type(type) {}
 };
 
-
 export class HIRFunctionDeclaration : public HIRStatement {
   public:
     static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::FunctionDeclaration;
@@ -460,52 +457,144 @@ class HIRVisitor {
     virtual T visit(HIRReturnStatement& node) = 0;
     virtual T visit(HIRVarDeclaration& node) = 0;
     virtual T visit(HIRFunctionDeclaration& node) = 0;
-};
 
-template <typename T>
-T HIRNode::accept(HIRVisitor<T>& visitor) {
-    switch (kind) {
-    case HIRNodeKind::Type::BlockStatement:
-        return static_cast<HIRBlockStatement*>(this)->accept(visitor);
-    case HIRNodeKind::Type::NumberLiteral:
-        return static_cast<HIRNumberLiteral*>(this)->accept(visitor);
-    case HIRNodeKind::Type::FloatLiteral:
-        return static_cast<HIRFloatLiteral*>(this)->accept(visitor);
-    case HIRNodeKind::Type::StringLiteral:
-        return static_cast<HIRStringLiteral*>(this)->accept(visitor);
-    case HIRNodeKind::Type::BooleanLiteral:
-        return static_cast<HIRBooleanLiteral*>(this)->accept(visitor);
-    case HIRNodeKind::Type::IdentifierExpression:
-        return static_cast<HIRIdentifierExpression*>(this)->accept(visitor);
-    case HIRNodeKind::Type::BinaryExpression:
-        return static_cast<HIRBinaryExpression*>(this)->accept(visitor);
-    case HIRNodeKind::Type::UnaryExpression:
-        return static_cast<HIRUnaryExpression*>(this)->accept(visitor);
-    case HIRNodeKind::Type::CallExpression:
-        return static_cast<HIRCallExpression*>(this)->accept(visitor);
-    case HIRNodeKind::Type::IndexExpression:
-        return static_cast<HIRIndexExpression*>(this)->accept(visitor);
-    case HIRNodeKind::Type::MemberExpression:
-        return static_cast<HIRMemberExpression*>(this)->accept(visitor);
-    case HIRNodeKind::Type::AssignExpression:
-        return static_cast<HIRAssignExpression*>(this)->accept(visitor);
-    case HIRNodeKind::Type::StructLiteralExpression:
-        return static_cast<HIRStructLiteralExpression*>(this)->accept(visitor);
-    case HIRNodeKind::Type::IfExpression:
-        return static_cast<HIRIfExpression*>(this)->accept(visitor);
-    case HIRNodeKind::Type::TypeExpression:
-        return static_cast<HIRTypeExpression*>(this)->accept(visitor);
-    case HIRNodeKind::Type::ExpressionStatement:
-        return static_cast<HIRExpressionStatement*>(this)->accept(visitor);
-    case HIRNodeKind::Type::ReturnStatement:
-        return static_cast<HIRReturnStatement*>(this)->accept(visitor);
-    case HIRNodeKind::Type::VarDeclaration:
-        return static_cast<HIRVarDeclaration*>(this)->accept(visitor);
-    case HIRNodeKind::Type::FunctionDeclaration:
-        return static_cast<HIRFunctionDeclaration*>(this)->accept(visitor);
+    T visit_expression(HIRExpression& expression) {
+        if (auto* number_literal = expression.as<HIRNumberLiteral>(); number_literal != nullptr) {
+            return visit(*number_literal);
+        }
+        if (auto* float_literal = expression.as<HIRFloatLiteral>(); float_literal != nullptr) {
+            return visit(*float_literal);
+        }
+        if (auto* string_literal = expression.as<HIRStringLiteral>(); string_literal != nullptr) {
+            return visit(*string_literal);
+        }
+        if (auto* boolean_literal = expression.as<HIRBooleanLiteral>();
+            boolean_literal != nullptr) {
+            return visit(*boolean_literal);
+        }
+        if (auto* identifier = expression.as<HIRIdentifierExpression>(); identifier != nullptr) {
+            return visit(*identifier);
+        }
+        if (auto* binary = expression.as<HIRBinaryExpression>(); binary != nullptr) {
+            return visit(*binary);
+        }
+        if (auto* unary = expression.as<HIRUnaryExpression>(); unary != nullptr) {
+            return visit(*unary);
+        }
+        if (auto* call = expression.as<HIRCallExpression>(); call != nullptr) {
+            return visit(*call);
+        }
+        if (auto* index = expression.as<HIRIndexExpression>(); index != nullptr) {
+            return visit(*index);
+        }
+        if (auto* member = expression.as<HIRMemberExpression>(); member != nullptr) {
+            return visit(*member);
+        }
+        if (auto* assign = expression.as<HIRAssignExpression>(); assign != nullptr) {
+            return visit(*assign);
+        }
+        if (auto* struct_literal = expression.as<HIRStructLiteralExpression>();
+            struct_literal != nullptr) {
+            return visit(*struct_literal);
+        }
+        if (auto* if_expression = expression.as<HIRIfExpression>(); if_expression != nullptr) {
+            return visit(*if_expression);
+        }
+        if (auto* type_expression = expression.as<HIRTypeExpression>();
+            type_expression != nullptr) {
+            return visit(*type_expression);
+        }
+
+        return T();
     }
 
-    return T();
-}
+    T visit_statement(HIRStatement& statement) {
+        if (auto* block = statement.as<HIRBlockStatement>(); block != nullptr) {
+            return visit(*block);
+        }
+        if (auto* expression_statement = statement.as<HIRExpressionStatement>();
+            expression_statement != nullptr) {
+            return visit(*expression_statement);
+        }
+        if (auto* return_statement = statement.as<HIRReturnStatement>();
+            return_statement != nullptr) {
+            return visit(*return_statement);
+        }
+        if (auto* var_declaration = statement.as<HIRVarDeclaration>(); var_declaration != nullptr) {
+            return visit(*var_declaration);
+        }
+        if (auto* function_declaration = statement.as<HIRFunctionDeclaration>();
+            function_declaration != nullptr) {
+            return visit(*function_declaration);
+        }
 
-export using HIRArena = Arena<HIRNode>;
+        return T();
+    }
+
+    T visit_node(HIRNode& node) {
+        if (auto* type_expression = node.as<HIRTypeExpression>(); type_expression != nullptr) {
+            return visit(*type_expression);
+        }
+
+        if (auto* number_literal = node.as<HIRNumberLiteral>(); number_literal != nullptr) {
+            return visit(*number_literal);
+        }
+        if (auto* float_literal = node.as<HIRFloatLiteral>(); float_literal != nullptr) {
+            return visit(*float_literal);
+        }
+        if (auto* string_literal = node.as<HIRStringLiteral>(); string_literal != nullptr) {
+            return visit(*string_literal);
+        }
+        if (auto* boolean_literal = node.as<HIRBooleanLiteral>(); boolean_literal != nullptr) {
+            return visit(*boolean_literal);
+        }
+        if (auto* identifier = node.as<HIRIdentifierExpression>(); identifier != nullptr) {
+            return visit(*identifier);
+        }
+        if (auto* binary = node.as<HIRBinaryExpression>(); binary != nullptr) {
+            return visit(*binary);
+        }
+        if (auto* unary = node.as<HIRUnaryExpression>(); unary != nullptr) {
+            return visit(*unary);
+        }
+        if (auto* call = node.as<HIRCallExpression>(); call != nullptr) {
+            return visit(*call);
+        }
+        if (auto* index = node.as<HIRIndexExpression>(); index != nullptr) {
+            return visit(*index);
+        }
+        if (auto* member = node.as<HIRMemberExpression>(); member != nullptr) {
+            return visit(*member);
+        }
+        if (auto* assign = node.as<HIRAssignExpression>(); assign != nullptr) {
+            return visit(*assign);
+        }
+        if (auto* struct_literal = node.as<HIRStructLiteralExpression>();
+            struct_literal != nullptr) {
+            return visit(*struct_literal);
+        }
+        if (auto* if_expression = node.as<HIRIfExpression>(); if_expression != nullptr) {
+            return visit(*if_expression);
+        }
+
+        if (auto* block = node.as<HIRBlockStatement>(); block != nullptr) {
+            return visit(*block);
+        }
+        if (auto* expression_statement = node.as<HIRExpressionStatement>();
+            expression_statement != nullptr) {
+            return visit(*expression_statement);
+        }
+        if (auto* return_statement = node.as<HIRReturnStatement>(); return_statement != nullptr) {
+            return visit(*return_statement);
+        }
+        if (auto* var_declaration = node.as<HIRVarDeclaration>(); var_declaration != nullptr) {
+            return visit(*var_declaration);
+        }
+        if (auto* function_declaration = node.as<HIRFunctionDeclaration>();
+            function_declaration != nullptr) {
+            return visit(*function_declaration);
+        }
+
+        return T();
+    }
+};
