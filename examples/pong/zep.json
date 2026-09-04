@@ -1,0 +1,24 @@
+{
+  "name": "pong",
+  "version": "0.1.0",
+  "libs": {
+    "std": "0.0.1"
+  },
+  "target": [
+    {
+      "triple": "host",
+      "linker": {
+        "arguments": [
+          "-L./third_party/raylib/build/raylib",
+          "-lraylib",
+          "-lm",
+          "-ldl",
+          "-lpthread",
+          "-lGL",
+          "-lrt",
+          "-lX11"
+        ]
+      }
+    }
+  ]
+}

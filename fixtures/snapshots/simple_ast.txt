@@ -1,0 +1,25 @@
+Program(statements: [
+  FunctionDeclaration(
+    visibility: private,
+    kind: function,
+    is_static: false,
+    parent: "",
+    prototype: FunctionPrototype(
+      name: "main",
+      is_variadic: false,
+      generic_parameters: [],
+      parameters: [],
+      return_type: TypeExpression(type: IntegerType(
+        is_unsigned: false,
+        size: 32
+      ))
+    ),
+    body: BlockStatement(statements: [
+      ReturnStatement(value: BinaryExpression(
+        left: NumberLiteral(value: "1"),
+        op: +,
+        right: NumberLiteral(value: "2")
+      ))
+    ])
+  )
+])

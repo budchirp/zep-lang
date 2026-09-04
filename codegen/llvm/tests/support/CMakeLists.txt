@@ -1,0 +1,1 @@
+zep_add_module(zep_codegen_test_support DEPENDS zep_codegen_api zep_hir zep_common zep_test_support GTest::gtest)

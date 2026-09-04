@@ -1,0 +1,40 @@
+BasedOnStyle: LLVM
+
+Language: Cpp
+Standard: Latest
+ColumnLimit: 100
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+IndentCaseLabels: false
+NamespaceIndentation: None
+
+PointerAlignment: Left
+ReferenceAlignment: Left
+QualifierAlignment: Left
+
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Empty
+AllowShortLambdasOnASingleLine: Inline
+
+AlwaysBreakTemplateDeclarations: Yes
+BreakBeforeBraces: Attach
+BreakConstructorInitializers: BeforeColon
+
+PackConstructorInitializers: BinPack
+BinPackParameters: true
+BinPackArguments: true
+
+SortIncludes: CaseInsensitive
+IncludeBlocks: Regroup
+
+SpaceAfterCStyleCast: false
+SpaceAfterTemplateKeyword: true
+SpaceBeforeParens: ControlStatements
+SpacesInAngles: Never
+
+InsertBraces: true
+InsertNewlineAtEOF: true

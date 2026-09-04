@@ -1,0 +1,11 @@
+{
+  "name": "multi_module_project",
+  "version": "0.1.0",
+  "type": "executable",
+  "targets": [
+    {
+      "triple": "host"
+    }
+  ],
+  "libs": {}
+}

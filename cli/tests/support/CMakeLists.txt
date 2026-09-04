@@ -1,0 +1,1 @@
+zep_add_module(zep_cli_test_support DEPENDS zep_test_support)

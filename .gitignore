@@ -1,0 +1,7 @@
+**/build/
+compile_commands.json
+.cache/
+cmake-build-*/
+
+.idea/
+*.profraw
