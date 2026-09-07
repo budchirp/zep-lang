@@ -29,7 +29,6 @@ export class ResolvedCallable {
                               std::string parent = {})
         : symbol(symbol), receiver(receiver), parent(std::move(parent)) {}
 
-    bool has_receiver() const { return receiver != nullptr; }
 };
 
 export class MemberResolver {
@@ -428,7 +427,8 @@ export class MemberResolver {
                 const auto kind = symbol->callable_kind;
                 if (receiver_is_type) {
                     if (kind == FunctionSymbol::Kind::Type::StaticMethod ||
-                        kind == FunctionSymbol::Kind::Type::Constructor) {
+                        kind == FunctionSymbol::Kind::Type::Constructor ||
+                        kind == FunctionSymbol::Kind::Type::CopyConstructor) {
                         callables.emplace_back(symbol, nullptr, nominal->name);
                     }
                     continue;

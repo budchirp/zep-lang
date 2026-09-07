@@ -301,8 +301,6 @@ export class ArrayType : public Type {
 
     std::size_t alignment() const override { return element != nullptr ? element->alignment() : 1; }
 
-    bool is_copy() const override { return element != nullptr && element->is_copy(); }
-
     std::string to_string() const override {
         std::string inner = element == nullptr ? std::string("unknown") : element->to_string();
         inner += "[";
@@ -513,20 +511,6 @@ export class StructType : public NominalType {
         return std::nullopt;
     }
 
-    bool is_copy() const override {
-        for (const auto* interface_type : interfaces) {
-            if (interface_type != nullptr && interface_type->name == "Copy") {
-                return true;
-            }
-        }
-
-        if (base_type != nullptr) {
-            return base_type->is_copy();
-        }
-
-        return false;
-    }
-
     bool inherits_from(const StructType* target) const {
         auto* current = base_type;
 
@@ -626,8 +610,6 @@ export class EnumType : public NominalType {
 
         return std::nullopt;
     }
-
-    bool is_copy() const override { return true; }
 
     std::size_t byte_size() const override {
         if (backing_type != nullptr) {

@@ -33,7 +33,6 @@ export class HIRNodeKind {
         BinaryExpression,
         UnaryExpression,
         CoerceExpression,
-        DropFlagClearExpression,
         CallExpression,
         IndexExpression,
         MemberExpression,
@@ -408,24 +407,6 @@ export class HIRCallExpression : public HIRExpression {
     }
 };
 
-export class HIRDropFlagClearExpression : public HIRExpression {
-  public:
-    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::DropFlagClearExpression;
-
-    HIRExpression* value;
-    std::string drop_flag_name;
-
-    HIRDropFlagClearExpression(Span span, HIRExpression* value, std::string drop_flag_name,
-                               const Type* type = nullptr)
-        : HIRExpression(static_kind, span, type), value(value),
-          drop_flag_name(std::move(drop_flag_name)) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
-};
-
 export class HIRIndexExpression : public HIRExpression {
   public:
     static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::IndexExpression;
@@ -737,6 +718,7 @@ export class HIRFunctionDeclaration : public HIRStatement {
     Linkage::Type linkage;
     bool is_mangled;
     Abi::Type abi;
+    bool is_global_destructor = false;
 
     HIRFunctionDeclaration(Span span, Visibility::Type visibility, Linkage::Type linkage,
                            std::string name, const Type* return_type, HIRBlockStatement* body,
@@ -771,7 +753,6 @@ class HIRVisitor {
     virtual T visit(HIRBinaryExpression& node) = 0;
     virtual T visit(HIRUnaryExpression& node) = 0;
     virtual T visit(HIRCoerceExpression& node) = 0;
-    virtual T visit(HIRDropFlagClearExpression& node) = 0;
     virtual T visit(HIRCallExpression& node) = 0;
     virtual T visit(HIRIndexExpression& node) = 0;
     virtual T visit(HIRMemberExpression& node) = 0;
@@ -824,9 +805,6 @@ class HIRVisitor {
         }
         if (auto* coerce = expression.as<HIRCoerceExpression>(); coerce != nullptr) {
             return visit(*coerce);
-        }
-        if (auto* clear = expression.as<HIRDropFlagClearExpression>(); clear != nullptr) {
-            return visit(*clear);
         }
         if (auto* call = expression.as<HIRCallExpression>(); call != nullptr) {
             return visit(*call);
@@ -933,9 +911,6 @@ class HIRVisitor {
         }
         if (auto* coerce = node.as<HIRCoerceExpression>(); coerce != nullptr) {
             return visit(*coerce);
-        }
-        if (auto* clear = node.as<HIRDropFlagClearExpression>(); clear != nullptr) {
-            return visit(*clear);
         }
         if (auto* call = node.as<HIRCallExpression>(); call != nullptr) {
             return visit(*call);

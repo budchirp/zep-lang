@@ -4,7 +4,7 @@ Systems programming language with manual memory management, generics, interfaces
 
 ## Features
 
-- **Deterministic cleanup** — destructors (`fn ~Type() -> void`) and `defer` statements run automatically in reverse order on scope exit
+- **C++-style RAII** — copy constructors, implicit aggregate cleanup, destructors (`fn ~Type() -> void`), and `defer` run deterministically
 - **Generics** — `fn identity<T>(value: T) -> T`, `struct Container<T>`
 - **Interfaces** — structural contracts with dynamic dispatch
 - **Enums with payloads** — `Option<T>::Some { value: T }`, `Result<T, E>::Ok { value: T }`, or backed variants (`enum Key : i32`)

@@ -2,8 +2,10 @@ module;
 
 #include <algorithm>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -30,6 +32,7 @@ import zep.frontend.sema.context;
 import zep.frontend.sema.env;
 import zep.frontend.sema.scope;
 import zep.frontend.sema.kind;
+import zep.frontend.sema.lifecycle;
 import zep.frontend.sema.constant.environment;
 import zep.frontend.sema.constant.evaluator;
 import zep.frontend.sema.resolver.builtin;
@@ -47,6 +50,8 @@ export class SemanticChecker : public Visitor<void> {
     ClosureExpression* active_closure = nullptr;
     Scope* active_closure_scope = nullptr;
     ClosureExpression* direct_closure_callee = nullptr;
+    std::unordered_set<const VariableSymbol*> destroyed_variables;
+    bool checking_assignment_target = false;
 
     void record_capture(IdentifierExpression& node, const VariableSymbol* symbol) {
         if (active_closure == nullptr || active_closure_scope == nullptr || symbol == nullptr) {
@@ -105,7 +110,7 @@ export class SemanticChecker : public Visitor<void> {
     }
 
     Evaluator create_evaluator() {
-        return Evaluator(context.diagnostics, &sema.env, &resolver.environment(), true);
+        return Evaluator(context.diagnostics, &sema.env, &resolver.substitutions, true);
     }
 
     void define_scope_var(const std::string& name, Span span, Visibility::Type visibility,
@@ -157,7 +162,7 @@ export class SemanticChecker : public Visitor<void> {
             }
 
             visit_expression(*expression);
-            Evaluator evaluator(context.diagnostics, &sema.env, &resolver.environment(), true);
+            Evaluator evaluator(context.diagnostics, &sema.env, &resolver.substitutions, true);
             const auto value = evaluator.evaluate_uncached(*expression);
             if (!value.has_value()) {
                 const auto* identifier = expression->as<IdentifierExpression>();
@@ -366,6 +371,10 @@ export class SemanticChecker : public Visitor<void> {
     void visit(IdentifierExpression& node) override {
         const auto* var_symbol = sema.env.current_scope->lookup_var(node.name);
         if (var_symbol != nullptr) {
+            if (!checking_assignment_target && destroyed_variables.contains(var_symbol)) {
+                context.diagnostics.add_error(node.span, "use of destroyed value '" + node.name +
+                                                             "'");
+            }
             node.var_symbol = var_symbol;
             node.type = var_symbol->type;
             record_capture(node, var_symbol);
@@ -556,6 +565,32 @@ export class SemanticChecker : public Visitor<void> {
                                    target_type);
         call_resolver.resolve(node);
         direct_closure_callee = saved_direct_closure_callee;
+
+        const auto* direct = node.resolved_target != nullptr
+                                 ? node.resolved_target->as<DirectCallTarget>()
+                                 : nullptr;
+        const auto* symbol = direct != nullptr ? direct->function_symbol : nullptr;
+        if (symbol == nullptr ||
+            symbol->callable_kind != FunctionSymbol::Kind::Type::Destructor ||
+            node.arguments.empty()) {
+            return;
+        }
+
+        auto* value = node.arguments.front()->value;
+        if (auto* unary = value->as<UnaryExpression>(); unary != nullptr) {
+            value = unary->operand;
+        }
+        auto* identifier = value->as<IdentifierExpression>();
+        if (identifier == nullptr || identifier->var_symbol == nullptr ||
+            !is_mutable_place(*identifier)) {
+            context.diagnostics.add_error(node.span,
+                                          "explicit destruction requires a mutable local value");
+            return;
+        }
+        if (!destroyed_variables.insert(identifier->var_symbol).second) {
+            context.diagnostics.add_error(node.span, "value '" + identifier->name +
+                                                         "' is already destroyed");
+        }
     }
 
     void visit(IndexExpression& node) override {
@@ -603,7 +638,9 @@ export class SemanticChecker : public Visitor<void> {
     }
 
     void visit(AssignExpression& node) override {
+        checking_assignment_target = true;
         visit_expression(*node.target);
+        checking_assignment_target = false;
 
         const auto* assigned_type = node.target->type;
 
@@ -625,6 +662,12 @@ export class SemanticChecker : public Visitor<void> {
         }
 
         node.value = TypeCoercion::apply(sema, resolver, node.value, assigned_type);
+        LifecycleResolver lifecycle(sema, resolver);
+        node.value = lifecycle.copy_construct(node.value, assigned_type);
+        if (auto* identifier = node.target->as<IdentifierExpression>(); identifier != nullptr &&
+            identifier->var_symbol != nullptr) {
+            destroyed_variables.erase(identifier->var_symbol);
+        }
         node.type = assigned_type;
     }
 
@@ -786,6 +829,8 @@ export class SemanticChecker : public Visitor<void> {
             }
 
             node.value = TypeCoercion::apply(sema, resolver, node.value, return_type);
+            LifecycleResolver lifecycle(sema, resolver);
+            node.value = lifecycle.copy_construct(node.value, return_type);
         } else {
             if (!return_type->is<VoidType>()) {
                 context.diagnostics.add_error(node.span, "non-void function must return a value");
@@ -801,6 +846,7 @@ export class SemanticChecker : public Visitor<void> {
         decl_checker.declare_struct_type(node);
 
         auto saved_parent = decl_checker.current_parent;
+        destroyed_variables.clear();
         decl_checker.current_parent = node.name;
 
         for (auto* method : node.methods) {
@@ -859,6 +905,9 @@ export class SemanticChecker : public Visitor<void> {
 
                 node.initializer = TypeCoercion::apply(sema, resolver, node.initializer, var_type);
             }
+
+            LifecycleResolver lifecycle(sema, resolver);
+            node.initializer = lifecycle.copy_construct(node.initializer, var_type);
         }
 
         if (var_type == nullptr) {
@@ -950,6 +999,7 @@ export class SemanticChecker : public Visitor<void> {
 
         visit(*node.body);
 
+        destroyed_variables.clear();
         decl_checker.current_function = nullptr;
         decl_checker.current_parent = saved_parent;
     }

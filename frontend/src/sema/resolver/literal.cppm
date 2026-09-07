@@ -15,6 +15,7 @@ import zep.frontend.node;
 import zep.frontend.sema.context;
 import zep.frontend.sema.constant.evaluator;
 import zep.frontend.sema.kind;
+import zep.frontend.sema.lifecycle;
 import zep.frontend.sema.resolver.facade;
 import zep.frontend.sema.resolver.generic;
 import zep.frontend.sema.type;
@@ -282,6 +283,11 @@ export class LiteralResolver {
             }
 
             visitor.visit_expression(*literal_field->value);
+            if (declared != nullptr) {
+                LifecycleResolver lifecycle(sema, resolver);
+                literal_field->value =
+                    lifecycle.copy_construct(literal_field->value, declared->type);
+            }
             target_type = saved_target_type;
         }
     }

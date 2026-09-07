@@ -141,8 +141,8 @@ export class Builder {
             auto build_directory =
                 manifest.targets.size() > 1 ? build_root / build_target.triple : build_root;
             std::vector<std::filesystem::path> objects;
-            objects.reserve(compiler.modules().size());
-            for (auto* module : compiler.modules()) {
+            objects.reserve(compiler.modules.size());
+            for (auto* module : compiler.modules) {
                 auto program = compiler.lower(*module, diagnostics);
                 if (program == nullptr || diagnostics.has_errors()) {
                     diagnostics.print();

@@ -3,7 +3,6 @@ module;
 #include <memory>
 #include <ranges>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -30,21 +29,17 @@ class HIRDropAction {
     std::string flag_name;
     Span span;
     const Type* lowered_type;
-    const FunctionSymbol* destructor;
-
     HIRDropAction(std::string source_name, std::string value_name, std::string flag_name, Span span,
-                  const Type* lowered_type, const FunctionSymbol* destructor)
+                  const Type* lowered_type)
         : source_name(std::move(source_name)), value_name(std::move(value_name)),
-          flag_name(std::move(flag_name)), span(span), lowered_type(lowered_type),
-          destructor(destructor) {}
+          flag_name(std::move(flag_name)), span(span), lowered_type(lowered_type) {}
 };
 
 class HIRDeferAction {
   public:
-    Span span;
     HIRStatement* statement;
 
-    HIRDeferAction(Span span, HIRStatement* statement) : span(span), statement(statement) {}
+    explicit HIRDeferAction(HIRStatement* statement) : statement(statement) {}
 };
 
 using HIRCleanupAction = std::variant<HIRDropAction, HIRDeferAction>;
@@ -63,23 +58,9 @@ export class HIRCleanup {
     SemaContext& sema;
     TypeResolver& resolver;
 
-    std::unordered_map<std::string, const FunctionSymbol*> destructors;
     HIRCleanupFrame frame;
 
     int closure_counter = 0;
-
-    void collect_from(StructDeclaration& node) {
-        for (auto* method : node.methods) {
-            if (method->kind() == FunctionSymbol::Kind::Type::Destructor &&
-                method->function_symbol != nullptr) {
-                destructors[node.name] = method->function_symbol;
-            }
-        }
-
-        for (auto* nested : node.structs) {
-            collect_from(*nested);
-        }
-    }
 
     HIRVarDeclaration* flag_declaration(Span span, std::string flag_name) {
         const auto* boolean_type = sema.builtin_resolver.primitives.at("boolean");
@@ -107,41 +88,8 @@ export class HIRCleanup {
             return nullptr;
         }
 
-        if (auto iterator = destructors.find(struct_type->name); iterator != destructors.end()) {
-            return iterator->second;
-        }
-
-        auto base_name = struct_type->name;
-        if (auto angle = base_name.find('<'); angle != std::string::npos) {
-            base_name = base_name.substr(0, angle);
-        }
-        if (auto dot = base_name.rfind('.'); dot != std::string::npos) {
-            base_name = base_name.substr(dot + 1);
-        }
-
-        if (auto iterator = destructors.find(base_name); iterator != destructors.end()) {
-            return iterator->second;
-        }
-
-        if (const auto* symbol = sema.env.current_scope->lookup_type(struct_type->name);
-            symbol != nullptr && symbol->member_scope != nullptr) {
-            if (const auto* function_symbol =
-                    symbol->member_scope->find_local_function("~" + struct_type->name);
-                function_symbol != nullptr) {
-                return function_symbol;
-            }
-        }
-
-        if (const auto* symbol = sema.env.current_scope->lookup_type(base_name);
-            symbol != nullptr && symbol->member_scope != nullptr) {
-            if (const auto* function_symbol =
-                    symbol->member_scope->find_local_function("~" + base_name);
-                function_symbol != nullptr) {
-                return function_symbol;
-            }
-        }
-
-        return nullptr;
+        const auto* lifecycle = sema.lifecycles.find(struct_type);
+        return lifecycle != nullptr ? lifecycle->destructor : nullptr;
     }
 
     bool needs_destruction(const Type* type) {
@@ -150,9 +98,25 @@ export class HIRCleanup {
         }
 
         const auto* resolved = resolver.resolve_type(type);
-        const auto* struct_type =
-            resolved != nullptr ? resolved->as<StructType>() : type->as<StructType>();
+        const auto* actual = resolved != nullptr ? resolved : type;
+        if (const auto* array_type = actual->as<ArrayType>(); array_type != nullptr) {
+            return needs_destruction(array_type->element);
+        }
+
+        const auto* struct_type = actual->as<StructType>();
         if (struct_type == nullptr) {
+            const auto* enum_type = actual->as<EnumType>();
+            if (enum_type == nullptr) {
+                return false;
+            }
+
+            for (const auto& variant : enum_type->variants) {
+                for (const auto& field : variant.fields) {
+                    if (needs_destruction(field.type)) {
+                        return true;
+                    }
+                }
+            }
             return false;
         }
 
@@ -169,6 +133,41 @@ export class HIRCleanup {
         return false;
     }
 
+    HIRExpression* copy_construct(Span span, HIRExpression* value, const Type* type) {
+        if (value == nullptr || type == nullptr) {
+            return value;
+        }
+
+        const auto* resolved = resolver.resolve_type(type);
+        const auto* struct_type = resolved != nullptr ? resolved->as<StructType>() : nullptr;
+        const auto* lifecycle = sema.lifecycles.find(struct_type);
+        const auto* constructor = lifecycle != nullptr ? lifecycle->copy_constructor : nullptr;
+        if (constructor == nullptr || constructor->function_type == nullptr) {
+            return value;
+        }
+
+        const auto* pointer_type = sema.types.create<PointerType>(resolved, false);
+        std::vector<ParameterType> parameter_types;
+        parameter_types.emplace_back("source", pointer_type);
+
+        const auto* function_type = sema.types.create<FunctionType>(
+            constructor->function_type->name, resolved, std::move(parameter_types),
+            std::vector<GenericParameterType>(), false);
+        auto name = Mangler::function_name(constructor->base_name(), constructor, function_type);
+
+        auto* address = program.context.nodes.create<HIRUnaryExpression>(
+            span, static_cast<UnaryOperator::Type>(UnaryExpression::Operator::Type::AddressOf),
+            value, pointer_type);
+        std::vector<HIRExpression*> arguments;
+        arguments.reserve(1);
+        arguments.push_back(address);
+
+        return program.context.nodes.create<HIRCallExpression>(
+            span,
+            std::make_unique<HIRDirectCallTarget>(*constructor, std::move(name), function_type),
+            std::move(arguments), resolved);
+    }
+
     void build_drop_statements_for_expression(Span span, HIRExpression* target_expr,
                                               const Type* type,
                                               std::vector<HIRStatement*>& statements) {
@@ -177,9 +176,67 @@ export class HIRCleanup {
         }
 
         const auto* resolved = resolver.resolve_type(type);
-        const auto* struct_type =
-            resolved != nullptr ? resolved->as<StructType>() : type->as<StructType>();
+        const auto* actual = resolved != nullptr ? resolved : type;
+        if (const auto* array_type = actual->as<ArrayType>(); array_type != nullptr) {
+            const auto* extent = std::get_if<ConcreteArrayExtent>(&array_type->extent);
+            if (extent == nullptr) {
+                return;
+            }
+
+            const auto* index_type = sema.builtin_resolver.primitives.at("i64");
+            for (auto index = extent->value; index > 0; --index) {
+                auto* index_value = program.context.nodes.create<HIRNumberLiteral>(
+                    span, std::to_string(index - 1), index_type);
+                auto* element = program.context.nodes.create<HIRIndexExpression>(
+                    span, target_expr, index_value, array_type->element);
+                build_drop_statements_for_expression(span, element, array_type->element,
+                                                     statements);
+            }
+            return;
+        }
+
+        const auto* struct_type = actual->as<StructType>();
         if (struct_type == nullptr) {
+            const auto* enum_type = actual->as<EnumType>();
+            if (enum_type == nullptr) {
+                return;
+            }
+
+            std::vector<HIRWhenArm> arms;
+            arms.reserve(enum_type->variants.size());
+            for (const auto& variant : enum_type->variants) {
+                std::vector<HIRWhenPatternField> bindings;
+                std::vector<HIRStatement*> body;
+                bindings.reserve(variant.fields.size());
+
+                for (auto index = variant.fields.size(); index > 0; --index) {
+                    const auto& field = variant.fields[index - 1];
+                    if (!needs_destruction(field.type)) {
+                        continue;
+                    }
+
+                    auto binding_name = ".drop_payload_" +
+                                        std::to_string(frame.drop_flag_counter++);
+                    bindings.emplace_back(field.name, binding_name, field.type);
+                    auto* value = program.context.nodes.create<HIRIdentifierExpression>(
+                        span, std::move(binding_name), field.type);
+                    build_drop_statements_for_expression(span, value, field.type, body);
+                }
+
+                auto* block =
+                    program.context.nodes.create<HIRBlockStatement>(span, std::move(body));
+                std::vector<HIRWhenPattern> patterns;
+                patterns.reserve(1);
+                patterns.emplace_back(enum_type->name, variant.name, variant.index, nullptr,
+                                      std::move(bindings));
+                arms.emplace_back(false, std::move(patterns), nullptr, block);
+            }
+
+            const auto* void_type = sema.builtin_resolver.primitives.at("void");
+            auto* cleanup = program.context.nodes.create<HIRWhenExpression>(
+                span, target_expr, std::move(arms), true, void_type);
+            statements.push_back(
+                program.context.nodes.create<HIRExpressionStatement>(span, cleanup));
             return;
         }
 
@@ -209,7 +266,8 @@ export class HIRCleanup {
                 arguments.push_back(address);
 
                 auto* call = program.context.nodes.create<HIRCallExpression>(
-                    span, std::make_unique<HIRDirectCallTarget>(*destructor, std::string()),
+                    span, std::make_unique<HIRDirectCallTarget>(*destructor, std::move(name),
+                                                               function_type),
                     std::move(arguments), function_type->return_type);
 
                 statements.push_back(
@@ -217,12 +275,20 @@ export class HIRCleanup {
             }
         }
 
-        for (const auto& field : struct_type->fields | std::views::reverse) {
+        const auto inherited_count =
+            struct_type->base_type != nullptr ? struct_type->base_type->fields.size() : 0;
+        for (auto index = struct_type->fields.size(); index > inherited_count; --index) {
+            const auto& field = struct_type->fields[index - 1];
             if (needs_destruction(field.type)) {
                 auto* field_expr = program.context.nodes.create<HIRMemberExpression>(
                     span, target_expr, field.name, field.type);
                 build_drop_statements_for_expression(span, field_expr, field.type, statements);
             }
+        }
+
+        if (struct_type->base_type != nullptr && needs_destruction(struct_type->base_type)) {
+            build_drop_statements_for_expression(span, target_expr, struct_type->base_type,
+                                                 statements);
         }
     }
 
@@ -274,34 +340,6 @@ export class HIRCleanup {
         }
     }
 
-    void collect_destructors(Program& program_node) {
-        destructors.clear();
-
-        for (auto* statement : program_node.statements) {
-            if (auto* struct_declaration = statement->as<StructDeclaration>();
-                struct_declaration != nullptr) {
-                collect_from(*struct_declaration);
-            }
-        }
-    }
-
-    void collect_destructors(const std::vector<const Program*>& programs) {
-        destructors.clear();
-
-        for (const auto* program_node : programs) {
-            if (program_node == nullptr) {
-                continue;
-            }
-
-            for (auto* statement : program_node->statements) {
-                if (auto* struct_declaration = statement->as<StructDeclaration>();
-                    struct_declaration != nullptr) {
-                    collect_from(*struct_declaration);
-                }
-            }
-        }
-    }
-
     void push_scope() { frame.scopes.emplace_back(); }
 
     void pop_scope() { frame.scopes.pop_back(); }
@@ -316,13 +354,12 @@ export class HIRCleanup {
             return nullptr;
         }
 
-        const auto* destructor = destructor_for(node.type);
         auto flag_name = ".drop_" + node.name + "_" + std::to_string(frame.drop_flag_counter++);
         auto declaration_name = flag_name;
 
         frame.scopes.back().emplace_back(std::in_place_type<HIRDropAction>, node.name,
                                          std::move(value_name), std::move(flag_name), node.span,
-                                         lowered_type, destructor);
+                                         lowered_type);
 
         return flag_declaration(node.span, std::move(declaration_name));
     }
@@ -337,22 +374,21 @@ export class HIRCleanup {
             return nullptr;
         }
 
-        const auto* destructor = destructor_for(type);
         auto flag_name = ".drop_" + name + "_" + std::to_string(frame.drop_flag_counter++);
         auto declaration_name = flag_name;
 
         frame.scopes.back().emplace_back(std::in_place_type<HIRDropAction>, name, name,
-                                         std::move(flag_name), span, lowered_type, destructor);
+                                         std::move(flag_name), span, lowered_type);
 
         return flag_declaration(span, std::move(declaration_name));
     }
 
-    void register_defer(Span span, HIRStatement* statement) {
+    void register_defer(HIRStatement* statement) {
         if (frame.scopes.empty() || statement == nullptr) {
             return;
         }
 
-        frame.scopes.back().emplace_back(std::in_place_type<HIRDeferAction>, span, statement);
+        frame.scopes.back().emplace_back(std::in_place_type<HIRDeferAction>, statement);
     }
 
     std::string drop_flag_for(const std::string& name) {
@@ -368,34 +404,31 @@ export class HIRCleanup {
         return {};
     }
 
-    HIRExpression* clear_after(Span span, const std::string& name, HIRExpression* value,
-                               const Type* type) {
+    HIRStatement* emit_explicit_drop(Span span, const std::string& name, HIRExpression* target,
+                                     const Type* type) {
+        std::vector<HIRStatement*> statements;
+        build_drop_statements_for_expression(span, target, type, statements);
+
         auto flag_name = drop_flag_for(name);
-        if (flag_name.empty()) {
-            return value;
+        if (!flag_name.empty()) {
+            const auto* boolean_type = sema.builtin_resolver.primitives.at("boolean");
+            auto* flag = program.context.nodes.create<HIRIdentifierExpression>(
+                span, std::move(flag_name), boolean_type);
+            auto* cleared =
+                program.context.nodes.create<HIRBooleanLiteral>(span, false, boolean_type);
+            auto* assignment = program.context.nodes.create<HIRAssignExpression>(
+                span, flag, cleared, boolean_type);
+            statements.push_back(
+                program.context.nodes.create<HIRExpressionStatement>(span, assignment));
         }
 
-        return program.context.nodes.create<HIRDropFlagClearExpression>(span, value,
-                                                                        std::move(flag_name), type);
-    }
-
-    HIRExpression* clear_after_destructor_call(CallExpression& node, HIRExpression* expression) {
-        if (node.arguments.empty()) {
-            return expression;
+        if (statements.empty()) {
+            return nullptr;
         }
-
-        auto* value = node.arguments.front()->value;
-        if (auto* unary = value->as<UnaryExpression>(); unary != nullptr) {
-            value = unary->operand;
+        if (statements.size() == 1) {
+            return statements.front();
         }
-
-        auto* identifier = value->as<IdentifierExpression>();
-        if (identifier == nullptr) {
-            return expression;
-        }
-
-        return clear_after(node.span, identifier->name, expression,
-                           expression != nullptr ? expression->type : nullptr);
+        return program.context.nodes.create<HIRStatementGroup>(span, std::move(statements));
     }
 
     std::vector<HIRStatement*> emit_scope() {

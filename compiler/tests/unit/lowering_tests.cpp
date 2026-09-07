@@ -213,6 +213,29 @@ TEST(HirBuilder, InsertsCleanupForOwnedLocals) {
     EXPECT_TRUE(has_statement_group);
 }
 
+TEST(HirBuilder, GeneratesModuleTeardownForOwnedGlobals) {
+    HirHarness harness("struct Owner { public: var value: i32 fn ~Owner() -> void {} }\n"
+                       "@section(\".data\") var owner = Owner { value: 1 }\n"
+                       "fn main() -> i32 { return 0 }\n");
+    ASSERT_TRUE(harness.succeeded());
+
+    auto program = harness.lower();
+
+    HIRFunctionDeclaration* teardown = nullptr;
+    for (auto* statement : program->statements) {
+        auto* function = statement->as<HIRFunctionDeclaration>();
+        if (function != nullptr && function->is_global_destructor) {
+            teardown = function;
+            break;
+        }
+    }
+
+    ASSERT_NE(teardown, nullptr);
+    EXPECT_TRUE(teardown->name.starts_with(".zep.global_dtor."));
+    ASSERT_NE(teardown->body, nullptr);
+    EXPECT_FALSE(teardown->body->statements.empty());
+}
+
 TEST(HirBuilder, LowersExternVarWithNameAttribute) {
     HirHarness harness("@name(\"custom_errno\")\n"
                        "extern var errno: i32\n"

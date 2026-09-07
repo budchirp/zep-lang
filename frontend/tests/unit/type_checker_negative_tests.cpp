@@ -260,3 +260,21 @@ fn main() -> i32 {
         EXPECT_TRUE(assert_type_check_error(snippet));
     }
 }
+
+TEST(FrontendTypeCheckerNegative, RejectsUseAfterExplicitDestruction) {
+    const std::string source = R"zep(
+struct Owner {
+    public:
+        var value: i32
+        fn ~Owner() -> void {}
+}
+
+fn main() -> i32 {
+    var mut owner = Owner { value: 7 }
+    owner.~Owner()
+    return owner.value
+}
+)zep";
+
+    EXPECT_TRUE(assert_type_check_error(source));
+}

@@ -75,7 +75,7 @@ export class GenericArgumentResolver {
         if (target != nullptr && target->is_numeric()) {
             contextualize_literal(*argument.value, target);
         }
-        Evaluator evaluator(context.diagnostics, &sema.env, &resolver.environment(), true);
+        Evaluator evaluator(context.diagnostics, &sema.env, &resolver.substitutions, true);
         const auto value = evaluator.evaluate_uncached(*argument.value);
         const auto* identifier = argument.value->as<IdentifierExpression>();
         const auto candidate = value.has_value() ? ConstBinding(*value)
@@ -204,7 +204,7 @@ export class GenericArgumentResolver {
             }
             visitor.visit(*argument);
             if (argument->value != nullptr) {
-                Evaluator evaluator(context.diagnostics, &sema.env, &resolver.environment(), true);
+                Evaluator evaluator(context.diagnostics, &sema.env, &resolver.substitutions, true);
                 const auto value = evaluator.evaluate_uncached(*argument->value);
                 const auto* identifier = argument->value->as<IdentifierExpression>();
                 argument->const_binding =

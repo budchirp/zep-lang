@@ -275,13 +275,16 @@ Rules:
 - `fn name(...) mut -> Ret` marks a method with mutable receiver (`*mut Self`). Regular `fn name(...) -> Ret` is immutable borrow (`*Self`).
 - Static methods use `static fn` and are accessed with `Type::name`
 - Constructors are `fn Type(...) -> Type` and may overload
+- A constructor whose only parameter is `source: *Type` is the copy constructor
 - Destructors are `fn ~Type() -> void`
 - `override fn` is required when a method matches a base method or listed interface requirement
 - `value.name()` resolves an instance method call
 - `Type::name()` resolves a static method call
 - `Type(...)` resolves a constructor call
 - `value.~Type()` explicitly destroys a local value
-- Locals with destructors are destroyed automatically on scope exit and before `return`
+- Owned values are destroyed automatically on scope exit and before `return`
+- Copy construction is used for lvalue initialization, by-value arguments, and lvalue returns
+- The compiler elides copies when a value is constructed directly into its destination
 - Nested types are registered with qualified names (e.g., `Container::Entry`)
 
 Extension methods may be declared at module scope with a dotted function name:
@@ -621,15 +624,23 @@ Multiple functions with the same name and different parameter types. Duplicate s
 
 ### Value and Reference Semantics
 
-Values are passed by value (copy) by default. Pointers (`*T` for immutable, `*mut T` for mutable)
-allow passing by reference. Memory allocation can be managed manually via the standard library
-allocator or custom memory managers.
+Values are passed by value. Scalars and pointers copy directly. Aggregate lvalues use their copy
+constructor; aggregate temporaries are constructed directly into the destination. A copy constructor
+is declared as `fn Type(source: *Type) -> Type`. When it is omitted, the compiler performs a
+memberwise copy. Zep has no move constructor or move expression. Pointers (`*T` for immutable,
+`*mut T` for mutable) borrow an existing value and never destroy the pointee.
 
 ### Destructors
 
-Structs declare a destructor as `fn ~Type() -> void`. Values with a destructor are cleaned up
-automatically at scope exit and before `return`, in reverse order of declaration. Explicit
-calls to `value.~Type()` are also permitted.
+Structs declare a destructor as `fn ~Type() -> void`. Every owned aggregate containing a
+destructible value receives implicit cleanup even when it has no declared destructor. Cleanup runs
+at the end of a temporary's full expression, at scope exit, before `return`, and before overwriting
+an initialized value. The user destructor body runs first, followed by fields in reverse declaration
+order and then the base object. Arrays are destroyed in reverse element order and enum cleanup
+destroys only the active payload. Module globals are destroyed in reverse initialization order.
+
+An explicit `value.~Type()` is an early drop of a mutable local. The value becomes uninitialized;
+reading or destroying it again is an error until assignment reconstructs it.
 
 ### `defer` Statement
 

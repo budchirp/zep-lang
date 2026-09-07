@@ -56,7 +56,7 @@ export class Symbol {
         return kind == T::static_kind ? static_cast<const T*>(this) : nullptr;
     }
 
-    const AttributeInfo* get_attribute(const std::string& attribute_name) const {
+    const AttributeInfo* find_attribute(const std::string& attribute_name) const {
         for (const auto& attribute : attributes) {
             if (attribute.name == attribute_name) {
                 return &attribute;
@@ -67,7 +67,7 @@ export class Symbol {
     }
 
     bool has_attribute(const std::string& attribute_name) const {
-        return get_attribute(attribute_name) != nullptr;
+        return find_attribute(attribute_name) != nullptr;
     }
 };
 
@@ -102,6 +102,7 @@ export class FunctionSymbol final : public Symbol {
             InstanceMethod,
             StaticMethod,
             Constructor,
+            CopyConstructor,
             Destructor,
         };
 
@@ -115,6 +116,8 @@ export class FunctionSymbol final : public Symbol {
                 return "static_method";
             case Type::Constructor:
                 return "constructor";
+            case Type::CopyConstructor:
+                return "copy_constructor";
             case Type::Destructor:
                 return "destructor";
             }
@@ -154,7 +157,7 @@ export class FunctionSymbol final : public Symbol {
     std::string base_name() const { return parent.empty() ? name : parent + "::" + name; }
 
     bool is_mangled() const {
-        const auto* attribute = get_attribute("mangle");
+        const auto* attribute = find_attribute("mangle");
         if (attribute == nullptr) {
             return linkage != Linkage::Type::External;
         }

@@ -68,6 +68,29 @@ export class FacadeRegistry {
     const std::unordered_map<std::string, PrimitiveFacadeInfo>& all() const { return facades; }
 };
 
+export class LifecycleInfo {
+  public:
+    const FunctionSymbol* copy_constructor = nullptr;
+    const FunctionSymbol* destructor = nullptr;
+};
+
+export class LifecycleRegistry {
+  private:
+    std::unordered_map<const NominalType*, LifecycleInfo> entries;
+
+    static const NominalType* identity(const NominalType* type) {
+        return type != nullptr && type->definition != nullptr ? type->definition : type;
+    }
+
+  public:
+    LifecycleInfo& ensure(const NominalType* type) { return entries[identity(type)]; }
+
+    const LifecycleInfo* find(const NominalType* type) const {
+        const auto iterator = entries.find(identity(type));
+        return iterator != entries.end() ? &iterator->second : nullptr;
+    }
+};
+
 export class SemaContext {
   public:
     TypeArena types;
@@ -83,6 +106,8 @@ export class SemaContext {
     Env env;
 
     DefinitionRegistry function_definitions;
+
+    LifecycleRegistry lifecycles;
 
     explicit SemaContext(TargetInfo target = TargetInfo())
         : target(std::move(target)), builtin_resolver(types), env(builtin_resolver.primitives) {}

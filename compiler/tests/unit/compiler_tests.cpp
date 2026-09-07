@@ -89,10 +89,10 @@ TEST(CompilerGraph, OrdersDependenciesBeforeImporters) {
 
     ASSERT_NE(graph.load(app, ModulePath::from_string("main"), diagnostics), nullptr);
     ASSERT_FALSE(diagnostics.has_errors());
-    ASSERT_EQ(graph.modules().size(), 3U);
-    EXPECT_EQ(graph.modules()[0]->path.string(), "alpha");
-    EXPECT_EQ(graph.modules()[1]->path.string(), "beta");
-    EXPECT_EQ(graph.modules()[2]->path.string(), "main");
+    ASSERT_EQ(graph.modules.size(), 3U);
+    EXPECT_EQ(graph.modules[0]->path.string(), "alpha");
+    EXPECT_EQ(graph.modules[1]->path.string(), "beta");
+    EXPECT_EQ(graph.modules[2]->path.string(), "main");
 }
 
 TEST(CompilerGraph, ReportsCompleteCycleEdgeChain) {
@@ -116,9 +116,7 @@ TEST(CompilerGraph, ReportsCompleteCycleEdgeChain) {
 
 TEST(CompilerSemantics, BindsImportedTypeScopesAndInterfaces) {
     TestWorkspace workspace("compiler_imported_type_bindings");
-    workspace.write("src/marker.zep", "public interface Copy {}\n");
-    workspace.write("src/library.zep", "import marker.Copy\n"
-                                       "public struct Value : Copy {\n"
+    workspace.write("src/library.zep", "public struct Value {\n"
                                        "    public:\n"
                                        "        fn Value() -> Value { return Value {} }\n"
                                        "        fn value() -> i32 { return 7 }\n"

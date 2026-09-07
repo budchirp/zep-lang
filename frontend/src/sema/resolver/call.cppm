@@ -18,6 +18,7 @@ import zep.frontend.sema.context;
 import zep.frontend.sema.env;
 import zep.frontend.sema.constant.evaluator;
 import zep.frontend.sema.kind;
+import zep.frontend.sema.lifecycle;
 import zep.frontend.sema.resolver.facade;
 import zep.frontend.sema.resolver.generic;
 import zep.frontend.sema.resolver.member;
@@ -220,7 +221,7 @@ export class CallResolver {
             return {};
         }
 
-        if (candidate.has_receiver() && !candidate.parent.empty()) {
+        if (candidate.receiver != nullptr && !candidate.parent.empty()) {
             std::size_t parent_parameter_count = 0;
             if (const auto* parent_symbol = sema.env.current_scope->lookup_type(candidate.parent);
                 parent_symbol != nullptr) {
@@ -424,7 +425,7 @@ export class CallResolver {
             return;
         }
 
-        if (candidate.has_receiver() && candidate.receiver->type != nullptr) {
+        if (candidate.receiver != nullptr && candidate.receiver->type != nullptr) {
             const auto* receiver_type = candidate.receiver->type;
             if (const auto* ptr = receiver_type->as<PointerType>()) {
                 receiver_type = ptr->element;
@@ -448,7 +449,7 @@ export class CallResolver {
         const auto* func_type = candidate.symbol->function_type;
         auto effective_parameters = func_type->parameters;
 
-        if (candidate.has_receiver() && !effective_parameters.empty() &&
+        if (candidate.receiver != nullptr && !effective_parameters.empty() &&
             effective_parameters.front().name == "self") {
             effective_parameters.erase(effective_parameters.begin());
         }
@@ -483,7 +484,7 @@ export class CallResolver {
         }
 
         int score = 0;
-        if (candidate.has_receiver()) {
+        if (candidate.receiver != nullptr) {
             score += 10;
         }
 
@@ -564,6 +565,8 @@ export class CallResolver {
 
                 argument->value =
                     TypeCoercion::apply(sema, resolver, argument->value, expected_type);
+                LifecycleResolver lifecycle(sema, resolver);
+                argument->value = lifecycle.copy_construct(argument->value, expected_type);
             }
         }
     }
@@ -712,7 +715,7 @@ export class CallResolver {
             return;
         }
 
-        if (best_candidate.has_receiver()) {
+        if (best_candidate.receiver != nullptr) {
             if (auto* ident = node.callee->as<IdentifierExpression>()) {
                 auto* member_expr = sema.nodes.create<MemberExpression>(
                     node.span, best_candidate.receiver, ident->name);
@@ -733,7 +736,7 @@ export class CallResolver {
         if (!call_generic_parameters.empty()) {
             if (node.generic_arguments.empty()) {
                 auto effective_params = func_type->parameters;
-                if (best_candidate.has_receiver() && !effective_params.empty() &&
+                if (best_candidate.receiver != nullptr && !effective_params.empty() &&
                     effective_params.front().name == "self") {
                     effective_params.erase(effective_params.begin());
                 }
@@ -749,7 +752,7 @@ export class CallResolver {
                                         true);
         }
 
-        if (best_candidate.has_receiver()) {
+        if (best_candidate.receiver != nullptr) {
             node.arguments =
                 build_call_arguments(node.arguments, best_candidate.receiver, func_type);
         }

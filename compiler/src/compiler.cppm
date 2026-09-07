@@ -27,7 +27,10 @@ export class Compiler {
     ModuleGraph graph;
 
   public:
-    explicit Compiler(TargetInfo target = TargetInfo()) : sema(target), graph(sema) {}
+    std::vector<Module*>& modules;
+
+    explicit Compiler(TargetInfo target = TargetInfo())
+        : sema(target), graph(sema), modules(graph.modules) {}
 
     Module* analyze(Package& package, ModulePath entry, Diagnostics& diagnostics,
                     std::filesystem::path source_path = {}) {
@@ -43,8 +46,8 @@ export class Compiler {
 
     std::shared_ptr<HIRProgram> lower(Module& module, Diagnostics& diagnostics) {
         std::vector<const Program*> programs;
-        programs.reserve(graph.modules().size());
-        for (auto* item : graph.modules()) {
+        programs.reserve(graph.modules.size());
+        for (auto* item : graph.modules) {
             programs.push_back(&item->syntax);
         }
         Context context(*module.source);
@@ -59,8 +62,6 @@ export class Compiler {
 
         return program;
     }
-
-    const std::vector<Module*>& modules() const { return graph.modules(); }
 
     void overlay(const std::filesystem::path& path, std::string content) {
         graph.overlay(path, std::move(content));

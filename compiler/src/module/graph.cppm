@@ -36,7 +36,6 @@ export class ModuleGraph {
     SemaContext& sema;
     std::map<std::string, Module*> identities;
     std::map<std::string, Module*> physical_sources;
-    std::vector<Module*> order;
     std::vector<Module*> active_modules;
     std::vector<ModuleImport*> active_edges;
 
@@ -133,7 +132,7 @@ export class ModuleGraph {
             return module;
         }
 
-        if (std::find(order.begin(), order.end(), module) != order.end()) {
+        if (std::find(modules.begin(), modules.end(), module) != modules.end()) {
             return module;
         }
 
@@ -172,14 +171,14 @@ export class ModuleGraph {
             active_edges.pop_back();
         }
         active_modules.pop_back();
-        order.push_back(module);
+        modules.push_back(module);
         return module;
     }
 
   public:
-    explicit ModuleGraph(SemaContext& sema) : sema(sema) {}
+    std::vector<Module*> modules;
 
-    const std::vector<Module*>& modules() const { return order; }
+    explicit ModuleGraph(SemaContext& sema) : sema(sema) {}
 
     void overlay(const std::filesystem::path& path, std::string content) {
         source_manager.add_override(path, std::move(content));

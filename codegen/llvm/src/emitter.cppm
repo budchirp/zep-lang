@@ -728,21 +728,6 @@ export class FunctionEmitter : public HIRVisitor<llvm::Value*> {
         return visit_expression(*node.value);
     }
 
-    llvm::Value* visit(HIRDropFlagClearExpression& node) override {
-        auto* value = visit_expression(*node.value);
-        if (value == nullptr) {
-            return nullptr;
-        }
-
-        auto* flag = scope.lookup(node.drop_flag_name);
-        if (flag != nullptr) {
-            auto* cleared = llvm::ConstantInt::get(context, llvm::APInt(1, 0, false));
-            store(cleared, flag);
-        }
-
-        return value;
-    }
-
     llvm::Value* load_method_table_entry(llvm::Value* method_table, std::size_t slot) {
         if (method_table == nullptr) {
             return nullptr;

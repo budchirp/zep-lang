@@ -1,6 +1,5 @@
 import std.ffi.c_malloc
 import std.ffi.c_free
-import std.ffi.c_memcpy
 
 public struct Memory {
     public:
@@ -20,9 +19,5 @@ public struct Memory {
             if (ptr != null) {
                 c_free(ptr)
             }
-        }
-
-        static fn copy(destination: *mut void, source: *void, size: i64) -> void {
-            c_memcpy(destination, source as *mut void, size)
         }
 }

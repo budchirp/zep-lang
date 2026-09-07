@@ -29,7 +29,10 @@ export class TypeResolver {
     Env& env;
     Diagnostics& diagnostics;
 
+  public:
     CompileTimeEnvironment substitutions;
+
+  private:
 
     struct FunctionCacheKeyHash {
         std::size_t operator()(const std::pair<const FunctionType*, const Scope*>& key) const {
@@ -94,12 +97,7 @@ export class TypeResolver {
 
     using NominalCache = std::unordered_map<NominalCacheKey, const Type*, NominalCacheKeyHash>;
 
-    static NominalCache& nominal_type_cache() {
-        static NominalCache cache;
-        return cache;
-    }
-
-    static void clear_nominal_type_cache() { nominal_type_cache().clear(); }
+    NominalCache nominal_type_cache;
 
     class ResolvingGuard {
       private:
@@ -623,7 +621,7 @@ export class TypeResolver {
         auto substitution_map =
             build_generic_substitution_map(nominal_type.generic_parameters, arguments);
         NominalCacheKey cache_key(&nominal_type, nominal_cache_arguments(arguments));
-        auto& cache = nominal_type_cache();
+        auto& cache = nominal_type_cache;
         if (auto iterator = cache.find(cache_key); iterator != cache.end()) {
             return iterator->second;
         }
@@ -663,8 +661,6 @@ export class TypeResolver {
   public:
     TypeResolver(TypeArena& type_arena, Env& env, Diagnostics& diagnostics)
         : type_arena(type_arena), env(env), diagnostics(diagnostics) {}
-
-    ~TypeResolver() = default;
 
     class SubstitutionScope {
       private:
@@ -986,8 +982,6 @@ export class TypeResolver {
                    ? std::optional<ConstBinding>(substitute_const_binding(*binding, substitutions))
                    : std::nullopt;
     }
-
-    const CompileTimeEnvironment& environment() const { return substitutions; }
 
     void use_environment(const CompileTimeEnvironment& environment) {
         substitutions = environment;

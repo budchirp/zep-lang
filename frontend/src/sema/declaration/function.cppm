@@ -52,6 +52,28 @@ export class FunctionDeclarationChecker {
                receiver_nominal->same_nominal(*owner_nominal);
     }
 
+    FunctionSymbol::Kind::Type classify_function(FunctionDeclaration& node,
+                                                  const FunctionType& type) {
+        const auto kind = node.kind();
+        if (kind != FunctionSymbol::Kind::Type::Constructor ||
+            node.prototype->parameters.size() != 1 || type.parameters.size() != 1) {
+            return kind;
+        }
+
+        const auto* parameter = resolver.resolve_type(type.parameters.front().type);
+        const auto* pointer = parameter != nullptr ? parameter->as<PointerType>() : nullptr;
+        const auto* owner = sema.env.current_scope->lookup_type(node.parent);
+        const auto* owner_nominal = owner != nullptr ? owner->type->as_nominal() : nullptr;
+        const auto* resolved_source =
+            pointer != nullptr ? resolver.resolve_type(pointer->element) : nullptr;
+        const auto* source = resolved_source != nullptr ? resolved_source->as_nominal() : nullptr;
+
+        return pointer != nullptr && !pointer->is_mutable && owner_nominal != nullptr &&
+                       source != nullptr && owner_nominal->same_nominal(*source)
+                   ? FunctionSymbol::Kind::Type::CopyConstructor
+                   : kind;
+    }
+
   public:
     FunctionDeclarationChecker(Context& context, SemaContext& sema, TypeResolver& resolver,
                                TypeBuilder& builder, FacadeResolver& facades)
@@ -148,7 +170,7 @@ export class FunctionDeclarationChecker {
             return false;
         }
 
-        switch (node.kind()) {
+        switch (symbol->callable_kind) {
         case FunctionSymbol::Kind::Type::Function:
             return true;
 
@@ -195,6 +217,17 @@ export class FunctionDeclarationChecker {
                 !facades.accepts(return_type, owner_struct_type)) {
                 context.diagnostics.add_error(node.span, "constructor '" + node.prototype->name +
                                                              "' must return '" + node.parent + "'");
+                return false;
+            }
+
+            return true;
+        }
+
+        case FunctionSymbol::Kind::Type::CopyConstructor: {
+            if (node.is_static || owner_struct_type == nullptr || return_type == nullptr ||
+                !facades.accepts(return_type, owner_struct_type)) {
+                context.diagnostics.add_error(node.span, "invalid copy constructor for '" +
+                                                             node.parent + "'");
                 return false;
             }
 
@@ -307,9 +340,10 @@ export class FunctionDeclarationChecker {
             }
         }
 
+        const auto callable_kind = classify_function(node, *type);
         auto* symbol = sema.env.symbols.create<FunctionSymbol>(
             node.prototype->name, node.span, node.visibility, Linkage::Type::Internal, type,
-            node.kind(), node.parent, std::move(attribute_infos), node.is_extension,
+            callable_kind, node.parent, std::move(attribute_infos), node.is_extension,
             Abi::Type::Language);
 
         target_scope->define_function(node.prototype->name, symbol,
@@ -317,6 +351,17 @@ export class FunctionDeclarationChecker {
 
         node.function_symbol = symbol;
         sema.function_definitions.add(*symbol, node);
+
+        if (!node.parent.empty()) {
+            const auto* owner = sema.env.current_scope->lookup_type(node.parent);
+            const auto* nominal = owner != nullptr ? owner->type->as_nominal() : nullptr;
+            if (nominal != nullptr && callable_kind == FunctionSymbol::Kind::Type::CopyConstructor) {
+                sema.lifecycles.ensure(nominal).copy_constructor = symbol;
+            } else if (nominal != nullptr &&
+                       callable_kind == FunctionSymbol::Kind::Type::Destructor) {
+                sema.lifecycles.ensure(nominal).destructor = symbol;
+            }
+        }
 
         return symbol;
     }

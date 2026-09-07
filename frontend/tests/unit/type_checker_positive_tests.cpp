@@ -239,51 +239,6 @@ fn main() -> i32 {
     EXPECT_TRUE(assert_type_check_ok(source));
 }
 
-TEST(FrontendTypeCheckerPositive, AcceptsCloneWrapperVectorStringResolution) {
-    const std::string source = R"zep(
-interface Clone<T> {
-    public:
-        fn clone() -> T
-}
-
-struct AllocatorString : Clone<AllocatorString> {
-    public:
-        var value: i32
-
-        override fn clone() -> AllocatorString {
-            return AllocatorString { value: value }
-        }
-}
-
-struct String : Clone<String> {
-    public:
-        var inner: AllocatorString
-
-        override fn clone() -> String {
-            return String { inner: inner.clone() }
-        }
-}
-
-struct Vector<T> : Clone<Vector<T>> {
-    public:
-        var value: T
-
-        override fn clone() -> Vector<T> {
-            return Vector<T> { value: value }
-        }
-}
-
-fn main() -> i32 {
-    var text = String { inner: AllocatorString { value: 7 } }
-    var values = Vector<String> { value: text.clone() }
-    var copied = values.clone()
-    return copied.value.inner.value
-}
-)zep";
-
-    EXPECT_TRUE(assert_type_check_ok(source));
-}
-
 TEST(FrontendTypeCheckerPositive, AcceptsFunctionTypeAliasesWithNamedAggregateTypes) {
     const std::string source = R"zep(
 struct Request {
@@ -311,6 +266,33 @@ fn main() -> i32 {
     var handler: Handler = health
     var response = call(handler, &request)
     return response.status
+}
+)zep";
+
+    EXPECT_TRUE(assert_type_check_ok(source));
+}
+
+TEST(FrontendTypeCheckerPositive, UsesDeclaredCopyConstructorForAggregateLvalues) {
+    const std::string source = R"zep(
+struct Owner {
+    public:
+        var value: i32
+
+        fn Owner(source: *Owner) -> Owner {
+            return Owner { value: source->value }
+        }
+
+        fn ~Owner() -> void {}
+}
+
+fn consume(value: Owner) -> i32 {
+    return value.value
+}
+
+fn main() -> i32 {
+    var first = Owner { value: 7 }
+    var second = first
+    return consume(second)
 }
 )zep";
 

@@ -83,8 +83,6 @@ export class Type {
 
     bool is_scalar() const;
 
-    virtual bool is_copy() const { return is_scalar(); }
-
     static std::size_t align_to(std::size_t value, std::size_t alignment) {
         if (alignment <= 1) {
             return value;

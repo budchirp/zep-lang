@@ -3,6 +3,7 @@ module;
 #include <expected>
 #include <filesystem>
 #include <llvm/Support/raw_ostream.h>
+#include <llvm/Transforms/Utils/ModuleUtils.h>
 #include <string>
 #include <vector>
 
@@ -43,6 +44,18 @@ export class LLVMBackend : public CodegenBackend {
             FunctionEmitter emitter(*context.llvm_context, *context.module, *context.builder,
                                     type_lowerer, scope, dispatch, declarations);
             emitter.emit_definitions(program);
+
+            for (auto* statement : program.statements) {
+                auto* function = statement->as<HIRFunctionDeclaration>();
+                if (function == nullptr || !function->is_global_destructor) {
+                    continue;
+                }
+
+                auto* destructor = context.module->getFunction(function->name);
+                if (destructor != nullptr) {
+                    llvm::appendToGlobalDtors(*context.module, destructor, 65535);
+                }
+            }
 
             context.optimize_module(options.optimization);
 

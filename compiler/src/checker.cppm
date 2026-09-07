@@ -31,8 +31,8 @@ export class CompilerChecker {
 
     void import_symbol(Scope& destination, Scope& source, const ModuleImport& edge,
                        Context& context) {
-        const auto name = edge.symbol();
-        const auto local_name = edge.local_name();
+        const auto& name = edge.symbol;
+        const auto& local_name = edge.local_name;
 
         if (const auto* symbol = source.find_exported_type(name); symbol != nullptr) {
             if (!destination.define_type(local_name, source.local_types().at(name))) {
@@ -67,14 +67,14 @@ export class CompilerChecker {
 
     bool check(ModuleGraph& graph, Diagnostics& diagnostics) {
         Module* builtins = nullptr;
-        for (auto* module : graph.modules()) {
+        for (auto* module : graph.modules) {
             if (module->owner->manifest.name == "std" && module->path.string() == "builtins") {
                 builtins = module;
                 break;
             }
         }
 
-        for (auto* module : graph.modules()) {
+        for (auto* module : graph.modules) {
             Context context(*module->source);
             if (builtins != nullptr && module != builtins) {
                 import_builtin_types(*module->scope, *builtins->scope);

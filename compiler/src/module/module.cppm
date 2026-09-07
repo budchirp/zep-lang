@@ -20,15 +20,13 @@ export class ModuleImport {
     Module* importing;
     Module* imported;
     ImportStatement* syntax;
+    std::string symbol;
+    std::string local_name;
 
     ModuleImport(Module* importing, Module* imported, ImportStatement* syntax)
-        : importing(importing), imported(imported), syntax(syntax) {}
-
-    const std::vector<IdentifierExpression*>& path() const { return syntax->path; }
-
-    std::string symbol() const { return syntax->path.back()->name; }
-
-    std::string local_name() const { return syntax->alias.empty() ? symbol() : syntax->alias; }
+        : importing(importing), imported(imported), syntax(syntax),
+          symbol(syntax->path.back()->name),
+          local_name(syntax->alias.empty() ? symbol : syntax->alias) {}
 };
 
 export class Module {

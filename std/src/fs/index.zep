@@ -26,7 +26,6 @@ public enum FileError {
     RemoveFailed
     ReadDirectoryFailed
     ResolvePathFailed
-    CopyFailed
 
     public:
         fn to_string() -> String {
@@ -38,7 +37,6 @@ public enum FileError {
                 FileError::RemoveFailed -> String("failed to remove file"),
                 FileError::ReadDirectoryFailed -> String("failed to read directory"),
                 FileError::ResolvePathFailed -> String("failed to resolve path"),
-                FileError::CopyFailed -> String("failed to copy path"),
             }
         }
 }
@@ -240,45 +238,6 @@ public struct File {
             if (result != 0) {
                 return Result<i32, FileError>::Error { error: FileError::RemoveFailed }
             }
-            return Result<i32, FileError>::Ok { value: 0 }
-        }
-
-        static fn copy_recursive(source: cstr, destination: cstr) -> Result<i32, FileError> {
-            var created = File::create_directory(destination)
-            if (created.is_error()) {
-                return Result<i32, FileError>::Error { error: FileError::CopyFailed }
-            }
-
-            var listed = Directory::list(source)
-            if (listed.is_error()) {
-                return Result<i32, FileError>::Error { error: FileError::CopyFailed }
-            }
-
-            var entries = listed.unwrap()
-            for (var mut entry_index: i32 = 0; entry_index < entries.size(); entry_index = entry_index + 1) {
-                var entry = entries.get(entry_index).unwrap()
-                var source_path = Path::join(source, entry->name.as_cstr())
-                var destination_path = Path::join(destination, entry->name.as_cstr())
-
-                if (entry->is_directory) {
-                    var copied = File::copy_recursive(source_path.as_cstr(), destination_path.as_cstr())
-                    if (copied.is_error()) {
-                        return Result<i32, FileError>::Error { error: FileError::CopyFailed }
-                    }
-                } else {
-                    var read = File::read_bytes(source_path.as_cstr())
-                    if (read.is_error()) {
-                        return Result<i32, FileError>::Error { error: FileError::CopyFailed }
-                    }
-
-                    var bytes = read.unwrap()
-                    var written = File::write_bytes(destination_path.as_cstr(), bytes.as_ptr(), bytes.length)
-                    if (written.is_error()) {
-                        return Result<i32, FileError>::Error { error: FileError::CopyFailed }
-                    }
-                }
-            }
-
             return Result<i32, FileError>::Ok { value: 0 }
         }
 }

@@ -389,8 +389,8 @@ export class Analysis {
           content(std::move(content)), diagnostic_entries(std::move(diagnostics)),
           analyzed_path(module != nullptr ? std::filesystem::path(module->source->name)
                                           : std::filesystem::path()) {
-        indexes.reserve(this->compiler->modules().size());
-        for (auto* indexed_module : this->compiler->modules()) {
+        indexes.reserve(this->compiler->modules.size());
+        for (auto* indexed_module : this->compiler->modules) {
             indexes.emplace_back(*indexed_module);
         }
     }

@@ -181,6 +181,10 @@ public struct String {
             return String { ptr: storage, length: length, capacity: capacity }
         }
 
+        fn String(source: *String) -> String {
+            return String(source->as_cstr())
+        }
+
         fn String(value: *StringView) -> String {
             var mut result = String()
             result.reserve(value->length() + 1)
