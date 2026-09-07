@@ -10,27 +10,29 @@ import argman;
 import zep.codegen.options;
 import zep.common.logger;
 import zep.common.target;
-import zep.build.service;
+import zep.build;
 
 export class CompileCommand : public argman::Command {
   private:
-    BuildService& service;
+    Builder& builder;
 
   public:
-    explicit CompileCommand(BuildService& service) : service(service) {}
+    explicit CompileCommand(Builder& builder) : builder(builder) {}
 
     argman::Command::Info info() override {
-        return {
-            .name = "compile",
-            .description = "Compile a single Zep source file",
-            .options = {
-                argman::Option("input", "Input Zep source file", std::string("")),
-                argman::Option("output", "Output object file", std::string("")),
-                argman::Option("target", TargetInfo::target_option_description(), std::string("")),
-                argman::Option("verbose", "Print the LLVM IR after codegen", false, true, {"v"}),
-                argman::Option("optimization", "Optimization level (0, 1, 2, or 3)", 0, false,
-                               {"o"}),
-            }};
+        return {.name = "compile",
+                .description = "Compile a single Zep source file",
+                .options = {
+                    argman::Option("input", "Input Zep source file", std::string("")),
+                    argman::Option("output", "Output object file", std::string(""), false, {"o"}),
+                    argman::Option("target",
+                                   "Target triple. Valid: x86_64-unknown-linux-gnu, "
+                                   "aarch64-unknown-linux-gnu, aarch64-apple-darwin",
+                                   std::string("")),
+                    argman::Option("emit-ir", "Print LLVM IR after code generation", false, true),
+                    argman::Option("optimization", "Optimization level (0, 1, 2, or 3)", 0, false,
+                                   {"O"}),
+                }};
     }
 
     int execute() override {
@@ -55,8 +57,10 @@ export class CompileCommand : public argman::Command {
         auto triple = get<std::string>("target");
         TargetInfo target(triple.empty() ? TargetInfo::host_triple() : triple);
 
-        if (!service.compile_object(input_path, output, target, optimization_level.value(),
-                                    get<bool>("verbose"))) {
+        if (!builder.compile(input_path, output,
+                             CodegenOptions(target, optimization_level.value(),
+                                            get<bool>("emit-ir") ? DebugOutput::Type::IR
+                                                                 : DebugOutput::Type::None))) {
             return 1;
         }
 

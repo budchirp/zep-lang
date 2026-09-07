@@ -62,27 +62,19 @@ export class CompilerChecker {
         context.diagnostics.add_error(edge.syntax->span, "module does not export '" + name + "'");
     }
 
-    static bool report(Context& context) {
-        if (!context.diagnostics.has_errors()) {
-            return true;
-        }
-        context.diagnostics.print();
-        return false;
-    }
-
   public:
     explicit CompilerChecker(SemaContext& sema) : sema(sema) {}
 
-    bool check(ModuleGraph& graph, Diagnostics* diagnostics = nullptr) {
+    bool check(ModuleGraph& graph, Diagnostics& diagnostics) {
         Module* builtins = nullptr;
-        for (auto* module : graph.ordering()) {
+        for (auto* module : graph.modules()) {
             if (module->owner->manifest.name == "std" && module->path.string() == "builtins") {
                 builtins = module;
                 break;
             }
         }
 
-        for (auto* module : graph.ordering()) {
+        for (auto* module : graph.modules()) {
             Context context(*module->source);
             if (builtins != nullptr && module != builtins) {
                 import_builtin_types(*module->scope, *builtins->scope);
@@ -94,14 +86,10 @@ export class CompilerChecker {
             ScopeGuard active_scope(sema.env.current_scope, module->scope);
             TypeChecker checker(context, sema);
             checker.check(module->syntax);
-            if (diagnostics != nullptr) {
-                for (const auto& entry : context.diagnostics.entries) {
-                    diagnostics->entries.push_back(entry);
-                }
-            } else if (!report(context)) {
-                return false;
+            for (const auto& entry : context.diagnostics.entries) {
+                diagnostics.entries.push_back(entry);
             }
         }
-        return diagnostics != nullptr ? !diagnostics->has_errors() : true;
+        return !diagnostics.has_errors();
     }
 };

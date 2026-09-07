@@ -1,4 +1,4 @@
-import std.core.panic.CorePanic
+import std.io.panic.panic
 
 public enum Result<T, E> {
     Ok { value: T }
@@ -23,7 +23,7 @@ public enum Result<T, E> {
             return when (*self) {
                 Result::Ok { value } -> value,
                 else -> {
-                    CorePanic::panic("called Result.unwrap on an Error value")
+                    panic("called Result.unwrap on an Error value")
                 },
             }
         }
@@ -32,7 +32,7 @@ public enum Result<T, E> {
             return when (*self) {
                 Result::Ok { value } -> value,
                 else -> {
-                    CorePanic::panic(message)
+                    panic(message)
                 },
             }
         }
@@ -41,7 +41,7 @@ public enum Result<T, E> {
             return when (*self) {
                 Result::Error { error } -> error,
                 else -> {
-                    CorePanic::panic("called Result.unwrap_error on an Ok value")
+                    panic("called Result.unwrap_error on an Ok value")
                 },
             }
         }

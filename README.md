@@ -15,12 +15,14 @@ Systems programming language with manual memory management, generics, interfaces
 - **Primitive facades** — `32.to_string()`, `"zep".to_string()`, `true.to_string()`
 - **C FFI** — `extern fn`, `extern var` with variadic support
 - **Compile-time built-ins** — `#sizeof(T)`, `#length(array)`, `#asm(...)`
-- **Language Server Protocol** — integrated `zep lsp` with completion, hover, diagnostics, and semantic tokens
+- **Language Server Protocol** — incremental document sync, import-aware completion, navigation,
+  symbols, signatures, diagnostics, hover, and semantic tokens through `zep lsp`
 
 ## Example
 
 ```zep
-import std.ffi.printf
+import std.io.format.FormatArguments
+import std.io.print
 
 struct Point {
     public:
@@ -56,10 +58,14 @@ struct Circle : Shape {
 
 public fn main() -> i32 {
     var point = Point(3, 4)
-    printf("distance squared: %d\n", point.distance_squared())
+    var mut arguments = FormatArguments()
+    arguments.add(point.distance_squared())
+    print("distance squared: {}\n", &arguments)
 
     var circle = Circle(5.0)
-    printf("area: %f\n", circle.area())
+    arguments.clear()
+    arguments.add(circle.area())
+    print("area: {}\n", &arguments)
 
     return 0
 }
@@ -84,11 +90,11 @@ Use `ctest --test-dir cmake-build-debug -N` to list the currently discovered tes
 
 ## Optimize
 
-Use `-o` with levels `0`, `1`, `2`, or `3`:
+Use `-O` with levels `0`, `1`, `2`, or `3`:
 
 ```bash
-cmake-build-debug/cli/zep build -o 2
-cmake-build-debug/cli/zep compile --input path/to/file.zep -o 3
+cmake-build-debug/cli/zep build -O 2
+cmake-build-debug/cli/zep compile --input path/to/file.zep -O 3
 ```
 
 Level `0` is the default. Higher levels run LLVM optimization passes before object emission.
@@ -117,10 +123,10 @@ cmake-build-debug/cli/zep lsp
 
 ## CLI Commands
 
-- `zep build [-o 0|1|2|3] [-v] [--project <path>]`: Build a project defined by `zep.json`
-- `zep compile --input <file> [--output <file>] [-o 0|1|2|3] [-v]`: Compile a source file to an object file
+- `zep build [--project <path>] [-O|--optimization 0|1|2|3] [--emit-ir]`: Build a project defined by `zep.json`
+- `zep compile --input <file> [-o|--output <file>] [--target <triple>] [-O|--optimization 0|1|2|3] [--emit-ir]`: Compile a source file to an object file
 - `zep lsp`: Start the Language Server Protocol server (stdin/stdout)
-- `zep fetch`: Download and resolve package dependencies
+- `zep fetch [--project <path>]`: Download and resolve package dependencies
 - `zep install`: Install the compiler and standard library to `~/.local/share/zep/`
 
 Projects use `zep.json`:

@@ -1,6 +1,5 @@
 module;
 
-#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <utility>
@@ -13,10 +12,11 @@ import zep.workspace.manifest;
 export class Package {
   public:
     Manifest manifest;
-    PackageSource::Type source;
     std::filesystem::path root;
+    std::filesystem::path source_directory;
     std::vector<Package*> dependencies;
 
-    Package(Manifest manifest, PackageSource::Type source, std::filesystem::path root)
-        : manifest(std::move(manifest)), source(source), root(std::move(root)) {}
+    Package(Manifest manifest, std::filesystem::path root, std::filesystem::path source_directory)
+        : manifest(std::move(manifest)), root(std::move(root)),
+          source_directory(std::move(source_directory)) {}
 };

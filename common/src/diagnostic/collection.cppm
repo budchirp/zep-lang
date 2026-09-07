@@ -66,26 +66,6 @@ export class Diagnostics {
         });
     }
 
-    bool has_warnings() const {
-        return std::ranges::any_of(entries, [](const Diagnostic& diagnostic) {
-            return diagnostic.severity == DiagnosticSeverity::Type::Warning;
-        });
-    }
-
-    std::size_t error_count() const {
-        return static_cast<std::size_t>(std::ranges::count_if(entries, [](const Diagnostic& d) {
-            return d.severity == DiagnosticSeverity::Type::Error;
-        }));
-    }
-
-    std::size_t warning_count() const {
-        return static_cast<std::size_t>(std::ranges::count_if(entries, [](const Diagnostic& d) {
-            return d.severity == DiagnosticSeverity::Type::Warning;
-        }));
-    }
-
-    const std::vector<Diagnostic>& all() const { return entries; }
-
     void print() const {
         for (const auto& diagnostic : entries) {
             diagnostic.print();

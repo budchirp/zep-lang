@@ -4,7 +4,7 @@ import argman;
 import zep.codegen.llvm.backend;
 import zep.common.system.posix;
 import zep.common.system.process;
-import zep.build.service;
+import zep.build;
 import zep.workspace.toolchain;
 import zep.cli.commands.build;
 import zep.cli.commands.compile;
@@ -22,9 +22,9 @@ class RootCommand : public argman::Command {
     LspCommand lsp_command;
 
   public:
-    explicit RootCommand(BuildService& service, ProcessRunner& process_runner)
-        : build_command(service), compile_command(service), fetch_command(process_runner),
-          install_command(ZEP_STD_SOURCE_DIR), lsp_command() {}
+    explicit RootCommand(Builder& builder, ProcessRunner& process_runner)
+        : build_command(builder), compile_command(builder), fetch_command(process_runner),
+          install_command(ZEP_STD_SOURCE_DIR), lsp_command(ZEP_STD_SOURCE_DIR) {}
 
   private:
     argman::Command::Info info() override {
@@ -40,17 +40,17 @@ class RootCommand : public argman::Command {
     }
 };
 
-int main(int argc, char* argv[]) {
+int main(int argument_count, char* arguments[]) {
     LLVMBackend backend;
     Toolchain environment = Toolchain::discover();
     environment.standard_library = ZEP_STD_SOURCE_DIR;
     PosixProcessRunner process_runner;
-    BuildService service(backend, std::move(environment), process_runner);
-    RootCommand root(service, process_runner);
+    Builder builder(backend, std::move(environment), process_runner);
+    RootCommand root(builder, process_runner);
     argman::CommandLineParser parser(root);
 
     try {
-        return parser.parse(argc, argv);
+        return parser.parse(argument_count, arguments);
     } catch (const std::exception& exception) {
         Logger::print_stderr("zep: error: ", exception.what(), "\n");
         return 1;

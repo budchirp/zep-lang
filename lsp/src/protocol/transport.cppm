@@ -9,14 +9,13 @@ module;
 #include <string>
 #include <string_view>
 
-export module zep.lsp.protocol.transport;
-
-import zep.common.logger;
+export module zep.lsp.transport;
 
 export class Transport {
   private:
     std::istream& input;
     std::ostream& output;
+    static constexpr std::size_t maximum_content_length = 16U * 1024U * 1024U;
 
     static std::string trim(std::string_view view) {
         while (!view.empty() && std::isspace(static_cast<unsigned char>(view.front()))) {
@@ -31,9 +30,14 @@ export class Transport {
     }
 
   public:
+    enum class ReadStatus { Message, End, InvalidFrame, InvalidJson, TooLarge };
+
+    ReadStatus read_status = ReadStatus::End;
+
     Transport(std::istream& input, std::ostream& output) : input(input), output(output) {}
 
-    std::optional<nlohmann::json> read_message() {
+    std::optional<nlohmann::json> read() {
+        read_status = ReadStatus::End;
         std::size_t content_length = 0;
         bool has_length = false;
 
@@ -54,30 +58,41 @@ export class Transport {
                     content_length = std::stoull(length_text);
                     has_length = true;
                 } catch (...) {
+                    read_status = ReadStatus::InvalidFrame;
                     return std::nullopt;
                 }
             }
         }
 
         if (!has_length || content_length == 0) {
+            read_status = input.eof() ? ReadStatus::End : ReadStatus::InvalidFrame;
+            return std::nullopt;
+        }
+
+        if (content_length > maximum_content_length) {
+            input.ignore(static_cast<std::streamsize>(content_length));
+            read_status = ReadStatus::TooLarge;
             return std::nullopt;
         }
 
         std::string body(content_length, '\0');
         input.read(body.data(), static_cast<std::streamsize>(content_length));
         if (input.gcount() != static_cast<std::streamsize>(content_length)) {
+            read_status = ReadStatus::InvalidFrame;
             return std::nullopt;
         }
 
         try {
-            return nlohmann::json::parse(body);
+            auto message = nlohmann::json::parse(body);
+            read_status = ReadStatus::Message;
+            return message;
         } catch (const nlohmann::json::parse_error&) {
-            Logger::print_stderr("zep-lsp: transport: json parse error\n");
+            read_status = ReadStatus::InvalidJson;
             return std::nullopt;
         }
     }
 
-    void write_message(const nlohmann::json& payload) {
+    void write(const nlohmann::json& payload) {
         auto body = payload.dump();
         output << "Content-Length: " << body.size() << "\r\n\r\n" << body;
         output.flush();

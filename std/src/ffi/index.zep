@@ -31,16 +31,11 @@ public extern fn c_strtod(value: cstr, end: *mut cstr) -> f64
 @name("snprintf")
 public extern fn c_snprintf(buffer: cstr, size: i64, format: cstr, ...) -> i32
 
-@name("fprintf")
-public extern fn c_fprintf(stream: *mut void, format: cstr, ...) -> i32
-
-@name("stderr")
-public extern var c_standard_error: *mut void
-
 @name("exit")
 public extern fn c_exit(status: i32) -> never
 
-public extern fn printf(format: cstr, ...) -> void
+@name("write")
+public extern fn c_write(file_descriptor: i32, buffer: *void, length: i64) -> i64
 
 @name("__errno_location")
 @os("linux")

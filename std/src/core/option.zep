@@ -1,4 +1,4 @@
-import std.core.panic.CorePanic
+import std.io.panic.panic
 
 public enum Option<T> {
     None
@@ -23,7 +23,7 @@ public enum Option<T> {
             return when (*self) {
                 Option::Some { value } -> value,
                 else -> {
-                    CorePanic::panic("called Option.unwrap on a None value")
+                    panic("called Option.unwrap on a None value")
                 },
             }
         }
@@ -32,7 +32,7 @@ public enum Option<T> {
             return when (*self) {
                 Option::Some { value } -> value,
                 else -> {
-                    CorePanic::panic(message)
+                    panic(message)
                 },
             }
         }

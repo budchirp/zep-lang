@@ -26,22 +26,10 @@ export class Project {
         : packages(std::move(packages)), root_package(root_package),
           root_directory(std::move(root_directory)) {}
 
-    static std::optional<std::filesystem::path> find_root(const std::filesystem::path& path) {
-        ManifestReader reader;
-        auto manifest = reader.find(path);
-        if (!manifest.has_value()) {
-            return std::nullopt;
-        }
-
-        return manifest->parent_path();
-    }
-
-    static std::optional<ModulePath> module_path(const std::filesystem::path& project_root,
-                                                 const std::filesystem::path& source_path) {
-        auto source_directory = project_root / "src";
+    std::optional<ModulePath> module(const std::filesystem::path& source_path) const {
         std::error_code error_code;
         auto canonical_source_directory =
-            std::filesystem::weakly_canonical(source_directory, error_code);
+            std::filesystem::weakly_canonical(root_package->source_directory, error_code);
         auto canonical_source = std::filesystem::weakly_canonical(source_path, error_code);
 
         auto relative = canonical_source.lexically_relative(canonical_source_directory);
@@ -68,19 +56,20 @@ export class Project {
 
     static std::optional<Project> open(const std::filesystem::path& path, Diagnostics& diagnostics,
                                        const Toolchain& toolchain = Toolchain::discover()) {
-        auto root = find_root(path);
-        if (!root.has_value()) {
+        ManifestReader reader;
+        auto manifest_path = reader.find(path);
+        if (!manifest_path.has_value()) {
             return std::nullopt;
         }
 
-        ManifestReader reader;
-        auto manifest = reader.read(*root / "zep.json");
+        auto root = manifest_path->parent_path();
+        auto manifest = reader.read(*manifest_path);
         if (!manifest.has_value()) {
             return std::nullopt;
         }
 
         PackageResolver resolver(toolchain);
-        auto resolved_packages = resolver.resolve(*root, diagnostics);
+        auto resolved_packages = resolver.resolve(root, diagnostics);
         if (!resolved_packages.has_value()) {
             return std::nullopt;
         }
@@ -90,6 +79,31 @@ export class Project {
             return std::nullopt;
         }
 
-        return Project(std::move(*resolved_packages), package, std::move(*root));
+        return Project(std::move(*resolved_packages), package, std::move(root));
+    }
+
+    static Project single_file(const std::filesystem::path& path,
+                               const Toolchain& toolchain = Toolchain::discover()) {
+        auto absolute_path = std::filesystem::absolute(path);
+        auto source_directory = absolute_path.parent_path();
+        PackageGraph packages;
+        auto& root_package =
+            packages.add(Manifest("standalone", "0.1.0", Manifest::Type::Kind::Executable, {}, {}),
+                         source_directory, source_directory);
+
+        if (!toolchain.standard_library.empty()) {
+            ManifestReader reader;
+            auto standard_manifest = reader.read(toolchain.standard_library / "zep.json");
+            if (!standard_manifest.has_value()) {
+                return Project(std::move(packages), &root_package, std::move(source_directory));
+            }
+
+            auto& standard_package =
+                packages.add(std::move(*standard_manifest), toolchain.standard_library,
+                             toolchain.standard_library / "src");
+            root_package.dependencies.push_back(&standard_package);
+        }
+
+        return Project(std::move(packages), &root_package, std::move(source_directory));
     }
 };

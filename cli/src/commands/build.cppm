@@ -9,25 +9,24 @@ import argman;
 import zep.codegen.options;
 import zep.common.logger;
 import zep.common.target;
-import zep.build.service;
+import zep.build;
 
 export class BuildCommand : public argman::Command {
   private:
-    BuildService& service;
+    Builder& builder;
 
   public:
-    explicit BuildCommand(BuildService& service) : service(service) {}
+    explicit BuildCommand(Builder& builder) : builder(builder) {}
 
     argman::Command::Info info() override {
-        return {
-            .name = "build",
-            .description = "Build a Zep project",
-            .options = {
-                argman::Option("project", "Project root directory", std::string("")),
-                argman::Option("verbose", "Print the LLVM IR after codegen", false, true, {"v"}),
-                argman::Option("optimization", "Optimization level (0, 1, 2, or 3)", 0, false,
-                               {"o"}),
-            }};
+        return {.name = "build",
+                .description = "Build a Zep project",
+                .options = {
+                    argman::Option("project", "Project root directory", std::string("")),
+                    argman::Option("emit-ir", "Print LLVM IR after code generation", false, true),
+                    argman::Option("optimization", "Optimization level (0, 1, 2, or 3)", 0, false,
+                                   {"O"}),
+                }};
     }
 
     int execute() override {
@@ -38,23 +37,11 @@ export class BuildCommand : public argman::Command {
         }
 
         auto project = get<std::string>("project");
-        auto root =
+        auto path =
             project.empty() ? std::filesystem::current_path() : std::filesystem::path(project);
-        if (project.empty()) {
-            while (!std::filesystem::is_regular_file(root / "zep.json") &&
-                   root != root.parent_path()) {
-                root = root.parent_path();
-            }
-        }
-        if (!std::filesystem::is_regular_file(root / "zep.json")) {
-            Logger::print_stderr("zep: error: could not find zep.json\n");
-            return 1;
-        }
-        if (!service.build(root,
-                           CodegenOptions(TargetInfo(), optimization_level.value(),
-                                          get<bool>("verbose") ? DebugOutput::Type::IR
-                                                               : DebugOutput::Type::None),
-                           get<bool>("verbose"))) {
+        if (!builder.build(path, optimization_level.value(),
+                           get<bool>("emit-ir") ? DebugOutput::Type::IR
+                                                : DebugOutput::Type::None)) {
             return 1;
         }
 

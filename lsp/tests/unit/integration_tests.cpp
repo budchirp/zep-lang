@@ -1,4 +1,5 @@
 #include <csignal>
+#include <algorithm>
 #include <cstring>
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -7,9 +8,10 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
-import zep.lsp.protocol.transport;
+import zep.lsp.transport;
 
 TEST(LspIntegration, FullClientServerLifecycle) {
     int stdin_pipe[2];
@@ -66,7 +68,8 @@ TEST(LspIntegration, FullClientServerLifecycle) {
          {{"uri", "file:///main.zep"},
           {"languageId", "zep"},
           {"version", 1},
-          {"text", "fn add(a: i32, b: i32) -> i32 { return a + b; }"}}}};
+          {"text", "fn add(a: i32, b: i32) -> i32 { return a + b; }\n"
+                   "fn main() -> i32 { return add(1, 2); }"}}}};
     request_stream += frame_message(did_open_notification);
 
     nlohmann::json hover_request;
@@ -92,9 +95,49 @@ TEST(LspIntegration, FullClientServerLifecycle) {
     tokens_request["params"] = {{"textDocument", {{"uri", "file:///main.zep"}}}};
     request_stream += frame_message(tokens_request);
 
+    for (const auto& [identifier, method] :
+         std::vector<std::pair<int, std::string>>{{5, "textDocument/definition"},
+                                                  {6, "textDocument/references"},
+                                                  {7, "textDocument/documentHighlight"},
+                                                  {9, "textDocument/signatureHelp"}}) {
+        nlohmann::json request = {{"jsonrpc", "2.0"},
+                                  {"id", identifier},
+                                  {"method", method},
+                                  {"params",
+                                   {{"textDocument", {{"uri", "file:///main.zep"}}},
+                                    {"position", {{"line", 1}, {"character", 29}}}}}};
+        if (method == "textDocument/references") {
+            request["params"]["context"] = {{"includeDeclaration", true}};
+        }
+        request_stream += frame_message(request);
+    }
+
+    request_stream += frame_message({{"jsonrpc", "2.0"},
+                                     {"id", 8},
+                                     {"method", "textDocument/documentSymbol"},
+                                     {"params", {{"textDocument", {{"uri", "file:///main.zep"}}}}}});
+    request_stream += frame_message(
+        {{"jsonrpc", "2.0"},
+         {"id", 10},
+         {"method", "textDocument/semanticTokens/range"},
+         {"params",
+          {{"textDocument", {{"uri", "file:///main.zep"}}},
+           {"range", {{"start", {{"line", 0}, {"character", 0}}},
+                      {"end", {{"line", 1}, {"character", 38}}}}}}}});
+
+    request_stream += frame_message(
+        {{"jsonrpc", "2.0"},
+         {"method", "textDocument/didChange"},
+         {"params",
+          {{"textDocument", {{"uri", "file:///main.zep"}, {"version", 2}}},
+           {"contentChanges",
+            {{{"range", {{"start", {{"line", 1}, {"character", 30}}},
+                         {"end", {{"line", 1}, {"character", 31}}}}},
+              {"text", "3"}}}}}}});
+
     nlohmann::json shutdown_request;
     shutdown_request["jsonrpc"] = "2.0";
-    shutdown_request["id"] = 5;
+    shutdown_request["id"] = 11;
     shutdown_request["method"] = "shutdown";
     request_stream += frame_message(shutdown_request);
 
@@ -126,17 +169,19 @@ TEST(LspIntegration, FullClientServerLifecycle) {
     Transport transport(response_stream, dummy_out);
 
     std::vector<nlohmann::json> messages;
-    while (auto msg = transport.read_message()) {
+    while (auto msg = transport.read()) {
         messages.push_back(std::move(*msg));
     }
 
-    ASSERT_GE(messages.size(), 6U);
+    ASSERT_GE(messages.size(), 13U);
 
     EXPECT_EQ(messages[0]["id"], 1);
     ASSERT_TRUE(messages[0].contains("result"));
     EXPECT_TRUE(messages[0]["result"]["capabilities"]["hoverProvider"].get<bool>());
-    EXPECT_EQ(messages[0]["result"]["capabilities"]["textDocumentSync"].get<int>(), 1);
+    EXPECT_EQ(messages[0]["result"]["capabilities"]["textDocumentSync"]["change"].get<int>(), 2);
     EXPECT_TRUE(messages[0]["result"]["capabilities"].contains("semanticTokensProvider"));
+    EXPECT_TRUE(messages[0]["result"]["capabilities"]["definitionProvider"].get<bool>());
+    EXPECT_TRUE(messages[0]["result"]["capabilities"]["signatureHelpProvider"].is_object());
 
     EXPECT_EQ(messages[1]["method"], "textDocument/publishDiagnostics");
     EXPECT_EQ(messages[1]["params"]["uri"], "file:///main.zep");
@@ -156,8 +201,25 @@ TEST(LspIntegration, FullClientServerLifecycle) {
     EXPECT_TRUE(messages[4]["result"].contains("data"));
     EXPECT_FALSE(messages[4]["result"]["data"].empty());
 
-    EXPECT_EQ(messages[5]["id"], 5);
-    EXPECT_TRUE(messages[5]["result"].is_null());
+    for (auto identifier = 5; identifier <= 10; ++identifier) {
+        auto response = std::ranges::find_if(messages, [identifier](const nlohmann::json& message) {
+            return message.value("id", -1) == identifier;
+        });
+        ASSERT_NE(response, messages.end());
+        EXPECT_TRUE(response->contains("result")) << response->dump();
+    }
+
+    auto shutdown_response = std::ranges::find_if(messages, [](const nlohmann::json& message) {
+        return message.value("id", -1) == 11;
+    });
+    ASSERT_NE(shutdown_response, messages.end());
+    EXPECT_TRUE((*shutdown_response)["result"].is_null());
+
+    auto updated_diagnostics = std::ranges::find_if(messages, [](const nlohmann::json& message) {
+        return message.value("method", std::string()) == "textDocument/publishDiagnostics" &&
+               message.at("params").value("version", 0) == 2;
+    });
+    EXPECT_NE(updated_diagnostics, messages.end());
 }
 
 TEST(LspIntegration, CliZepLspSubcommand) {
@@ -235,7 +297,7 @@ TEST(LspIntegration, CliZepLspSubcommand) {
     Transport transport(response_stream, dummy_out);
 
     std::vector<nlohmann::json> messages;
-    while (auto msg = transport.read_message()) {
+    while (auto msg = transport.read()) {
         messages.push_back(std::move(*msg));
     }
 

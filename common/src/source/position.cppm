@@ -5,7 +5,6 @@ module;
 export module zep.common.source.position;
 
 export class Position {
-  private:
   public:
     std::size_t line;
     std::size_t column;

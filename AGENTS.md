@@ -40,8 +40,8 @@ snapshots by default; set `ZEP_UPDATE_SNAPSHOTS=1` only when intentionally updat
 
 **Compiler optimization levels:**
 ```bash
-cmake-build-debug/cli/zep build -o 2
-cmake-build-debug/cli/zep compile --input file.zep -o 3
+cmake-build-debug/cli/zep build -O 2
+cmake-build-debug/cli/zep compile --input file.zep -O 3
 ```
 
 Valid optimization levels are `0`, `1`, `2`, and `3`. The selected level is passed through the
@@ -89,16 +89,16 @@ codegen/          Code generation orchestrator
   codegen.cppm    Codegen orchestrator (selects backend via Backend::Type)
   tests/          Codegen orchestration tests
 workspace/        Manifest, Project model, package graph, and environment discovery
-compiler/         Module graph, analysis service, parsing, semantic checking, and HIR lowering
+compiler/         Module graph, parsing, semantic checking, and HIR lowering
   module/         Module metadata, graph loading, and import resolution
-builder/          Pure build plans and structured tool-process execution
+builder/          Direct build, object generation, dependency fetch, installation, and linking
   tests/          Project config, module loading, and object compilation tests
-lsp/              Language Server Protocol server implementation
-  analysis/       AST/scope completion, hover, and semantic tokens extraction
-  protocol/       LSP types, JSON-RPC framing, and transport
-  server/         Server dispatcher and document management
-  features/       Lifecycle, hover, completion, diagnostics, tokens handlers
-  tests/          LSP unit and integration tests
+lsp/              Modular Language Server Protocol boundary
+  analysis/       Project snapshots, syntax index, completion, and language queries
+  core/           Session, JSON-RPC dispatch, server lifecycle, and cache ownership
+  handlers/       Focused lifecycle, document, completion, navigation, symbol, and token handlers
+  protocol/       Versioned documents, UTF-16 conversion, JSON codecs, and transport framing
+  tests/          Protocol, transport, dispatch, and integration tests
 cli/              Command-line interface (zep build, compile, lsp, fetch, install)
   tests/          CLI fixture and failure-mode tests
 cmake/            Build helpers for modules, tests, fuzzing, benchmarks, and coverage

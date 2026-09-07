@@ -167,6 +167,8 @@ export class MemberResolver {
         if (const auto* parent_symbol = sema.env.current_scope->lookup_type(parent);
             parent_symbol != nullptr) {
             declared_nominal = parent_symbol->type->as_nominal();
+        } else if (declared_nominal != nullptr && declared_nominal->definition != nullptr) {
+            declared_nominal = declared_nominal->definition;
         }
 
         const auto* actual_nominal = actual_parent_type->as_nominal();

@@ -23,7 +23,10 @@ public struct StringView {
 
     public:
         fn StringView(ptr: cstr, length: i32) -> StringView {
-            var safe_length = if (length < 0) { 0 } else { length }
+            var mut safe_length = length
+            if (safe_length < 0) {
+                safe_length = 0
+            }
             return StringView { ptr: ptr, length: safe_length }
         }
 
@@ -99,7 +102,10 @@ public struct StringView {
             }
 
             var needle_length = c_strlen(needle) as i32
-            var start_index = if (from_index < 0) { 0 } else { from_index }
+            var mut start_index = from_index
+            if (start_index < 0) {
+                start_index = 0
+            }
 
             if (needle_length == 0 && start_index <= length) {
                 return Option<i32>::Some { value: start_index }
@@ -141,7 +147,10 @@ public struct String {
                 return
             }
 
-            var mut next_capacity = if (capacity == 0) { 1 } else { capacity }
+            var mut next_capacity = capacity
+            if (next_capacity == 0) {
+                next_capacity = 1
+            }
             while (next_capacity < required_capacity) {
                 next_capacity = next_capacity * 2
             }
@@ -216,7 +225,11 @@ public struct String {
         }
 
         static fn from(value: boolean) -> String {
-            return String(if (value) { "true" } else { "false" })
+            if (value) {
+                return String("true")
+            }
+
+            return String("false")
         }
 
         static fn from(value: char) -> String {

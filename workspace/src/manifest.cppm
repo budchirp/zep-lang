@@ -45,11 +45,8 @@ export class Manifest {
       public:
         std::string triple;
         std::vector<std::string> linker_arguments;
-        bool default_layout;
-
-        Target(std::string triple, std::vector<std::string> linker_arguments, bool default_layout)
-            : triple(std::move(triple)), linker_arguments(std::move(linker_arguments)),
-              default_layout(default_layout) {}
+        Target(std::string triple, std::vector<std::string> linker_arguments)
+            : triple(std::move(triple)), linker_arguments(std::move(linker_arguments)) {}
     };
 
     std::string name;
@@ -131,9 +128,8 @@ export class ManifestReader {
                 throw std::runtime_error("target triple cannot be empty");
             }
 
-            auto default_layout = triple == "host";
-            return Manifest::Target(default_layout ? TargetInfo::host_triple() : std::move(triple),
-                                    std::move(linker), default_layout);
+            auto resolved_triple = triple == "host" ? TargetInfo::host_triple() : std::move(triple);
+            return Manifest::Target(std::move(resolved_triple), std::move(linker));
         }
 
         auto architecture = TargetArch::Kind::Type::Unknown;
@@ -148,7 +144,7 @@ export class ManifestReader {
 
         if (architecture == TargetArch::Kind::Type::Unknown &&
             operating_system == TargetOS::Kind::Type::Unknown) {
-            return Manifest::Target(TargetInfo::host_triple(), std::move(linker), true);
+            return Manifest::Target(TargetInfo::host_triple(), std::move(linker));
         }
 
         auto triple = TargetInfo::triple_from(architecture, operating_system);
@@ -156,7 +152,7 @@ export class ManifestReader {
             throw std::runtime_error("target object expects valid 'os' and 'arch'");
         }
 
-        return Manifest::Target(std::move(triple), std::move(linker), false);
+        return Manifest::Target(std::move(triple), std::move(linker));
     }
 
   public:
@@ -232,7 +228,7 @@ export class ManifestReader {
                 }
             }
             if (targets.empty()) {
-                targets.emplace_back(TargetInfo::host_triple(), std::vector<std::string>(), true);
+                targets.emplace_back(TargetInfo::host_triple(), std::vector<std::string>());
             }
             return Manifest(std::move(name), std::move(version), type, std::move(libs),
                             std::move(targets));

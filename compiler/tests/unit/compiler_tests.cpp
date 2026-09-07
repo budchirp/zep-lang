@@ -10,7 +10,6 @@ import zep.common.diagnostic.collection;
 import zep.test.support;
 import zep.workspace.manifest;
 import zep.workspace.module_path;
-import zep.workspace.package;
 import zep.workspace.package.graph;
 import zep.workspace.package;
 
@@ -18,8 +17,8 @@ namespace {
 
 Package& add_package(PackageGraph& graph, const std::string& name,
                      const std::filesystem::path& root) {
-    return graph.add(Manifest(name, "0.1.0", Manifest::Type::Kind::Library, {}, {}),
-                     PackageSource::Type::Path, root);
+    return graph.add(Manifest(name, "0.1.0", Manifest::Type::Kind::Library, {}, {}), root,
+                     root / "src");
 }
 
 } // namespace
@@ -90,10 +89,10 @@ TEST(CompilerGraph, OrdersDependenciesBeforeImporters) {
 
     ASSERT_NE(graph.load(app, ModulePath::from_string("main"), diagnostics), nullptr);
     ASSERT_FALSE(diagnostics.has_errors());
-    ASSERT_EQ(graph.ordering().size(), 3U);
-    EXPECT_EQ(graph.ordering()[0]->path.string(), "alpha");
-    EXPECT_EQ(graph.ordering()[1]->path.string(), "beta");
-    EXPECT_EQ(graph.ordering()[2]->path.string(), "main");
+    ASSERT_EQ(graph.modules().size(), 3U);
+    EXPECT_EQ(graph.modules()[0]->path.string(), "alpha");
+    EXPECT_EQ(graph.modules()[1]->path.string(), "beta");
+    EXPECT_EQ(graph.modules()[2]->path.string(), "main");
 }
 
 TEST(CompilerGraph, ReportsCompleteCycleEdgeChain) {
@@ -110,9 +109,9 @@ TEST(CompilerGraph, ReportsCompleteCycleEdgeChain) {
 
     ASSERT_NE(graph.load(app, ModulePath::from_string("a"), diagnostics), nullptr);
     ASSERT_TRUE(diagnostics.has_errors());
-    ASSERT_EQ(diagnostics.all().size(), 1U);
-    EXPECT_NE(diagnostics.all()[0].message.find("a -> b -> c -> a"), std::string::npos);
-    EXPECT_EQ(diagnostics.all()[0].location.source->name, workspace.file("src/c.zep").string());
+    ASSERT_EQ(diagnostics.entries.size(), 1U);
+    EXPECT_NE(diagnostics.entries[0].message.find("a -> b -> c -> a"), std::string::npos);
+    EXPECT_EQ(diagnostics.entries[0].location.source->name, workspace.file("src/c.zep").string());
 }
 
 TEST(CompilerSemantics, BindsImportedTypeScopesAndInterfaces) {
@@ -135,7 +134,6 @@ TEST(CompilerSemantics, BindsImportedTypeScopesAndInterfaces) {
     Diagnostics diagnostics;
     Compiler compiler;
 
-    ASSERT_NE(compiler.load(package, ModulePath::from_string("main"), diagnostics), nullptr);
+    ASSERT_NE(compiler.analyze(package, ModulePath::from_string("main"), diagnostics), nullptr);
     ASSERT_FALSE(diagnostics.has_errors());
-    EXPECT_TRUE(compiler.check());
 }

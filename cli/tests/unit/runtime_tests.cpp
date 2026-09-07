@@ -220,6 +220,95 @@ public fn main() -> i32 {
 )zep");
 }
 
+void write_stdlib_format_fixture(CliTestHarness& harness) {
+    write_project_config(harness, "stdlib_format");
+    harness.workspace.write("src/main.zep", R"zep(import std.io.format.FormatArguments
+import std.io.format.sprint
+import std.io.eprint
+import std.io.print
+import std.text.string.String
+
+public fn main() -> i32 {
+    var mut arguments = FormatArguments()
+    var text = String("text")
+
+    arguments.add(&text)
+    arguments.add(-42)
+    arguments.add(12 as u64)
+    arguments.add(3.5)
+    arguments.add(true)
+    arguments.add('!')
+
+    var formatted = sprint("{} {} {} {} {} {} {{ok}}", &arguments)
+    if (formatted.is_error()) {
+        return 1
+    }
+
+    if (!formatted.unwrap().equals("text -42 12 3.5 true ! {ok}")) {
+        return 2
+    }
+
+    var empty_arguments = FormatArguments()
+    var missing_argument = sprint("{}", &empty_arguments)
+    if (!missing_argument.is_error()) {
+        return 3
+    }
+
+    var missing_argument_error = missing_argument.unwrap_error()
+    if (!missing_argument_error.message().equals("missing format argument at index 0")) {
+        return 4
+    }
+
+    arguments.clear()
+    arguments.add(1)
+    var extra_argument = sprint("plain", &arguments)
+    if (!extra_argument.is_error()) {
+        return 5
+    }
+
+    var extra_argument_error = extra_argument.unwrap_error()
+    if (!extra_argument_error.message().equals("unused format argument at index 0")) {
+        return 6
+    }
+
+    var unmatched_opening = sprint("{", &empty_arguments)
+    if (!unmatched_opening.is_error()) {
+        return 7
+    }
+
+    var unmatched_opening_error = unmatched_opening.unwrap_error()
+    if (!unmatched_opening_error.message().equals("unmatched opening brace at index 0")) {
+        return 8
+    }
+
+    var unmatched_closing = sprint("}", &empty_arguments)
+    if (!unmatched_closing.is_error()) {
+        return 9
+    }
+
+    var unmatched_closing_error = unmatched_closing.unwrap_error()
+    if (!unmatched_closing_error.message().equals("unmatched closing brace at index 0")) {
+        return 10
+    }
+
+    var literal = sprint("literal")
+    if (literal.is_error() || !literal.unwrap().equals("literal")) {
+        return 11
+    }
+
+    arguments.clear()
+    arguments.add(7)
+    print("stdout {}", &arguments)
+
+    arguments.clear()
+    arguments.add(false)
+    eprint("stderr {}", &arguments)
+
+    return 0
+}
+)zep");
+}
+
 } // namespace
 
 TEST(CliZep, RunsImportedFunctionValueFixture) {
@@ -282,4 +371,37 @@ TEST(CliZep, RunsStdlibPathFixture) {
     auto result = build_and_run(harness, "stdlib_path");
 
     EXPECT_TRUE(result.succeeded()) << result.stderr_text;
+}
+
+TEST(CliZep, RunsStdlibFormattingFixture) {
+    CliTestHarness harness("cli_zep_stdlib_format", ZEP_ZEP_EXECUTABLE);
+    write_stdlib_format_fixture(harness);
+
+    auto result = build_and_run(harness, "stdlib_format");
+
+    EXPECT_TRUE(result.succeeded()) << result.stderr_text << "exit status: " << result.exit.status;
+    EXPECT_EQ(result.stdout_text, "stdout 7");
+    EXPECT_EQ(result.stderr_text, "stderr false");
+}
+
+TEST(CliZep, RunsStdlibPanicFixture) {
+    CliTestHarness harness("cli_zep_stdlib_panic", ZEP_ZEP_EXECUTABLE);
+    write_project_config(harness, "stdlib_panic");
+    harness.workspace.write("src/main.zep", R"zep(import std.io.panic.panic
+
+public fn main() -> i32 {
+    panic("fatal error")
+}
+)zep");
+
+    auto build = harness.run({"build"});
+    harness.assert_success_and_exists("build/stdlib_panic", build);
+
+    auto executable = harness.workspace.file("build/stdlib_panic");
+    auto result = TestProcessRunner::run({executable.string()}, harness.workspace.root());
+
+    EXPECT_FALSE(result.succeeded());
+    EXPECT_EQ(result.exit.status, 1);
+    EXPECT_EQ(result.stdout_text, "");
+    EXPECT_EQ(result.stderr_text, "fatal error\n");
 }

@@ -237,7 +237,10 @@ export class CallResolver {
 
             if (parent_parameter_count == 0) {
                 if (const auto* nominal = receiver_type->as_nominal(); nominal != nullptr) {
-                    parent_parameter_count = nominal->generic_parameters.size();
+                    const auto* definition = nominal->definition != nullptr
+                                                 ? nominal->definition
+                                                 : nominal;
+                    parent_parameter_count = definition->generic_parameters.size();
                 }
             }
 

@@ -3,7 +3,7 @@
 #include <sstream>
 #include <string>
 
-import zep.lsp.protocol.transport;
+import zep.lsp.transport;
 
 TEST(LspTransport, ReadsFramedMessage) {
     std::string payload = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}";
@@ -13,7 +13,7 @@ TEST(LspTransport, ReadsFramedMessage) {
     std::ostringstream out;
     Transport transport(in, out);
 
-    auto message = transport.read_message();
+    auto message = transport.read();
     ASSERT_TRUE(message.has_value());
     EXPECT_EQ((*message)["id"], 1);
     EXPECT_EQ((*message)["method"], "initialize");
@@ -29,11 +29,11 @@ TEST(LspTransport, ReadsConsecutiveMessages) {
     std::ostringstream out;
     Transport transport(in, out);
 
-    auto first_message = transport.read_message();
+    auto first_message = transport.read();
     ASSERT_TRUE(first_message.has_value());
     EXPECT_EQ((*first_message)["id"], 1);
 
-    auto second_message = transport.read_message();
+    auto second_message = transport.read();
     ASSERT_TRUE(second_message.has_value());
     EXPECT_EQ((*second_message)["id"], 2);
 }
@@ -48,7 +48,7 @@ TEST(LspTransport, WritesFramedMessage) {
     payload["id"] = 42;
     payload["result"] = "ok";
 
-    transport.write_message(payload);
+    transport.write(payload);
 
     std::string expected_body = payload.dump();
     std::string expected =
@@ -62,6 +62,18 @@ TEST(LspTransport, HandlesMalformedHeaderGracefully) {
     std::ostringstream out;
     Transport transport(in, out);
 
-    auto message = transport.read_message();
+    auto message = transport.read();
     EXPECT_FALSE(message.has_value());
+    EXPECT_EQ(transport.read_status, Transport::ReadStatus::InvalidFrame);
+}
+
+TEST(LspTransport, DistinguishesInvalidJson) {
+    std::string payload = "{";
+    std::string input = "Content-Length: 1\r\n\r\n" + payload;
+    std::istringstream stream(input);
+    std::ostringstream output;
+    Transport transport(stream, output);
+
+    EXPECT_FALSE(transport.read().has_value());
+    EXPECT_EQ(transport.read_status, Transport::ReadStatus::InvalidJson);
 }

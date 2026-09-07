@@ -52,19 +52,6 @@ export class TargetArch {
 
         return Kind::Type::Unknown;
     }
-
-    static std::string to_string(Kind::Type type) {
-        switch (type) {
-        case Kind::Type::Amd64:
-            return std::string("x86_64");
-        case Kind::Type::Aarch64:
-            return std::string("aarch64");
-        case Kind::Type::Unknown:
-            return std::string("unknown");
-        }
-
-        return std::string("unknown");
-    }
 };
 
 export class TargetOS {
@@ -94,19 +81,6 @@ export class TargetOS {
         }
 
         return Kind::Type::Unknown;
-    }
-
-    static std::string to_string(Kind::Type type) {
-        switch (type) {
-        case Kind::Type::Linux:
-            return std::string("linux");
-        case Kind::Type::Macos:
-            return std::string("macos");
-        case Kind::Type::Unknown:
-            return std::string("unknown");
-        }
-
-        return std::string("unknown");
     }
 };
 
@@ -177,30 +151,5 @@ export class TargetInfo {
         return triple_from(arch, os);
     }
 
-    static std::string supported_triples_text() {
-        return "x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu, "
-               "aarch64-apple-darwin";
-    }
-
-    static std::string target_option_description() {
-        return "Target triple. Valid: " + supported_triples_text();
-    }
-
     bool is_supported() const { return arch != TargetArch::Kind::Type::Unknown; }
-
-    std::string path_name() const {
-        std::string result;
-        result.reserve(triple.size());
-
-        for (auto character : triple) {
-            if (std::isalnum(static_cast<unsigned char>(character)) != 0 || character == '-' ||
-                character == '_' || character == '.') {
-                result.push_back(character);
-            } else {
-                result.push_back('_');
-            }
-        }
-
-        return result;
-    }
 };

@@ -1,58 +1,72 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <stdexcept>
 
-import zep.lsp.protocol.message;
-import zep.lsp.server.dispatcher;
+import zep.lsp.dispatcher;
 
-TEST(LspDispatcher, RoutesRegisteredRequests) {
+TEST(LspDispatcher, RoutesRequestsAndPreservesIds) {
     Dispatcher dispatcher;
-    dispatcher.register_request("custom/echo", [](const nlohmann::json& params) { return params; });
+    dispatcher.on_request("custom/echo",
+                          [](const nlohmann::json& parameters) { return parameters; });
 
-    nlohmann::json params;
-    params["text"] = "hello";
+    auto integer_response = dispatcher.dispatch({{"jsonrpc", "2.0"},
+                                                 {"id", 1},
+                                                 {"method", "custom/echo"},
+                                                 {"params", {{"text", "hello"}}}});
+    ASSERT_TRUE(integer_response.has_value());
+    EXPECT_EQ((*integer_response)["id"], 1);
+    EXPECT_EQ((*integer_response)["result"]["text"], "hello");
 
-    Request request(JsonRpcId(1), "custom/echo", params);
-    auto response = dispatcher.dispatch_request(request);
-
-    EXPECT_EQ(response["id"], 1);
-    EXPECT_EQ(response["result"]["text"], "hello");
+    auto string_response =
+        dispatcher.dispatch({{"jsonrpc", "2.0"}, {"id", "request"}, {"method", "custom/echo"}});
+    ASSERT_TRUE(string_response.has_value());
+    EXPECT_EQ((*string_response)["id"], "request");
 }
 
-TEST(LspDispatcher, ReturnsMethodNotFoundForUnknownRequest) {
+TEST(LspDispatcher, ReturnsMethodNotFound) {
     Dispatcher dispatcher;
+    auto response =
+        dispatcher.dispatch({{"jsonrpc", "2.0"}, {"id", 5}, {"method", "unknown/method"}});
 
-    Request request(JsonRpcId(5), "unknown/method");
-    auto response = dispatcher.dispatch_request(request);
-
-    EXPECT_EQ(response["id"], 5);
-    EXPECT_TRUE(response.contains("error"));
-    EXPECT_EQ(response["error"]["code"], -32601);
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ((*response)["id"], 5);
+    EXPECT_EQ((*response)["error"]["code"], -32601);
 }
 
-TEST(LspDispatcher, RoutesRegisteredNotifications) {
+TEST(LspDispatcher, RoutesNotificationsWithoutResponse) {
     Dispatcher dispatcher;
-    bool called = false;
     std::string received_value;
-
-    dispatcher.register_notification("custom/notify", [&](const nlohmann::json& params) {
-        called = true;
-        received_value = params["value"].get<std::string>();
+    dispatcher.on_notification("custom/notify", [&](const nlohmann::json& parameters) {
+        received_value = parameters.at("value").get<std::string>();
     });
 
-    nlohmann::json params;
-    params["value"] = "ping";
+    auto response = dispatcher.dispatch(
+        {{"jsonrpc", "2.0"}, {"method", "custom/notify"}, {"params", {{"value", "ping"}}}});
 
-    Notification notification("custom/notify", params);
-    dispatcher.dispatch_notification(notification);
-
-    EXPECT_TRUE(called);
+    EXPECT_FALSE(response.has_value());
     EXPECT_EQ(received_value, "ping");
 }
 
-TEST(LspDispatcher, IgnoresUnknownNotificationsWithoutError) {
+TEST(LspDispatcher, IgnoresUnknownNotifications) {
     Dispatcher dispatcher;
+    auto response = dispatcher.dispatch({{"jsonrpc", "2.0"}, {"method", "unknown/notify"}});
+    EXPECT_FALSE(response.has_value());
+}
 
-    Notification notification("unknown/notify");
-    EXPECT_NO_THROW(dispatcher.dispatch_notification(notification));
+TEST(LspDispatcher, RejectsInvalidJsonRpcVersion) {
+    Dispatcher dispatcher;
+    auto response = dispatcher.dispatch({{"jsonrpc", "1.0"}, {"id", 3}, {"method", "test"}});
+
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ((*response)["error"]["code"], -32600);
+}
+
+TEST(LspDispatcher, RejectsDuplicateRegistration) {
+    Dispatcher dispatcher;
+    dispatcher.on_request("test", [](const nlohmann::json&) { return nlohmann::json(); });
+
+    EXPECT_THROW(
+        dispatcher.on_request("test", [](const nlohmann::json&) { return nlohmann::json(); }),
+        std::invalid_argument);
 }

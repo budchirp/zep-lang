@@ -9,7 +9,7 @@ module;
 #include <utility>
 #include <vector>
 
-export module zep.lsp.analysis.tokens;
+export module zep.lsp.analysis.index;
 
 import zep.common.source.position;
 import zep.common.source.span;
@@ -17,34 +17,37 @@ import zep.frontend.lexer;
 import zep.frontend.node;
 import zep.frontend.node.program;
 import zep.frontend.sema.kind;
+import zep.frontend.sema.scope;
 import zep.frontend.token;
 import zep.frontend.token.keywords;
-import zep.lsp.protocol.types;
+import zep.lsp.analysis.types;
 
 class RawToken {
   public:
     std::uint32_t line;
     std::uint32_t character;
     std::uint32_t length;
-    std::uint32_t type;
+    SemanticKind::Type kind;
     std::uint32_t modifiers;
 
-    RawToken(std::uint32_t line, std::uint32_t character, std::uint32_t length, std::uint32_t type,
-             std::uint32_t modifiers = 0)
-        : line(line), character(character), length(length), type(type), modifiers(modifiers) {}
+    RawToken(std::uint32_t line, std::uint32_t character, std::uint32_t length,
+             SemanticKind::Type kind, std::uint32_t modifiers = 0)
+        : line(line), character(character), length(length), kind(kind), modifiers(modifiers) {}
 };
 
 class AstTokenCollector : public Visitor<void> {
   public:
     std::vector<RawToken> tokens;
+    std::vector<Node*> nodes;
 
     void add_token(std::uint32_t line, std::uint32_t character, std::uint32_t length,
-                   lsp::SemanticTokenType::Index type, std::uint32_t modifiers = 0) {
-        tokens.emplace_back(line, character, length, static_cast<std::uint32_t>(type), modifiers);
+                   SemanticKind::Type kind, std::uint32_t modifiers = 0) {
+        tokens.emplace_back(line, character, length, kind, modifiers);
     }
 
     void visit_child(Node* child) {
         if (child != nullptr) {
+            nodes.push_back(child);
             visit_node(*child);
         }
     }
@@ -55,7 +58,7 @@ class AstTokenCollector : public Visitor<void> {
             auto character = static_cast<std::uint32_t>(node.span.start.column - 1);
             auto length =
                 static_cast<std::uint32_t>(node.span.end.column - node.span.start.column + 1);
-            add_token(line, character, length, lsp::SemanticTokenType::Index::Type);
+            add_token(line, character, length, SemanticKind::Type::Type);
         }
     }
 
@@ -77,8 +80,8 @@ class AstTokenCollector : public Visitor<void> {
             auto line = static_cast<std::uint32_t>(node.span.start.line - 1);
             auto character = static_cast<std::uint32_t>(node.span.start.column - 1);
             auto length = static_cast<std::uint32_t>(node.name.length());
-            add_token(line, character, length, lsp::SemanticTokenType::Index::Parameter,
-                      lsp::SemanticTokenModifier::Declaration);
+            add_token(line, character, length, SemanticKind::Type::Parameter,
+                      SemanticModifier::Declaration);
         }
         visit_child(node.type);
     }
@@ -90,9 +93,8 @@ class AstTokenCollector : public Visitor<void> {
             auto line = static_cast<std::uint32_t>(node.prototype->span.start.line - 1);
             auto character = static_cast<std::uint32_t>(node.prototype->span.start.column - 1);
             auto length = static_cast<std::uint32_t>(node.prototype->name.length());
-            add_token(line, character, length, lsp::SemanticTokenType::Index::Function,
-                      lsp::SemanticTokenModifier::Declaration |
-                          lsp::SemanticTokenModifier::Definition);
+            add_token(line, character, length, SemanticKind::Type::Function,
+                      SemanticModifier::Declaration | SemanticModifier::Definition);
         }
 
         visit_child(node.prototype);
@@ -111,8 +113,8 @@ class AstTokenCollector : public Visitor<void> {
             auto line = static_cast<std::uint32_t>(node.span.start.line - 1);
             auto character = static_cast<std::uint32_t>(node.span.start.column - 1);
             auto length = static_cast<std::uint32_t>(node.name.length());
-            add_token(line, character, length, lsp::SemanticTokenType::Index::Property,
-                      lsp::SemanticTokenModifier::Declaration);
+            add_token(line, character, length, SemanticKind::Type::Property,
+                      SemanticModifier::Declaration);
         }
         visit_child(node.type);
         visit_child(node.default_value);
@@ -123,8 +125,8 @@ class AstTokenCollector : public Visitor<void> {
             auto line = static_cast<std::uint32_t>(node.span.start.line - 1);
             auto character = static_cast<std::uint32_t>(node.span.start.column - 1);
             auto length = static_cast<std::uint32_t>(node.name.length());
-            add_token(line, character, length, lsp::SemanticTokenType::Index::EnumMember,
-                      lsp::SemanticTokenModifier::Declaration);
+            add_token(line, character, length, SemanticKind::Type::EnumMember,
+                      SemanticModifier::Declaration);
         }
         for (auto* field : node.fields) {
             visit_child(field);
@@ -162,9 +164,9 @@ class AstTokenCollector : public Visitor<void> {
         auto length = static_cast<std::uint32_t>(node.name.length());
 
         if (node.function_symbol != nullptr) {
-            add_token(line, character, length, lsp::SemanticTokenType::Index::Function);
+            add_token(line, character, length, SemanticKind::Type::Function);
         } else if (node.var_symbol != nullptr) {
-            add_token(line, character, length, lsp::SemanticTokenType::Index::Variable);
+            add_token(line, character, length, SemanticKind::Type::Variable);
         }
     }
 
@@ -179,11 +181,12 @@ class AstTokenCollector : public Visitor<void> {
 
     void visit(CallExpression& node) override {
         if (auto* id = node.callee->as<IdentifierExpression>(); id != nullptr) {
+            nodes.push_back(id);
             if (id->span.start.line > 0 && !id->name.empty()) {
                 auto line = static_cast<std::uint32_t>(id->span.start.line - 1);
                 auto character = static_cast<std::uint32_t>(id->span.start.column - 1);
                 auto length = static_cast<std::uint32_t>(id->name.length());
-                add_token(line, character, length, lsp::SemanticTokenType::Index::Function);
+                add_token(line, character, length, SemanticKind::Type::Function);
             }
         } else {
             visit_child(node.callee);
@@ -206,7 +209,7 @@ class AstTokenCollector : public Visitor<void> {
             auto character =
                 static_cast<std::uint32_t>(node.span.end.column - node.member.length());
             auto length = static_cast<std::uint32_t>(node.member.length());
-            add_token(line, character, length, lsp::SemanticTokenType::Index::Property);
+            add_token(line, character, length, SemanticKind::Type::Property);
         }
     }
 
@@ -294,8 +297,8 @@ class AstTokenCollector : public Visitor<void> {
             auto line = static_cast<std::uint32_t>(node.span.start.line - 1);
             auto character = static_cast<std::uint32_t>(node.span.start.column - 1) + 7U;
             auto length = static_cast<std::uint32_t>(node.name.length());
-            add_token(line, character, length, lsp::SemanticTokenType::Index::Struct,
-                      lsp::SemanticTokenModifier::Declaration);
+            add_token(line, character, length, SemanticKind::Type::Struct,
+                      SemanticModifier::Declaration);
         }
         for (auto* field : node.fields) {
             visit_child(field);
@@ -310,8 +313,8 @@ class AstTokenCollector : public Visitor<void> {
             auto line = static_cast<std::uint32_t>(node.span.start.line - 1);
             auto character = static_cast<std::uint32_t>(node.span.start.column - 1) + 5U;
             auto length = static_cast<std::uint32_t>(node.name.length());
-            add_token(line, character, length, lsp::SemanticTokenType::Index::Enum,
-                      lsp::SemanticTokenModifier::Declaration);
+            add_token(line, character, length, SemanticKind::Type::Enum,
+                      SemanticModifier::Declaration);
         }
         for (auto* variant : node.variants) {
             visit_child(variant);
@@ -324,8 +327,8 @@ class AstTokenCollector : public Visitor<void> {
             auto line = static_cast<std::uint32_t>(node.span.start.line - 1);
             auto character = static_cast<std::uint32_t>(node.span.start.column - 1) + prefix_len;
             auto length = static_cast<std::uint32_t>(node.name.length());
-            add_token(line, character, length, lsp::SemanticTokenType::Index::Variable,
-                      lsp::SemanticTokenModifier::Declaration);
+            add_token(line, character, length, SemanticKind::Type::Variable,
+                      SemanticModifier::Declaration);
         }
         visit_child(node.annotation);
         visit_child(node.initializer);
@@ -340,9 +343,25 @@ class AstTokenCollector : public Visitor<void> {
     void visit(TypeAliasDeclaration& node) override { visit_child(node.target); }
 };
 
-export class SemanticTokenExtractor {
+export class SyntaxIndex {
+  private:
+    std::vector<Node*> indexed_nodes;
+    std::vector<SemanticToken> semantic_tokens;
+
+    static bool contains(Span span, Position position) {
+        if (span.start.line == 0 || position.line < span.start.line || position.line > span.end.line) {
+            return false;
+        }
+
+        if (position.line == span.start.line && position.column < span.start.column) {
+            return false;
+        }
+
+        return position.line != span.end.line || position.column <= span.end.column;
+    }
+
   public:
-    static lsp::SemanticTokens extract(std::string_view content, const Program* program = nullptr) {
+    SyntaxIndex(std::string_view content, const Program* program) {
         std::vector<RawToken> tokens;
         tokens.reserve(256);
 
@@ -352,6 +371,7 @@ export class SemanticTokenExtractor {
             for (auto* statement : program->statements) {
                 collector.visit_child(statement);
             }
+            indexed_nodes = std::move(collector.nodes);
             for (auto& token : collector.tokens) {
                 semantic_map.emplace(std::make_pair(token.line, token.character), token);
             }
@@ -381,9 +401,7 @@ export class SemanticTokenExtractor {
                 if (auto it = semantic_map.find(key); it != semantic_map.end()) {
                     tokens.push_back(it->second);
                 } else {
-                    tokens.emplace_back(
-                        line, character, length,
-                        static_cast<std::uint32_t>(lsp::SemanticTokenType::Index::Variable));
+                    tokens.emplace_back(line, character, length, SemanticKind::Type::Variable);
                 }
                 continue;
             }
@@ -408,9 +426,7 @@ export class SemanticTokenExtractor {
             case Token::Type::Do:
             case Token::Type::Is:
             case Token::Type::As:
-                tokens.emplace_back(
-                    line, character, length,
-                    static_cast<std::uint32_t>(lsp::SemanticTokenType::Index::Keyword));
+                tokens.emplace_back(line, character, length, SemanticKind::Type::Keyword);
                 break;
 
             case Token::Type::Mut:
@@ -419,30 +435,22 @@ export class SemanticTokenExtractor {
             case Token::Type::Private:
             case Token::Type::Extern:
             case Token::Type::Override:
-                tokens.emplace_back(
-                    line, character, length,
-                    static_cast<std::uint32_t>(lsp::SemanticTokenType::Index::Modifier));
+                tokens.emplace_back(line, character, length, SemanticKind::Type::Modifier);
                 break;
 
             case Token::Type::Number:
             case Token::Type::Float:
-                tokens.emplace_back(
-                    line, character, length,
-                    static_cast<std::uint32_t>(lsp::SemanticTokenType::Index::Number));
+                tokens.emplace_back(line, character, length, SemanticKind::Type::Number);
                 break;
 
             case Token::Type::String:
             case Token::Type::Char:
-                tokens.emplace_back(
-                    line, character, length,
-                    static_cast<std::uint32_t>(lsp::SemanticTokenType::Index::String));
+                tokens.emplace_back(line, character, length, SemanticKind::Type::String);
                 break;
 
             case Token::Type::Boolean:
             case Token::Type::Null:
-                tokens.emplace_back(
-                    line, character, length,
-                    static_cast<std::uint32_t>(lsp::SemanticTokenType::Index::Keyword));
+                tokens.emplace_back(line, character, length, SemanticKind::Type::Keyword);
                 break;
 
             case Token::Type::Plus:
@@ -461,9 +469,7 @@ export class SemanticTokenExtractor {
             case Token::Type::And:
             case Token::Type::Or:
             case Token::Type::Not:
-                tokens.emplace_back(
-                    line, character, length,
-                    static_cast<std::uint32_t>(lsp::SemanticTokenType::Index::Operator));
+                tokens.emplace_back(line, character, length, SemanticKind::Type::Operator);
                 break;
 
             default:
@@ -490,26 +496,82 @@ export class SemanticTokenExtractor {
             deduped.push_back(token);
         }
 
-        std::vector<std::uint32_t> data;
-        data.reserve(deduped.size() * 5);
-
-        std::uint32_t prev_line = 0;
-        std::uint32_t prev_char = 0;
-
+        semantic_tokens.reserve(deduped.size());
         for (const auto& token : deduped) {
-            auto delta_line = token.line - prev_line;
-            auto delta_char = (delta_line == 0) ? (token.character - prev_char) : token.character;
+            auto start = Position(token.line + 1, token.character + 1);
+            auto end = Position(token.line + 1, token.character + token.length);
+            semantic_tokens.emplace_back(Span(start, end), token.kind, token.modifiers);
+        }
+    }
 
-            data.push_back(delta_line);
-            data.push_back(delta_char);
-            data.push_back(token.length);
-            data.push_back(token.type);
-            data.push_back(token.modifiers);
+    Node* node(Position position) const {
+        Node* result = nullptr;
+        for (auto* node : indexed_nodes) {
+            if (!contains(node->span, position)) {
+                continue;
+            }
 
-            prev_line = token.line;
-            prev_char = token.character;
+            if (result == nullptr ||
+                (node->span.start.line >= result->span.start.line &&
+                 node->span.end.line <= result->span.end.line)) {
+                result = node;
+            }
         }
 
-        return lsp::SemanticTokens(std::move(data));
+        return result;
+    }
+
+    const Scope* scope(Position position) const {
+        const Scope* result = nullptr;
+        Position latest;
+
+        for (auto* node : indexed_nodes) {
+            if (auto* block = node->as<BlockStatement>();
+                block != nullptr && block->scope != nullptr && contains(block->span, position)) {
+                auto starts_after_latest = block->span.start.line > latest.line ||
+                                           (block->span.start.line == latest.line &&
+                                            block->span.start.column >= latest.column);
+                if (starts_after_latest) {
+                    result = block->scope;
+                    latest = block->span.start;
+                }
+                continue;
+            }
+
+            auto* expression = dynamic_cast<Expression*>(node);
+            if (expression == nullptr || expression->scope == nullptr) {
+                continue;
+            }
+
+            auto starts_before = expression->span.start.line < position.line ||
+                                 (expression->span.start.line == position.line &&
+                                  expression->span.start.column <= position.column);
+            auto starts_after_latest = expression->span.start.line > latest.line ||
+                                       (expression->span.start.line == latest.line &&
+                                        expression->span.start.column >= latest.column);
+            if (starts_before && starts_after_latest) {
+                result = expression->scope;
+                latest = expression->span.start;
+            }
+        }
+
+        return result;
+    }
+
+    const std::vector<Node*>& nodes() const { return indexed_nodes; }
+
+    const std::vector<SemanticToken>& tokens() const { return semantic_tokens; }
+
+    std::vector<SemanticToken> tokens(Span range) const {
+        std::vector<SemanticToken> result;
+        result.reserve(semantic_tokens.size());
+        for (const auto& token : semantic_tokens) {
+            if (token.span.end.line < range.start.line || token.span.start.line > range.end.line) {
+                continue;
+            }
+
+            result.push_back(token);
+        }
+        return result;
     }
 };

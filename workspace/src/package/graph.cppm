@@ -1,10 +1,10 @@
 module;
 
-#include <algorithm>
 #include <filesystem>
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -24,76 +24,18 @@ export class PackageGraph {
   private:
     std::map<std::string, std::unique_ptr<Package>> packages;
 
-    void visit(Package& package, std::vector<Package*>& order,
-               std::map<std::string, bool>& visited) const {
-        if (visited[package.manifest.name]) {
-            return;
-        }
-
-        visited[package.manifest.name] = true;
-
-        std::vector<Package*> dependencies = package.dependencies;
-        std::sort(dependencies.begin(), dependencies.end(),
-                  [](const Package* left, const Package* right) {
-                      return left->manifest.name < right->manifest.name;
-                  });
-
-        for (auto* dependency : dependencies) {
-            visit(*dependency, order, visited);
-        }
-
-        order.push_back(&package);
-    }
-
   public:
-    Package& add(Manifest manifest, PackageSource::Type source, std::filesystem::path root) {
+    Package& add(Manifest manifest, std::filesystem::path root,
+                 std::filesystem::path source_directory) {
         auto name = manifest.name;
-        auto package = std::make_unique<Package>(std::move(manifest), source, std::move(root));
+        auto package = std::make_unique<Package>(std::move(manifest), std::move(root),
+                                                 std::move(source_directory));
         auto [iterator, inserted] = packages.emplace(name, std::move(package));
         if (!inserted) {
             throw std::invalid_argument("package already exists: " + name);
         }
 
         return *iterator->second;
-    }
-
-    void connect(const std::string& package_name, const std::string& dependency_name) {
-        auto package_iterator = packages.find(package_name);
-        auto dependency_iterator = packages.find(dependency_name);
-        if (package_iterator == packages.end() || dependency_iterator == packages.end()) {
-            throw std::invalid_argument("package graph edge references an unknown package");
-        }
-
-        package_iterator->second->dependencies.push_back(dependency_iterator->second.get());
-    }
-
-    std::vector<Package*> traversal(const std::vector<std::string>& roots) const {
-        std::vector<Package*> order;
-        order.reserve(packages.size());
-
-        std::vector<Package*> root_packages;
-        root_packages.reserve(roots.size());
-        std::map<std::string, bool> visited;
-
-        for (const auto& root : roots) {
-            auto iterator = packages.find(root);
-            if (iterator == packages.end()) {
-                throw std::invalid_argument("unknown package: " + root);
-            }
-
-            root_packages.push_back(iterator->second.get());
-        }
-
-        std::sort(root_packages.begin(), root_packages.end(),
-                  [](const Package* left, const Package* right) {
-                      return left->manifest.name < right->manifest.name;
-                  });
-
-        for (auto* root : root_packages) {
-            visit(*root, order, visited);
-        }
-
-        return order;
     }
 
     Package* find(const std::string& name) const {
@@ -103,15 +45,13 @@ export class PackageGraph {
         }
         return iterator->second.get();
     }
-
-    std::size_t size() const { return packages.size(); }
 };
 
 export class PackageResolver {
   private:
     Toolchain environment;
     ManifestReader manifest_reader;
-    std::map<std::string, PackageSource::Type> resolving;
+    std::set<std::string> resolving;
     std::vector<std::unique_ptr<Source>> sources;
 
     void report(Diagnostics& diagnostics, const std::filesystem::path& path, std::string message) {
@@ -133,6 +73,10 @@ export class PackageResolver {
             auto checkout = workspace_root / "build/libs" / name / dependency.version;
             return std::filesystem::is_directory(checkout) ? std::optional(checkout) : std::nullopt;
         }
+        if (name == "std" && !environment.standard_library.empty() &&
+            std::filesystem::is_regular_file(environment.standard_library / "zep.json")) {
+            return environment.standard_library;
+        }
         for (const auto& root : environment.package_roots) {
             if (!dependency.version.empty()) {
                 auto versioned = root / name / dependency.version;
@@ -147,16 +91,10 @@ export class PackageResolver {
                 return unversioned;
             }
         }
-        if (name == "std" && !environment.standard_library.empty() &&
-            std::filesystem::is_regular_file(environment.standard_library / "zep.json")) {
-            return environment.standard_library;
-        }
         return std::nullopt;
     }
 
     Package* resolve_package(PackageGraph& graph, const std::filesystem::path& root,
-                             PackageSource::Type source,
-                             const std::filesystem::path& workspace_root,
                              Diagnostics& diagnostics) {
         auto manifest_path = root / "zep.json";
         auto manifest = manifest_reader.read(manifest_path);
@@ -172,8 +110,8 @@ export class PackageResolver {
         if (auto* existing = graph.find(name); existing != nullptr) {
             return existing;
         }
-        resolving.emplace(name, source);
-        auto& package = graph.add(std::move(*manifest), source, root);
+        resolving.insert(name);
+        auto& package = graph.add(std::move(*manifest), root, root / "src");
         for (const auto& [dependency_name, dependency] : package.manifest.libs) {
             auto dependency_root = locate(dependency, dependency_name, package.root);
             if (!dependency_root.has_value() || !std::filesystem::is_directory(*dependency_root)) {
@@ -181,8 +119,7 @@ export class PackageResolver {
                        "could not locate dependency '" + dependency_name + "'");
                 continue;
             }
-            auto* dependency_package = resolve_package(graph, *dependency_root, dependency.source,
-                                                       workspace_root, diagnostics);
+            auto* dependency_package = resolve_package(graph, *dependency_root, diagnostics);
             if (dependency_package != nullptr) {
                 package.dependencies.push_back(dependency_package);
             }
@@ -200,9 +137,7 @@ export class PackageResolver {
                                         Diagnostics& diagnostics) {
         PackageGraph graph;
         auto root = std::filesystem::absolute(workspace_root);
-        if (resolve_package(graph, root, PackageSource::Type::Workspace, root, diagnostics) ==
-                nullptr ||
-            diagnostics.has_errors()) {
+        if (resolve_package(graph, root, diagnostics) == nullptr || diagnostics.has_errors()) {
             return std::nullopt;
         }
         return std::optional<PackageGraph>(std::move(graph));

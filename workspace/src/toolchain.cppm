@@ -63,40 +63,38 @@ export class Toolchain {
 
   public:
     std::filesystem::path compiler;
-    std::filesystem::path linker;
     std::filesystem::path standard_library;
     std::vector<std::filesystem::path> package_roots;
 
-    Toolchain(std::filesystem::path compiler, std::filesystem::path linker,
-              std::filesystem::path standard_library,
+    Toolchain(std::filesystem::path compiler, std::filesystem::path standard_library,
               std::vector<std::filesystem::path> package_roots)
-        : compiler(std::move(compiler)), linker(std::move(linker)),
-          standard_library(std::move(standard_library)), package_roots(std::move(package_roots)) {}
+        : compiler(std::move(compiler)), standard_library(std::move(standard_library)),
+          package_roots(std::move(package_roots)) {}
 
     static Toolchain discover() {
-        auto roots = discover_package_roots();
-        auto standard = std::filesystem::path();
-        for (const auto& root : roots) {
+        auto package_roots = discover_package_roots();
+        auto standard_library = std::filesystem::path();
+        for (const auto& root : package_roots) {
             auto candidate = root / "std";
             if (std::filesystem::is_regular_file(candidate / "zep.json")) {
-                standard = candidate;
+                standard_library = candidate;
                 break;
             }
             if (std::filesystem::is_directory(candidate)) {
-                std::error_code ec;
-                for (const auto& entry : std::filesystem::directory_iterator(candidate, ec)) {
+                std::error_code error_code;
+                for (const auto& entry :
+                     std::filesystem::directory_iterator(candidate, error_code)) {
                     if (entry.is_directory() &&
                         std::filesystem::is_regular_file(entry.path() / "zep.json")) {
-                        standard = entry.path();
+                        standard_library = entry.path();
                         break;
                     }
                 }
-                if (!standard.empty()) {
+                if (!standard_library.empty()) {
                     break;
                 }
             }
         }
-        return Toolchain{find_tool("clang"), find_tool("ld.lld"), std::move(standard),
-                         std::move(roots)};
+        return Toolchain{find_tool("clang"), std::move(standard_library), std::move(package_roots)};
     }
 };

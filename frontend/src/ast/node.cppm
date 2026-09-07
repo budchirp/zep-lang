@@ -1031,9 +1031,10 @@ export class BlockStatement : public Statement {
     static constexpr Kind::Type static_kind = Kind::Type::BlockStatement;
 
     std::vector<Statement*> statements;
+    Scope* scope;
 
     BlockStatement(Span span, std::vector<Statement*> statements)
-        : Statement(static_kind, span), statements(std::move(statements)) {}
+        : Statement(static_kind, span), statements(std::move(statements)), scope(nullptr) {}
 
     template <typename T>
     T accept(Visitor<T>& visitor) {

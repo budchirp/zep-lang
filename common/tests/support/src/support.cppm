@@ -190,7 +190,7 @@ export class CliTestHarness {
 
     void assert_fails_with_stderr(const std::string& text, const ProcessResult& result) {
         EXPECT_FALSE(result.succeeded());
-        EXPECT_TRUE(result.stderr_contains(text));
+        EXPECT_NE(result.stderr_text.find(text), std::string::npos);
     }
 };
 

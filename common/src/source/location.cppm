@@ -10,7 +10,5 @@ export class SourceLocation {
     const Source* source;
     Span span;
 
-    SourceLocation(const Source& source, Span span) : source(&source), span(span) {}
-
     SourceLocation(const Source* source, Span span) : source(source), span(span) {}
 };

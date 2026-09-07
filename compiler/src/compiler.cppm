@@ -13,8 +13,6 @@ import zep.compiler.graph;
 import zep.compiler.unit;
 import zep.common.context;
 import zep.common.diagnostic.collection;
-import zep.common.logger;
-import zep.common.source.manager;
 import zep.common.target;
 import zep.frontend.sema.context;
 import zep.frontend.node.program;
@@ -27,41 +25,44 @@ export class Compiler {
   private:
     SemaContext sema;
     ModuleGraph graph;
-    CompilerChecker checker;
 
   public:
-    explicit Compiler(TargetInfo target = TargetInfo())
-        : sema(target), graph(sema), checker(sema) {}
+    explicit Compiler(TargetInfo target = TargetInfo()) : sema(target), graph(sema) {}
 
-    Module* load(Package& package, ModulePath entry, Diagnostics& diagnostics) {
-        return graph.load(package, std::move(entry), diagnostics);
-    }
+    Module* analyze(Package& package, ModulePath entry, Diagnostics& diagnostics,
+                    std::filesystem::path source_path = {}) {
+        auto* module = graph.load(package, std::move(entry), diagnostics, std::move(source_path));
+        if (module == nullptr || diagnostics.has_errors()) {
+            return module;
+        }
 
-    bool check(Diagnostics* diagnostics = nullptr) {
         CompilerChecker checker(sema);
-        return checker.check(graph, diagnostics);
+        checker.check(graph, diagnostics);
+        return module;
     }
 
-    std::shared_ptr<HIRProgram> lower(Module& module) {
+    std::shared_ptr<HIRProgram> lower(Module& module, Diagnostics& diagnostics) {
         std::vector<const Program*> programs;
-        programs.reserve(graph.ordering().size());
-        for (auto* item : graph.ordering()) {
+        programs.reserve(graph.modules().size());
+        for (auto* item : graph.modules()) {
             programs.push_back(&item->syntax);
         }
         Context context(*module.source);
         HIRLowerer lowerer(context, sema);
         auto program = lowerer.lower_module(module.syntax, module.scope, programs);
         if (lowerer.diagnostics.has_errors()) {
-            lowerer.diagnostics.print();
+            for (const auto& entry : lowerer.diagnostics.entries) {
+                diagnostics.entries.push_back(entry);
+            }
             return nullptr;
         }
 
         return program;
     }
 
-    const std::vector<Module*>& ordering() const { return graph.ordering(); }
-    SourceManager& sources() { return graph.sources(); }
-    void set_source_override(const std::filesystem::path& path, std::string content) {
-        graph.sources().add_override(path, std::move(content));
+    const std::vector<Module*>& modules() const { return graph.modules(); }
+
+    void overlay(const std::filesystem::path& path, std::string content) {
+        graph.overlay(path, std::move(content));
     }
 };

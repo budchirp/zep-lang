@@ -1,89 +1,35 @@
-import std.ffi.c_exit
-import std.ffi.c_fprintf
-import std.ffi.c_standard_error
-import std.ffi.printf
-import std.core.display.Display
+import std.fs.writer.StandardFile
+import std.io.format.FormatArguments
+import std.io.format.sprint
+import std.io.panic.panic
 import std.text.string.String
 
-public struct Console {
-    public:
-        static fn print(value: cstr) -> void {
-            printf("%s", value)
-        }
+fn formatted(format: cstr, arguments: *FormatArguments) -> String {
+    var result = sprint(format, arguments)
+    if (result.is_error()) {
+        var error = result.unwrap_error().message()
+        panic(error.as_cstr())
+    }
 
-        static fn print(value: *String) -> void {
-            Console::print(value->as_cstr())
-        }
+    return result.unwrap()
+}
 
-        static fn print(value: i32) -> void {
-            printf("%d", value)
-        }
+public fn print(format: cstr, arguments: *FormatArguments) -> void {
+    var output = formatted(format, arguments)
+    StandardFile::write(StandardFile::Output, output.as_cstr())
+}
 
-        static fn print(value: i64) -> void {
-            printf("%lld", value)
-        }
+public fn print(format: cstr) -> void {
+    var arguments = FormatArguments()
+    print(format, &arguments)
+}
 
-        static fn print(value: boolean) -> void {
-            Console::print(if (value) { "true" } else { "false" })
-        }
+public fn eprint(format: cstr, arguments: *FormatArguments) -> void {
+    var output = formatted(format, arguments)
+    StandardFile::write(StandardFile::Error, output.as_cstr())
+}
 
-        static fn print(value: *Display) -> void {
-            var rendered = value->to_string()
-            Console::print(&rendered)
-        }
-
-        static fn eprint(value: cstr) -> void {
-            c_fprintf(c_standard_error, "%s", value)
-        }
-
-        static fn eprint(value: *String) -> void {
-            Console::eprint(value->as_cstr())
-        }
-
-        static fn eprint(value: i32) -> void {
-            c_fprintf(c_standard_error, "%d", value)
-        }
-
-        static fn eprint(value: i64) -> void {
-            c_fprintf(c_standard_error, "%lld", value)
-        }
-
-        static fn eprint(value: boolean) -> void {
-            Console::eprint(if (value) { "true" } else { "false" })
-        }
-
-        static fn eprint(value: *Display) -> void {
-            var rendered = value->to_string()
-            Console::eprint(&rendered)
-        }
-
-        static fn sprint(value: cstr) -> String {
-            return String(value)
-        }
-
-        static fn sprint(value: *String) -> String {
-            return String(value->as_cstr())
-        }
-
-        static fn sprint(value: i32) -> String {
-            return String::from(value)
-        }
-
-        static fn sprint(value: i64) -> String {
-            return String::from(value)
-        }
-
-        static fn sprint(value: boolean) -> String {
-            return String::from(value)
-        }
-
-        static fn sprint(value: *Display) -> String {
-            return value->to_string()
-        }
-
-        static fn panic(message: cstr) -> never {
-            Console::eprint(message)
-            Console::eprint("\n")
-            c_exit(1)
-        }
+public fn eprint(format: cstr) -> void {
+    var arguments = FormatArguments()
+    eprint(format, &arguments)
 }

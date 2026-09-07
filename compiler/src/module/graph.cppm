@@ -179,20 +179,27 @@ export class ModuleGraph {
   public:
     explicit ModuleGraph(SemaContext& sema) : sema(sema) {}
 
-    const std::vector<std::unique_ptr<Module>>& modules() const { return module_storage; }
-    const std::vector<Module*>& ordering() const { return order; }
-    SourceManager& sources() { return source_manager; }
+    const std::vector<Module*>& modules() const { return order; }
 
-    Module* load(Package& package, ModulePath path, Diagnostics& diagnostics) {
+    void overlay(const std::filesystem::path& path, std::string content) {
+        source_manager.add_override(path, std::move(content));
+    }
+
+    Module* load(Package& package, ModulePath path, Diagnostics& diagnostics,
+                 std::filesystem::path source_path = {}) {
         auto builtins = resolver.resolve(package, ModulePath::from_string("std.builtins"));
         if (builtins.has_value() && visit(*builtins->owner, builtins->path, builtins->source_path,
                                           diagnostics) == nullptr) {
             return nullptr;
         }
 
+        if (!source_path.empty()) {
+            return visit(package, std::move(path), source_path, diagnostics);
+        }
+
         auto resolved = resolver.resolve(package, std::move(path));
         if (!resolved.has_value()) {
-            auto& source = source_manager.add((package.root / "src").string(), "");
+            auto& source = source_manager.add(package.source_directory.string(), "");
             diagnostics.add_error(source, Span::from_position(Position()),
                                   "could not resolve requested module");
             return nullptr;

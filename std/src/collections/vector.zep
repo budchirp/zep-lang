@@ -17,7 +17,10 @@ public struct Vector<T> {
                 return
             }
 
-            var mut next_capacity = if (capacity == 0) { 4 } else { capacity * 2 }
+            var mut next_capacity: i32 = 4
+            if (capacity != 0) {
+                next_capacity = capacity * 2
+            }
             while (next_capacity < required_capacity) {
                 next_capacity = next_capacity * 2
             }

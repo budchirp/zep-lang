@@ -659,6 +659,7 @@ export class SemanticChecker : public Visitor<void> {
     void visit(BlockStatement& node) override {
         ScopeGuard scope(sema.env.current_scope, sema.env.scopes, Scope::Kind::Type::Block,
                          "block");
+        node.scope = sema.env.current_scope;
 
         const Type* last_type = nullptr;
         for (auto* statement : node.statements) {

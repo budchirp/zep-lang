@@ -8,7 +8,7 @@ module;
 export module zep.cli.commands.install;
 
 import argman;
-import zep.build.service;
+import zep.build;
 import zep.common.logger;
 
 export class InstallCommand : public argman::Command {
@@ -32,10 +32,9 @@ export class InstallCommand : public argman::Command {
         }
 
         auto home = std::string(home_value);
-        auto exe_path = std::filesystem::canonical("/proc/self/exe");
-        return InstallService::install(exe_path, standard_source,
-                                       std::filesystem::path(home) / ".local/share/zep",
-                                       ZEP_STD_VERSION)
+        auto executable_path = std::filesystem::canonical("/proc/self/exe");
+        return Installer::install(executable_path, standard_source,
+                                  std::filesystem::path(home) / ".local/share/zep", ZEP_STD_VERSION)
                    ? 0
                    : 1;
     }

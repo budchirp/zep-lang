@@ -99,7 +99,7 @@ TEST(CommonProcess, ReportsStartupErrors) {
     EXPECT_NE(missing_directory.stderr_text.find("chdir"), std::string::npos);
 }
 
-TEST(CommonPositionSpan, TracksLinesColumnsAndMerges) {
+TEST(CommonPosition, TracksLinesAndColumns) {
     Position position(1, 0);
 
     position.increment_column();
@@ -108,15 +108,6 @@ TEST(CommonPositionSpan, TracksLinesColumnsAndMerges) {
 
     EXPECT_EQ(position.line, 2U);
     EXPECT_EQ(position.column, 0U);
-
-    auto left = Span(Position(1, 2), Position(1, 4));
-    auto right = Span(Position(3, 1), Position(3, 8));
-    auto merged = Span::merge(left, right);
-
-    EXPECT_EQ(merged.start.line, 1U);
-    EXPECT_EQ(merged.start.column, 2U);
-    EXPECT_EQ(merged.end.line, 3U);
-    EXPECT_EQ(merged.end.column, 8U);
 }
 
 TEST(CommonSources, KeepsOwnedSourcesStable) {
@@ -140,9 +131,9 @@ TEST(CommonDiagnostics, RetainsSourceForEveryLocation) {
     diagnostics.add_error(first, Span(Position(1, 1), Position(1, 2)), "first error");
     diagnostics.add_warning(second, Span(Position(1, 2), Position(1, 3)), "second warning");
 
-    ASSERT_EQ(diagnostics.all().size(), 2U);
-    EXPECT_EQ(diagnostics.all()[0].location.source, &first);
-    EXPECT_EQ(diagnostics.all()[1].location.source, &second);
+    ASSERT_EQ(diagnostics.entries.size(), 2U);
+    EXPECT_EQ(diagnostics.entries[0].location.source, &first);
+    EXPECT_EQ(diagnostics.entries[1].location.source, &second);
     EXPECT_TRUE(diagnostics.has_errors());
 }
 
@@ -178,13 +169,12 @@ TEST(CommonDiagnostics, DetectsErrorsAndDeduplicates) {
     EXPECT_TRUE(diagnostics.has_errors());
 }
 
-TEST(CommonTarget, ParsesSupportedTriplesAndPathNames) {
+TEST(CommonTarget, ParsesSupportedTriples) {
     TargetInfo target("x86_64-unknown-linux-gnu");
 
     EXPECT_TRUE(target.is_supported());
     EXPECT_EQ(target.arch, TargetArch::Kind::Type::Amd64);
     EXPECT_EQ(target.os, TargetOS::Kind::Type::Linux);
-    EXPECT_EQ(target.path_name(), "x86_64-unknown-linux-gnu");
 
     EXPECT_EQ(TargetInfo::triple_from(TargetArch::Kind::Type::Aarch64, TargetOS::Kind::Type::Macos),
               "aarch64-apple-darwin");

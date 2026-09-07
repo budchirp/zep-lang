@@ -47,14 +47,13 @@ export class HIRLowerer : public Visitor<HIRNode*> {
     };
 
     SemaContext& sema;
-    Context& context;
     std::shared_ptr<HIRProgram> program;
 
     TypeResolver resolver;
     FacadeResolver facades;
 
     HIRCleanup cleanup;
-    MonomorphizationCache mono_cache;
+    MonomorphizationCache monomorphization_cache;
 
     std::unordered_map<const Type*, const Type*> lower_type_cache;
     std::unordered_map<const VariableSymbol*, std::pair<std::string, const PointerType*>>
@@ -490,7 +489,7 @@ export class HIRLowerer : public Visitor<HIRNode*> {
 
         std::vector<GenericBinding> argument_types;
 
-        const auto* definition = mono_cache.get_struct(struct_type->name);
+        const auto* definition = monomorphization_cache.get_struct(struct_type->name);
 
         if (const auto* named_type = type->as<NamedType>();
             named_type != nullptr && !named_type->generic_arguments.empty()) {
@@ -534,7 +533,8 @@ export class HIRLowerer : public Visitor<HIRNode*> {
         const auto identity = definition != nullptr
                                   ? std::variant<const Node*, const Type*>(definition)
                                   : std::variant<const Node*, const Type*>(struct_type);
-        const auto instance = mono_cache.get_or_create(identity, struct_type->name, argument_types);
+        const auto instance =
+            monomorphization_cache.get_or_create(identity, struct_type->name, argument_types);
 
         if (const auto* prior_symbol = sema.env.root_scope->lookup_type(instance.name);
             prior_symbol != nullptr) {
@@ -600,14 +600,15 @@ export class HIRLowerer : public Visitor<HIRNode*> {
                 auto method_name =
                     Mangler::function_name(base_name, method->function_symbol, lowered_method_type);
 
-                if (!mono_cache.mark_specialization(method, argument_types, method_name)) {
+                if (!monomorphization_cache.mark_specialization(method, argument_types,
+                                                                method_name)) {
                     continue;
                 }
 
                 auto* specialization =
                     lower_monomorphized_function(*method, method_name, argument_types);
                 if (specialization != nullptr) {
-                    mono_cache.enqueue_specialization(specialization);
+                    monomorphization_cache.enqueue_specialization(specialization);
                 }
             }
         }
@@ -868,14 +869,15 @@ export class HIRLowerer : public Visitor<HIRNode*> {
         const auto identity = definition != nullptr
                                   ? std::variant<const Node*, const Type*>(definition)
                                   : std::variant<const Node*, const Type*>(function_type);
-        const auto instance = mono_cache.get_or_create(identity, base_name, argument_types);
+        const auto instance =
+            monomorphization_cache.get_or_create(identity, base_name, argument_types);
 
         if (!instance.is_generated && definition != nullptr) {
             auto* specialization =
                 lower_monomorphized_function(*definition, instance.name, argument_types);
 
             if (specialization != nullptr) {
-                mono_cache.enqueue_specialization(specialization);
+                monomorphization_cache.enqueue_specialization(specialization);
             }
         }
 
@@ -1157,7 +1159,7 @@ export class HIRLowerer : public Visitor<HIRNode*> {
                 if (nominal != nullptr && !nominal->generic_arguments.empty()) {
                     const auto argument_types =
                         lower_generic_arguments(nominal->generic_arguments, node.span);
-                    const auto* definition = mono_cache.get_function(function_symbol);
+                    const auto* definition = monomorphization_cache.get_function(function_symbol);
 
                     auto* callee = resolve_generic_callee(node, specialization_name, function_type,
                                                           definition, argument_types);
@@ -1169,7 +1171,7 @@ export class HIRLowerer : public Visitor<HIRNode*> {
             if (!node.generic_arguments.empty()) {
                 const auto argument_types =
                     lower_generic_arguments(node.generic_arguments, node.span);
-                const auto* definition = mono_cache.get_function(function_symbol);
+                const auto* definition = monomorphization_cache.get_function(function_symbol);
 
                 auto* callee = resolve_generic_callee(node, specialization_name, function_type,
                                                       definition, argument_types);
@@ -1191,7 +1193,7 @@ export class HIRLowerer : public Visitor<HIRNode*> {
                     !function_symbol->function_type->generic_parameters.empty()) {
                     const auto argument_types =
                         lower_generic_arguments(receiver_nominal->generic_arguments, node.span);
-                    const auto* definition = mono_cache.get_function(function_symbol);
+                    const auto* definition = monomorphization_cache.get_function(function_symbol);
 
                     auto* callee = resolve_generic_callee(node, specialization_name, function_type,
                                                           definition, argument_types);
@@ -1235,7 +1237,7 @@ export class HIRLowerer : public Visitor<HIRNode*> {
         }
 
         const auto argument_types = lower_generic_arguments(node.generic_arguments, node.span);
-        const auto* definition = mono_cache.get_function(function_type->name);
+        const auto* definition = monomorphization_cache.get_function(function_type->name);
 
         auto* callee = resolve_generic_callee(node, function_type->name, function_type, definition,
                                               argument_types);
@@ -1290,7 +1292,7 @@ export class HIRLowerer : public Visitor<HIRNode*> {
 
     void register_struct(StructDeclaration& node) {
         if (!node.generic_parameters.empty()) {
-            mono_cache.register_struct(node.name, &node);
+            monomorphization_cache.register_struct(node.name, &node);
             return;
         }
 
@@ -1338,7 +1340,7 @@ export class HIRLowerer : public Visitor<HIRNode*> {
         if (!node.prototype->generic_parameters.empty()) {
             auto key = node.function_symbol != nullptr ? node.function_symbol->base_name()
                                                        : node.prototype->name;
-            mono_cache.register_function(key, &node, node.function_symbol);
+            monomorphization_cache.register_function(key, &node, node.function_symbol);
             return;
         }
 
@@ -1352,7 +1354,7 @@ export class HIRLowerer : public Visitor<HIRNode*> {
         if (!is_emittable_function_type(function_type)) {
             auto key = node.function_symbol != nullptr ? node.function_symbol->base_name()
                                                        : node.prototype->name;
-            mono_cache.register_function(key, &node, node.function_symbol);
+            monomorphization_cache.register_function(key, &node, node.function_symbol);
             return;
         }
 
@@ -1450,7 +1452,7 @@ export class HIRLowerer : public Visitor<HIRNode*> {
     void drain_specializations() {
         while (true) {
             std::vector<HIRFunctionDeclaration*> pending;
-            mono_cache.drain_pending_specializations_into(pending);
+            monomorphization_cache.drain_pending_specializations_into(pending);
 
             if (pending.empty()) {
                 break;
@@ -1469,7 +1471,7 @@ export class HIRLowerer : public Visitor<HIRNode*> {
     Diagnostics& diagnostics;
 
     explicit HIRLowerer(Context& context, SemaContext& sema)
-        : sema(sema), context(context), program(std::make_shared<HIRProgram>()),
+        : sema(sema), program(std::make_shared<HIRProgram>()),
           resolver(sema.types, sema.env, context.diagnostics), facades(sema, resolver),
           cleanup(*program, sema, resolver), diagnostics(context.diagnostics) {}
 
@@ -1478,8 +1480,6 @@ export class HIRLowerer : public Visitor<HIRNode*> {
     }
 
     HIRNode* visit_statement(Statement& node) { return Visitor<HIRNode*>::visit_statement(node); }
-
-    MonomorphizationCache& monomorphizations() { return mono_cache; }
 
     bool is_lowering_monomorphized_body() const { return lowering_monomorphized_body; }
 
@@ -2317,7 +2317,8 @@ export class HIRLowerer : public Visitor<HIRNode*> {
                 if (auto* struct_declaration = statement->as<StructDeclaration>();
                     struct_declaration != nullptr) {
                     if (!struct_declaration->generic_parameters.empty()) {
-                        mono_cache.register_struct(struct_declaration->name, struct_declaration);
+                        monomorphization_cache.register_struct(struct_declaration->name,
+                                                               struct_declaration);
                     }
 
                     for (auto* method : struct_declaration->methods) {
@@ -2327,8 +2328,8 @@ export class HIRLowerer : public Visitor<HIRNode*> {
                                 method->function_symbol != nullptr
                                     ? method->function_symbol->base_name()
                                     : struct_declaration->name + "::" + method->prototype->name;
-                            mono_cache.register_function(base_name, method,
-                                                         method->function_symbol);
+                            monomorphization_cache.register_function(base_name, method,
+                                                                     method->function_symbol);
                         }
                     }
                 }
@@ -2342,8 +2343,8 @@ export class HIRLowerer : public Visitor<HIRNode*> {
                                 method->function_symbol != nullptr
                                     ? method->function_symbol->base_name()
                                     : enum_declaration->name + "::" + method->prototype->name;
-                            mono_cache.register_function(base_name, method,
-                                                         method->function_symbol);
+                            monomorphization_cache.register_function(base_name, method,
+                                                                     method->function_symbol);
                         }
                     }
                 }
@@ -2354,8 +2355,8 @@ export class HIRLowerer : public Visitor<HIRNode*> {
                         auto base_name = function_declaration->function_symbol != nullptr
                                              ? function_declaration->function_symbol->base_name()
                                              : function_declaration->prototype->name;
-                        mono_cache.register_function(base_name, function_declaration,
-                                                     function_declaration->function_symbol);
+                        monomorphization_cache.register_function(
+                            base_name, function_declaration, function_declaration->function_symbol);
                     }
                 }
             }

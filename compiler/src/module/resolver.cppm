@@ -24,8 +24,9 @@ export class ResolvedModule {
 export class ModuleResolver {
   private:
     static std::optional<std::filesystem::path>
-    find_source(const std::filesystem::path& root, const ModulePath& path, bool root_module) {
-        auto base = root / "src";
+    find_source(const std::filesystem::path& source_directory, const ModulePath& path,
+                bool root_module) {
+        auto base = source_directory;
         if (!root_module) {
             base /= path.path();
         }
@@ -51,7 +52,7 @@ export class ModuleResolver {
         }
 
         if (path.segments.size() == 1) {
-            auto root = package.root / "src" / "lib.zep";
+            auto root = package.source_directory / "lib.zep";
             if (std::filesystem::is_regular_file(root)) {
                 return root;
             }
@@ -67,7 +68,7 @@ export class ModuleResolver {
             return std::nullopt;
         }
 
-        return find_source(package.root, ModulePath(std::move(segments)), false);
+        return find_source(package.source_directory, ModulePath(std::move(segments)), false);
     }
 
   public:
@@ -77,7 +78,8 @@ export class ModuleResolver {
             local_path.segments.front() == importing.manifest.name) {
             local_path.segments.erase(local_path.segments.begin());
         }
-        if (auto local = find_source(importing.root, local_path, false); local.has_value()) {
+        if (auto local = find_source(importing.source_directory, local_path, false);
+            local.has_value()) {
             return ResolvedModule(&importing, local_path, std::move(*local));
         }
 

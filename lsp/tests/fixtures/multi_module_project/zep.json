@@ -2,7 +2,7 @@
   "name": "multi_module_project",
   "version": "0.1.0",
   "type": "executable",
-  "targets": [
+  "target": [
     {
       "triple": "host"
     }

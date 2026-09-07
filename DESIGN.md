@@ -423,12 +423,19 @@ public import module.path { symbol, symbol as local_name }
 Resolution:
 - `import a` → `src/a.zep` or `src/a/index.zep`
 - `import a.b` → `src/a/b.zep` or `src/a/b/index.zep`
-- `import std.io` → global libs `~/.local/share/zep/libs/std/0.0.1/src/io.zep`
+- `import std.io` → global libs `~/.local/share/zep/libs/std/0.0.1/src/io/index.zep`
 
 Plain imports bind a module alias using the final path segment: `import std.io` makes public
-members available as `io.println(...)`. Explicit imports copy selected public symbols into the
-current module: `import std.io { println, eprintln as err }`. `public import` re-exports either the
+members available as `io.print(...)`. Explicit imports copy selected public symbols into the
+current module: `import std.io { print, eprint as print_error }`. `public import` re-exports either the
 module alias or the selected imported names.
+
+The standard I/O module exports side-effecting `print` and `eprint` functions. `std.io.panic`
+provides the `panic` function, while `std.io.format` provides `sprint`, `FormatArguments`, and
+`FormatError`. Formatting uses sequential `{}` placeholders, `{{` and `}}` for literal braces, and
+a concrete argument container that accepts strings, integers, floating-point values, booleans, and
+characters. `sprint` returns a `Result` for missing or extra arguments and unmatched braces. `print`
+and `eprint` terminate through `panic` on invalid formatting and otherwise return `void`.
 
 ## Expressions
 
@@ -683,9 +690,9 @@ frontend/         Compiler frontend
 hir/              High-level IR representation, lowering, and monomorphization
 codegen/          Code generation orchestration and LLVM backend
 workspace/        Manifest reader, project model, package graph, toolchain discovery
-compiler/         Compilation pipeline, module graph, and in-memory analysis service
-builder/          Build execution, process orchestration, linking
-lsp/              Language Server Protocol server implementation
+compiler/         Compilation pipeline and module graph
+builder/          Direct compiler, object generation, and linker orchestration
+lsp/              Editor analysis, protocol transport, dispatch, sessions, codecs, and handlers
 cli/              Command-line driver (build, compile, lsp, fetch, install)
 ```
 
@@ -697,6 +704,13 @@ Source → Lexer → Parser → AST → TypeChecker → HIRLowerer → HIR → C
 
 ### Language Server Protocol
 
-The LSP implementation runs as a thin client over `CompilerAnalysis` in `compiler/`, utilizing
-in-memory source overlays to provide instant diagnostics, completions, hover information, and
-semantic tokens without duplicating compiler passes or project resolution logic.
+The LSP is split into analysis, core, protocol, and handler modules. Documents apply incremental
+UTF-16 edits and invalidate cached project snapshots through source overlays. LSP analysis owns one
+shared syntax index, import-aware and lexical completion, diagnostics, hover, semantic tokens,
+definitions, references, highlights, document and workspace symbols, and signature help. It invokes
+the normal compiler entry point for project loading, parsing, semantic checking, imports, and source
+overlays; it does not reimplement the compiler pipeline.
+
+Completion supports local and inherited instance members, static access through `Type::member`, and
+named call arguments. Named-argument entries insert the full `parameter: ` form and exclude arguments
+already supplied at the call site.

@@ -33,14 +33,6 @@ export class ProcessResult {
     bool succeeded() const {
         return exit.kind == ProcessExit::Kind::Type::Exited && exit.status == 0;
     }
-
-    bool stdout_contains(const std::string& text) const {
-        return stdout_text.find(text) != std::string::npos;
-    }
-
-    bool stderr_contains(const std::string& text) const {
-        return stderr_text.find(text) != std::string::npos;
-    }
 };
 
 export class ProcessRunner {

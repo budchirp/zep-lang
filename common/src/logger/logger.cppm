@@ -1,7 +1,6 @@
 module;
 
 #include <cstdio>
-#include <cstdlib>
 #include <print>
 #include <string>
 #include <string_view>
@@ -17,19 +16,9 @@ namespace colors {
 
 constexpr std::string_view reset = "\033[0m";
 constexpr std::string_view bold = "\033[1m";
-constexpr std::string_view dim = "\033[2m";
-constexpr std::string_view red = "\033[31m";
-constexpr std::string_view green = "\033[32m";
-constexpr std::string_view yellow = "\033[33m";
 constexpr std::string_view blue = "\033[34m";
-constexpr std::string_view magenta = "\033[35m";
-constexpr std::string_view cyan = "\033[36m";
-constexpr std::string_view white = "\033[37m";
-constexpr std::string_view gray = "\033[90m";
 constexpr std::string_view bold_red = "\033[1;31m";
 constexpr std::string_view bold_yellow = "\033[1;33m";
-constexpr std::string_view bold_blue = "\033[1;34m";
-constexpr std::string_view bold_cyan = "\033[1;36m";
 constexpr std::string_view bold_white = "\033[1;37m";
 
 } // namespace colors
@@ -58,12 +47,12 @@ export class Logger {
         std::size_t current_line = 1;
         std::size_t line_start = 0;
 
-        for (std::size_t i = 0; i < content.size(); ++i) {
+        for (std::size_t index = 0; index < content.size(); ++index) {
             if (current_line == span.start.line) {
-                line_start = i;
+                line_start = index;
                 break;
             }
-            if (content[i] == '\n') {
+            if (content[index] == '\n') {
                 ++current_line;
             }
         }
@@ -75,11 +64,11 @@ export class Logger {
 
         auto source_line = content.substr(line_start, line_end - line_start);
 
-        auto line_number_str = std::to_string(span.start.line);
-        auto padding = std::string(line_number_str.size() + 2, ' ');
+        auto line_number = std::to_string(span.start.line);
+        auto padding = std::string(line_number.size() + 2, ' ');
 
         print_stderr(colors::blue, padding, "|", colors::reset, "\n");
-        print_stderr(colors::blue, " ", line_number_str, " | ", colors::reset, source_line, "\n");
+        print_stderr(colors::blue, " ", line_number, " | ", colors::reset, source_line, "\n");
         print_stderr(colors::blue, padding, "| ", colors::reset);
 
         if (span.start.column > 0) {
@@ -103,8 +92,6 @@ export class Logger {
     }
 
   public:
-    Logger() = default;
-
     explicit Logger(const Source& source) : source(&source) {}
 
     static void print_indent(int depth) {
@@ -131,35 +118,6 @@ export class Logger {
         print_stderr(colors::reset, "\n");
 
         return false;
-    }
-
-    void log(std::string_view message) const {
-        print_stderr(colors::bold_blue, "info: ", colors::reset, colors::bold_white, message,
-                     colors::reset, "\n");
-    }
-
-    void warn(std::string_view message) const {
-        print_stderr(colors::bold_yellow, "warning: ", colors::reset, colors::bold_white, message,
-                     colors::reset, "\n");
-    }
-
-    [[noreturn]] void error(std::string_view message) const {
-        print_stderr(colors::bold_red, "error: ", colors::reset, colors::bold_white, message,
-                     colors::reset, "\n");
-        std::exit(1);
-    }
-
-    void log(Span span, std::string_view message) const {
-        emit_diagnostic(span, colors::bold_blue, "info: ", message);
-    }
-
-    void warn(Span span, std::string_view message) const {
-        emit_diagnostic(span, colors::bold_yellow, "warning: ", message);
-    }
-
-    [[noreturn]] void error(Span span, std::string_view message) const {
-        emit_diagnostic(span, colors::bold_red, "error: ", message);
-        std::exit(1);
     }
 
     void report_error(Span span, std::string_view message) const {
