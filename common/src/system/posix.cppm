@@ -34,15 +34,15 @@ void child_error(int descriptor, const char* operation) {
     _exit(127);
 }
 
-bool read_pipe(int& descriptor, std::string& output, bool& failed) {
+void read_pipe(int& descriptor, std::string& output, bool& failed) {
     char buffer[4096];
     auto count = read(descriptor, buffer, sizeof(buffer));
     if (count > 0) {
         output.append(buffer, static_cast<std::size_t>(count));
-        return true;
+        return;
     }
     if (count < 0 && errno == EINTR) {
-        return true;
+        return;
     }
     if (count < 0) {
         failed = true;
@@ -51,7 +51,6 @@ bool read_pipe(int& descriptor, std::string& output, bool& failed) {
         failed = true;
     }
     descriptor = -1;
-    return true;
 }
 
 } // namespace

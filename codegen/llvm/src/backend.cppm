@@ -23,8 +23,6 @@ import zep.hir.program;
 
 export class LLVMBackend : public CodegenBackend {
   public:
-    CodegenFormat::Type format() const override { return CodegenFormat::Type::Object; }
-
     std::expected<void, std::string> generate(const HIRProgram& program,
                                               const std::filesystem::path& output,
                                               const CodegenOptions& options) override {

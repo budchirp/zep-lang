@@ -25,24 +25,15 @@ constexpr std::string_view bold_white = "\033[1;37m";
 
 export class Logger {
   private:
-    const Source* source = nullptr;
+    const Source& source;
 
     void print_location(Span span) const {
-        if (source == nullptr) {
-            print_stderr(colors::bold_white, "<no source>:", colors::reset, " ");
-            return;
-        }
-
-        print_stderr(colors::bold_white, source->name, ":", span.start.line, ":", span.start.column,
+        print_stderr(colors::bold_white, source.name, ":", span.start.line, ":", span.start.column,
                      ": ", colors::reset);
     }
 
     void print_source_line(Span span) const {
-        if (source == nullptr) {
-            return;
-        }
-
-        const auto& content = source->content;
+        const auto& content = source.content;
 
         std::size_t current_line = 1;
         std::size_t line_start = 0;
@@ -92,7 +83,7 @@ export class Logger {
     }
 
   public:
-    explicit Logger(const Source& source) : source(&source) {}
+    explicit Logger(const Source& source) : source(source) {}
 
     static void print_indent(int depth) {
         Logger::print(std::string(static_cast<std::size_t>(depth) * 2, ' '));

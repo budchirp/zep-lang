@@ -9,7 +9,7 @@ module;
 export module zep.frontend.sema.scope;
 
 export import :symbol;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 import zep.frontend.sema.type;
 import zep.common.arena;
 
@@ -42,7 +42,7 @@ export class Scope {
   private:
     std::unordered_map<std::string, TypeSymbol*> types;
     std::unordered_map<std::string, VariableSymbol*> variables;
-    std::unordered_map<std::string, OverloadSet*> functions;
+    std::unordered_map<std::string, std::vector<FunctionSymbol*>> functions;
     std::unordered_map<std::string, EnumVariantSymbol*> variants;
 
   public:
@@ -59,38 +59,19 @@ export class Scope {
         : kind(kind), name(std::move(name)), parent(parent) {}
 
     bool define_type(const std::string& key, TypeSymbol* symbol) {
-        if (!types.emplace(key, symbol).second) {
-            return false;
-        }
-
-        return true;
+        return types.emplace(key, symbol).second;
     }
 
     bool define_var(const std::string& key, VariableSymbol* symbol) {
-        if (!variables.emplace(key, symbol).second) {
-            return false;
-        }
-
-        return true;
+        return variables.emplace(key, symbol).second;
     }
 
-    void define_function(const std::string& key, FunctionSymbol* symbol,
-                         OverloadSet* overload_set) {
-        if (functions.contains(key)) {
-            functions[key]->functions.push_back(symbol);
-            return;
-        }
-
-        overload_set->functions.push_back(symbol);
-        functions.emplace(key, overload_set);
+    void define_function(const std::string& key, FunctionSymbol* symbol) {
+        functions[key].push_back(symbol);
     }
 
     bool define_variant(const std::string& key, EnumVariantSymbol* symbol) {
-        if (!variants.emplace(key, symbol).second) {
-            return false;
-        }
-
-        return true;
+        return variants.emplace(key, symbol).second;
     }
 
     const TypeSymbol* lookup_type(const std::string& key) const {
@@ -118,7 +99,7 @@ export class Scope {
 
         for (const auto* scope = this; scope != nullptr; scope = scope->parent) {
             if (auto iterator = scope->functions.find(key); iterator != scope->functions.end()) {
-                return iterator->second->functions;
+                return iterator->second;
             }
         }
 
@@ -153,7 +134,7 @@ export class Scope {
     const std::vector<FunctionSymbol*>*
     find_local_function_overloads(const std::string& key) const {
         auto iterator = functions.find(key);
-        return iterator != functions.end() ? &iterator->second->functions : nullptr;
+        return iterator != functions.end() ? &iterator->second : nullptr;
     }
 
     const FunctionSymbol* find_local_function(const std::string& key) const {
@@ -196,9 +177,9 @@ export class Scope {
     std::vector<FunctionSymbol*> find_exported_function_overloads(const std::string& key) const {
         if (auto iterator = functions.find(key); iterator != functions.end()) {
             std::vector<FunctionSymbol*> result;
-            result.reserve(iterator->second->functions.size());
+            result.reserve(iterator->second.size());
 
-            for (auto* symbol : iterator->second->functions) {
+            for (auto* symbol : iterator->second) {
                 if (symbol != nullptr && symbol->visibility == Visibility::Type::Public) {
                     result.push_back(symbol);
                 }
@@ -220,7 +201,7 @@ export class Scope {
         return nullptr;
     }
 
-    const std::unordered_map<std::string, OverloadSet*>& local_functions() const {
+    const std::unordered_map<std::string, std::vector<FunctionSymbol*>>& local_functions() const {
         return functions;
     }
 

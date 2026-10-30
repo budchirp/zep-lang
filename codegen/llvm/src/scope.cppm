@@ -23,8 +23,8 @@ export class CodegenScope {
 
     llvm::Value* lookup(const std::string& name) {
         for (auto& frame : std::views::reverse(values)) {
-            if (frame.contains(name)) {
-                return frame[name];
+            if (auto iterator = frame.find(name); iterator != frame.end()) {
+                return iterator->second;
             }
         }
 

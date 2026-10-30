@@ -23,7 +23,7 @@ import zep.lsp.analysis.types;
 import zep.compiler.unit;
 import zep.frontend.node;
 import zep.frontend.node.program;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 import zep.frontend.sema.scope;
 import zep.frontend.sema.type;
 import zep.workspace.project;
@@ -425,8 +425,7 @@ export class Analysis {
 
     std::vector<Completion> complete(Position position) const {
         if (project.has_value()) {
-            ModuleCatalog catalog(*project);
-            if (auto imports = catalog.complete(content, position, analyzed_path);
+            if (auto imports = ModuleCatalog::complete(*project, content, position, analyzed_path);
                 imports.has_value()) {
                 return std::move(*imports);
             }

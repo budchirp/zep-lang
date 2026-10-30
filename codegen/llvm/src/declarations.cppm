@@ -15,7 +15,7 @@ export module zep.codegen.llvm.declarations;
 
 import zep.frontend.sema.type;
 import zep.frontend.sema.scope;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 import zep.codegen.llvm.type;
 import zep.codegen.llvm.scope;
 import zep.hir.node;

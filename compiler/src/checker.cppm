@@ -13,7 +13,7 @@ import zep.compiler.unit;
 import zep.frontend.node;
 import zep.frontend.sema.context;
 import zep.frontend.sema.checker;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 import zep.frontend.sema.scope;
 import zep.frontend.sema.type;
 
@@ -53,8 +53,7 @@ export class CompilerChecker {
         const auto functions = source.find_exported_function_overloads(name);
         if (!functions.empty()) {
             for (auto* function : functions) {
-                destination.define_function(local_name, function,
-                                            sema.env.overloads.create<OverloadSet>());
+                destination.define_function(local_name, function);
             }
             return;
         }

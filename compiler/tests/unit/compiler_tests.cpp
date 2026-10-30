@@ -95,6 +95,34 @@ TEST(CompilerGraph, OrdersDependenciesBeforeImporters) {
     EXPECT_EQ(graph.modules[2]->path.string(), "main");
 }
 
+TEST(CompilerGraph, SharesDiamondDependencyAndPreservesImportEdges) {
+    TestWorkspace workspace("compiler_graph_diamond");
+    workspace.write("src/main.zep", "import left.value\nimport right.value\n");
+    workspace.write("src/left.zep", "import shared.value\n");
+    workspace.write("src/right.zep", "import shared.value\n");
+    workspace.write("src/shared.zep", "public fn value() -> i32 { return 1 }\n");
+
+    PackageGraph packages;
+    auto& package = add_package(packages, "app", workspace.root());
+    Diagnostics diagnostics;
+    SemaContext sema;
+    ModuleGraph graph(sema);
+
+    auto* module = graph.load(package, ModulePath::from_string("main"), diagnostics);
+    ASSERT_NE(module, nullptr);
+    ASSERT_FALSE(diagnostics.has_errors());
+    ASSERT_EQ(graph.modules.size(), 4U);
+    ASSERT_EQ(module->imports.size(), 2U);
+    EXPECT_EQ(graph.modules[0]->path.string(), "shared");
+    EXPECT_EQ(graph.modules[1]->path.string(), "left");
+    EXPECT_EQ(graph.modules[2]->path.string(), "right");
+    EXPECT_EQ(graph.modules[3], module);
+    ASSERT_EQ(graph.modules[1]->imports.size(), 1U);
+    ASSERT_EQ(graph.modules[2]->imports.size(), 1U);
+    EXPECT_EQ(graph.modules[1]->imports[0]->imported, graph.modules[0]);
+    EXPECT_EQ(graph.modules[2]->imports[0]->imported, graph.modules[0]);
+}
+
 TEST(CompilerGraph, ReportsCompleteCycleEdgeChain) {
     TestWorkspace workspace("compiler_graph_cycle");
     workspace.write("src/a.zep", "import b.value;\npublic fn value() -> i32 { return 1 }");

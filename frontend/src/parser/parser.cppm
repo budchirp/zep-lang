@@ -1,6 +1,7 @@
 module;
 
 #include <cstdint>
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>
@@ -19,9 +20,9 @@ import zep.frontend.parser.precedence;
 import zep.common.context;
 import zep.frontend.sema.context;
 import zep.frontend.sema.type;
-import zep.frontend.sema.kind;
-import zep.frontend.sema.resolver.attribute;
-import zep.frontend.sema.resolver.builtin;
+import zep.frontend.kind;
+import zep.frontend.sema.declaration.attribute;
+import zep.frontend.sema.expression.builtin;
 
 export class Parser {
   private:
@@ -50,11 +51,6 @@ export class Parser {
             : span(span), name(std::move(name)), generic_parameters(std::move(generic_parameters)) {
         }
     };
-
-    static bool is_target_active(const std::vector<Attribute*>& attributes,
-                                 const TargetInfo& target) {
-        return AttributeResolver::is_target_active(attributes, target);
-    }
 
     [[noreturn]] void error(Span span, std::string message) {
         context.diagnostics.add_error(span, std::move(message));
@@ -134,11 +130,11 @@ export class Parser {
 
     const Type* resolve_primitive(const std::string& name) {
         if (name == "void") {
-            return sema.builtin_resolver.primitives.at("void");
+            return sema.primitives.entries.at("void");
         }
 
-        if (sema.builtin_resolver.primitives.contains(name)) {
-            return sema.builtin_resolver.primitives.at(name);
+        if (sema.primitives.entries.contains(name)) {
+            return sema.primitives.entries.at(name);
         }
 
         return sema.types.create<NamedType>(name, std::vector<GenericArgumentType>{});
@@ -149,7 +145,7 @@ export class Parser {
 
         auto builtin_name = std::string(expect(Token::Type::Identifier).value);
 
-        if (!sema.builtin_resolver.is_builtin(builtin_name)) {
+        if (std::ranges::find(BuiltinChecker::names, builtin_name) == BuiltinChecker::names.end()) {
             error(span, "unknown builtin function '#" + builtin_name + "'");
         }
 
@@ -479,8 +475,7 @@ export class Parser {
         return NominalHeader(span, std::move(name), std::move(generic_parameters));
     }
 
-    FunctionDeclaration::MemberModifiers parse_member_modifiers(const std::string& parent
-                                                                [[maybe_unused]]) {
+    FunctionDeclaration::MemberModifiers parse_member_modifiers() {
         auto modifiers = FunctionDeclaration::MemberModifiers(current_token.span);
 
         while (check(Token::Type::Static) || check(Token::Type::Override)) {
@@ -513,13 +508,6 @@ export class Parser {
 
         return sema.nodes.create<Field>(field_span, visibility, std::move(attributes),
                                         std::move(field_name), type_expression, default_value);
-    }
-
-    Field* parse_stored_field(Visibility::Type visibility,
-                              std::vector<Attribute*> attributes = {}) {
-        expect(Token::Type::Var);
-
-        return parse_field(visibility, std::move(attributes));
     }
 
     bool parse_visibility_section(Visibility::Type& visibility) {
@@ -1108,38 +1096,6 @@ export class Parser {
         return qualified;
     }
 
-    EnumVariantExpression*
-    parse_enum_variant_expression(IdentifierExpression* enum_name,
-                                  std::vector<GenericArgument*> generic_arguments,
-                                  std::string variant_name) {
-        auto span = enum_name->span;
-
-        auto has_payload = false;
-        auto fields = std::vector<StructLiteralField*>{};
-        fields.reserve(4);
-
-        if (match(Token::Type::LeftBrace)) {
-            has_payload = true;
-
-            fields = parse_comma_list<StructLiteralField>(Token::Type::RightBrace, 4, [&]() {
-                auto field_span = current_token.span;
-
-                auto field_name = std::string(expect(Token::Type::Identifier).value);
-                expect(Token::Type::Colon);
-                auto* value = parse_expression();
-
-                return sema.nodes.create<StructLiteralField>(field_span, std::move(field_name),
-                                                             value);
-            });
-
-            expect(Token::Type::RightBrace);
-        }
-
-        return sema.nodes.create<EnumVariantExpression>(
-            span, enum_name, std::move(generic_arguments), std::move(variant_name), has_payload,
-            std::move(fields));
-    }
-
     ImportStatement* parse_import_statement(Visibility::Type visibility) {
         auto span = current_token.span;
 
@@ -1272,7 +1228,8 @@ export class Parser {
                 error(current_token.span, "struct fields must be declared with 'var'");
             }
 
-            fields.push_back(parse_stored_field(member_visibility, std::move(member_attributes)));
+            expect(Token::Type::Var);
+            fields.push_back(parse_field(member_visibility, std::move(member_attributes)));
         }
 
         expect(Token::Type::RightBrace);
@@ -1550,7 +1507,7 @@ export class Parser {
     FunctionDeclaration* parse_function_declaration(Visibility::Type visibility,
                                                     std::vector<Attribute*> attributes = {},
                                                     const std::string& parent = {}) {
-        auto modifiers = parse_member_modifiers(parent);
+        auto modifiers = parse_member_modifiers();
 
         expect(Token::Type::Fn);
 
@@ -1586,7 +1543,7 @@ export class Parser {
             error(declaration->span, "static functions require an extension target");
         }
 
-        if (!is_target_active(declaration->attributes, sema.target)) {
+        if (!AttributeResolver::is_target_active(declaration->attributes, sema.target)) {
             return nullptr;
         }
 
@@ -1683,20 +1640,10 @@ export class Parser {
         expect(Token::Type::For);
         expect(Token::Type::LeftParen);
 
-        if (check(Token::Type::Var)) {
-            auto* init_decl = parse_var_declaration(Visibility::Type::Private, {});
-            expect(Token::Type::Semicolon);
-            auto* condition = parse_expression();
-            expect(Token::Type::Semicolon);
-            auto* step = parse_expression();
-            expect(Token::Type::RightParen);
-
-            auto* body = parse_block_statement();
-
-            return sema.nodes.create<ForStatement>(span, init_decl, condition, step, body);
-        }
-
-        auto* initializer = sema.nodes.create<ExpressionStatement>(parse_expression());
+        auto* initializer = check(Token::Type::Var)
+                                ? static_cast<Statement*>(
+                                      parse_var_declaration(Visibility::Type::Private, {}))
+                                : sema.nodes.create<ExpressionStatement>(parse_expression());
         expect(Token::Type::Semicolon);
         auto* condition = parse_expression();
         expect(Token::Type::Semicolon);
@@ -1749,7 +1696,7 @@ export class Parser {
             auto* declaration = sema.nodes.create<ExternFunctionDeclaration>(
                 span, visibility, std::move(attributes), prototype);
 
-            if (!is_target_active(declaration->attributes, sema.target)) {
+            if (!AttributeResolver::is_target_active(declaration->attributes, sema.target)) {
                 return nullptr;
             }
 

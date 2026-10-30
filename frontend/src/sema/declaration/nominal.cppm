@@ -1,36 +1,37 @@
 module;
 
-#include <algorithm>
-#include <cstdint>
-#include <functional>
+#include <variant>
 #include <optional>
+#include <cstdint>
+#include <algorithm>
+#include <functional>
 #include <string>
 #include <unordered_set>
-#include <variant>
 #include <vector>
 
-export module zep.frontend.sema.declaration.enum_checker;
+export module zep.frontend.sema.declaration.nominal;
 
 import zep.common.context;
+import zep.frontend.sema.type_resolver;
+import zep.frontend.sema.constant.evaluator;
+import zep.frontend.sema.substitution;
 import zep.common.source.span;
 import zep.frontend.node;
-import zep.frontend.sema.constant.environment;
-import zep.frontend.sema.constant.evaluator;
 import zep.frontend.sema.context;
-import zep.frontend.sema.kind;
-import zep.frontend.sema.resolver.attribute;
+import zep.frontend.kind;
+import zep.frontend.sema.declaration.attribute;
+import zep.frontend.sema.facade;
 import zep.frontend.sema.scope;
 import zep.frontend.sema.type;
-import zep.frontend.sema.type.builder;
-import zep.frontend.sema.type.resolver;
 import zep.frontend.sema.declaration.function;
 
-export class EnumDeclarationChecker {
+export class NominalDeclarationChecker {
   private:
     Context& context;
     SemaContext& sema;
     TypeResolver& resolver;
-    TypeBuilder& builder;
+    DeclarationTypeBuilder& builder;
+    FacadeResolver& facades;
     FunctionDeclarationChecker& functions;
     Visitor<void>& visitor;
     std::function<void(Expression&, const Type*)> check_expression;
@@ -55,6 +56,141 @@ export class EnumDeclarationChecker {
                 nominal != nullptr) {
                 nominal->member_scope = type_scope;
             }
+        }
+    }
+
+    const MethodType* resolve_method(const StructType* struct_type, const std::string& method_name,
+                                     const FunctionType* requirement) {
+        if (struct_type == nullptr) {
+            return nullptr;
+        }
+
+        for (const auto& method : struct_type->methods) {
+            if (method.name == method_name &&
+                functions.method_signature_matches(requirement, method.type, struct_type)) {
+                return &method;
+            }
+        }
+
+        return resolve_method(struct_type->base_type, method_name, requirement);
+    }
+
+    bool method_satisfies_requirement(const StructType& struct_type, const FunctionType* actual,
+                                      const std::string& method_name) {
+        for (const auto* interface_type : struct_type.interfaces) {
+            if (interface_type == nullptr) {
+                continue;
+            }
+
+            const auto* requirement = interface_type->find_method(method_name);
+            if (requirement != nullptr &&
+                functions.method_signature_matches(requirement->type, actual, &struct_type)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    void validate_interface_conformance(StructDeclaration& node, StructType& struct_type) {
+        for (const auto* interface_type : struct_type.interfaces) {
+            if (interface_type == nullptr) {
+                continue;
+            }
+
+            for (const auto& requirement : interface_type->methods) {
+                if (resolve_method(&struct_type, requirement.name, requirement.type) != nullptr) {
+                    continue;
+                }
+
+                context.diagnostics.add_error(
+                    node.span, "struct '" + node.name + "' does not implement method '" +
+                                   requirement.name + "' required by interface '" +
+                                   interface_type->name + "'");
+            }
+        }
+    }
+
+    void validate_interface_method(FunctionPrototype& method) {
+        if (method.receiver_kind == FunctionPrototype::ReceiverKind::Type::None) {
+            context.diagnostics.add_error(method.span, "interface method '" + method.name +
+                                                           "' must have a receiver");
+        }
+
+        for (auto* parameter : method.parameters) {
+            if (parameter->name == "self") {
+                context.diagnostics.add_error(parameter->span,
+                                              "interface methods use implicit self");
+            }
+        }
+    }
+
+    void validate_overrides(StructDeclaration& node, StructType& struct_type) {
+        for (auto* method : node.methods) {
+            if (method->function_symbol == nullptr ||
+                method->function_symbol->function_type == nullptr ||
+                method->function_symbol->callable_kind !=
+                    FunctionSymbol::Kind::Type::InstanceMethod) {
+                if (method->is_override) {
+                    context.diagnostics.add_error(
+                        method->span, "'override' can only be used on instance methods");
+                }
+                continue;
+            }
+
+            const auto matches_base =
+                resolve_method(struct_type.base_type, method->prototype->name,
+                               method->function_symbol->function_type) != nullptr;
+            const auto matches_interface = method_satisfies_requirement(
+                struct_type, method->function_symbol->function_type, method->prototype->name);
+
+            if (method->is_override && !matches_base && !matches_interface) {
+                context.diagnostics.add_error(method->span, "method '" + method->prototype->name +
+                                                                "' does not override anything");
+            }
+
+            if (!method->is_override && (matches_base || matches_interface)) {
+                context.diagnostics.add_error(method->span, "method '" + method->prototype->name +
+                                                                "' must be declared override");
+            }
+        }
+    }
+
+    void validate_struct_declaration(StructDeclaration& node) {
+        std::unordered_set<std::string> field_names;
+        field_names.reserve(node.fields.size());
+
+        for (auto* field : node.fields) {
+            if (field_names.contains(field->name)) {
+                context.diagnostics.add_error(field->span, "duplicate field '" + field->name +
+                                                               "' in struct '" + node.name + "'");
+            }
+            field_names.insert(field->name);
+        }
+    }
+
+    void declare_methods(const std::vector<FunctionDeclaration*>& declarations,
+                         std::vector<MethodType>* methods) {
+        for (auto* declaration : declarations) {
+            functions.declare_function(*declaration);
+        }
+
+        if (methods == nullptr) {
+            return;
+        }
+
+        methods->clear();
+        methods->reserve(declarations.size());
+
+        for (auto* declaration : declarations) {
+            const auto* symbol = declaration->function_symbol;
+            if (symbol == nullptr || symbol->function_type == nullptr ||
+                symbol->callable_kind != FunctionSymbol::Kind::Type::InstanceMethod) {
+                continue;
+            }
+
+            methods->emplace_back(declaration->prototype->name, symbol->function_type,
+                                  methods->size());
         }
     }
 
@@ -146,7 +282,7 @@ export class EnumDeclarationChecker {
 
         const auto* backing = type.backing_type != nullptr
                                   ? type.backing_type
-                                  : sema.builtin_resolver.primitives.at("i32");
+                                  : sema.primitives.entries.at("i32");
 
         std::optional<CompileTimeValue> previous;
         std::vector<CompileTimeValue> values;
@@ -173,7 +309,7 @@ export class EnumDeclarationChecker {
                 }
 
                 check_expression(*variant->value_expression, backing);
-                value = evaluator.evaluate(*variant->value_expression);
+                value = evaluator.evaluate(*variant->value_expression).value;
 
                 if (value.has_value() && !backing->same(value->type)) {
                     if (backing->is<IntegerType>() && value->is_integer()) {
@@ -323,12 +459,127 @@ export class EnumDeclarationChecker {
     }
 
   public:
-    EnumDeclarationChecker(Context& context, SemaContext& sema, TypeResolver& resolver,
-                           TypeBuilder& builder, FunctionDeclarationChecker& functions,
-                           Visitor<void>& visitor,
-                           std::function<void(Expression&, const Type*)> check_expression)
-        : context(context), sema(sema), resolver(resolver), builder(builder), functions(functions),
+    NominalDeclarationChecker(Context& context, SemaContext& sema, TypeResolver& resolver,
+                              DeclarationTypeBuilder& builder, FacadeResolver& facades,
+                              FunctionDeclarationChecker& functions, Visitor<void>& visitor,
+                              std::function<void(Expression&, const Type*)> check_expression)
+        : context(context), sema(sema), resolver(resolver), builder(builder), facades(facades),
+          functions(functions),
           visitor(visitor), check_expression(std::move(check_expression)) {}
+
+    void declare_interface_type(InterfaceDeclaration& node) {
+        if (node.type != nullptr) {
+            return;
+        }
+
+        const auto* type = builder.build_interface_type(node);
+        node.type = type;
+
+        auto* type_scope = sema.env.scopes.create<Scope>(Scope::Kind::Type::Interface, node.name,
+                                                       sema.env.current_scope);
+
+        register_type(node.name, node.span, node.visibility, type, node.generic_parameters,
+                      node.attributes, type_scope);
+
+        const auto* interface_type = type->as<InterfaceType>();
+        if (interface_type == nullptr) {
+            return;
+        }
+
+        const auto method_offset = interface_type->methods.size() >= node.methods.size()
+                                       ? interface_type->methods.size() - node.methods.size()
+                                       : 0;
+
+        for (auto index = std::size_t{0}; index < node.methods.size(); ++index) {
+            auto* method = node.methods[index];
+            validate_interface_method(*method);
+
+            const auto method_index = method_offset + index;
+            const auto* method_type = method_index < interface_type->methods.size()
+                                          ? interface_type->methods[method_index].type
+                                          : nullptr;
+            if (method_type == nullptr) {
+                continue;
+            }
+
+            auto* symbol = sema.env.symbols.create<FunctionSymbol>(
+                method->name, method->span, Visibility::Type::Public, Linkage::Type::Internal,
+                method_type, FunctionSymbol::Kind::Type::InstanceMethod, node.name,
+                std::vector<AttributeInfo>{}, false, Abi::Type::Language);
+
+            type_scope->define_function(method->name, symbol);
+        }
+    }
+
+    void declare_struct_type(StructDeclaration& node) {
+        if (node.type != nullptr) {
+            return;
+        }
+
+        validate_struct_declaration(node);
+
+        const auto* type = builder.build_struct_type(node);
+        node.type = type;
+
+        auto* type_scope = sema.env.scopes.create<Scope>(Scope::Kind::Type::Struct, node.name,
+                                                       sema.env.current_scope);
+
+        register_type(node.name, node.span, node.visibility, type, node.generic_parameters,
+                      node.attributes, type_scope);
+
+        auto* struct_type = const_cast<StructType*>(type->as<StructType>());
+        if (struct_type != nullptr) {
+            for (const auto& field : struct_type->fields) {
+                const auto* source_field = static_cast<Field*>(nullptr);
+                for (auto* node_field : node.fields) {
+                    if (node_field->name == field.name) {
+                        source_field = node_field;
+                        break;
+                    }
+                }
+
+                auto attributes = source_field != nullptr
+                                      ? AttributeResolver::convert(source_field->attributes)
+                                      : std::vector<AttributeInfo>{};
+
+                if (source_field != nullptr) {
+                    AttributeResolver::validate(
+                        attributes, {sema, context, source_field->span, field.name, {}});
+                }
+
+                if (!type_scope->define_var(field.name, sema.env.symbols.create<VariableSymbol>(
+                                                          field.name, node.span, field.visibility,
+                                                          StorageKind::Type::Var, field.type,
+                                                          std::move(attributes)))) {
+                    context.diagnostics.add_error(node.span,
+                                                  "redefinition of field '" + field.name + "'");
+                }
+            }
+
+            facades.register_struct(*struct_type, node.visibility);
+        }
+
+        declare_methods(node.methods, struct_type != nullptr ? &struct_type->methods : nullptr);
+
+        if (struct_type != nullptr) {
+            validate_overrides(node, *struct_type);
+            validate_interface_conformance(node, *struct_type);
+        }
+
+        for (auto* nested_struct : node.structs) {
+            auto original_name = nested_struct->name;
+            nested_struct->name = node.name + "::" + original_name;
+            declare_struct_type(*nested_struct);
+            nested_struct->name = original_name;
+        }
+
+        for (auto* nested_enum : node.enums) {
+            auto original_name = nested_enum->name;
+            nested_enum->name = node.name + "::" + original_name;
+            declare_enum_type(*nested_enum);
+            nested_enum->name = original_name;
+        }
+    }
 
     void declare_enum_type(EnumDeclaration& node) {
         if (node.type != nullptr) {
@@ -352,28 +603,9 @@ export class EnumDeclarationChecker {
             evaluate_enum_discriminants(node, *enum_type, type_scope);
         }
 
-        for (auto* method : node.methods) {
-            functions.declare_function(*method);
-        }
+        declare_methods(node.methods, enum_type != nullptr ? &enum_type->methods : nullptr);
 
         if (enum_type != nullptr) {
-            enum_type->methods.clear();
-            enum_type->methods.reserve(node.methods.size());
-
-            std::size_t method_index = 0;
-            for (auto* method : node.methods) {
-                if (method->function_symbol == nullptr ||
-                    method->function_symbol->function_type == nullptr ||
-                    method->function_symbol->callable_kind !=
-                        FunctionSymbol::Kind::Type::InstanceMethod) {
-                    continue;
-                }
-
-                enum_type->methods.emplace_back(
-                    method->prototype->name, method->function_symbol->function_type, method_index);
-                ++method_index;
-            }
-
             validate_interface_conformance(node, *enum_type);
         }
     }

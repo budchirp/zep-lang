@@ -3,7 +3,7 @@
 
 import zep.frontend.test.harness;
 import zep.frontend.node;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 
 TEST(FrontendParserMatrix, ParsesDirectImportsAndAliases) {
     const std::string source = R"zep(

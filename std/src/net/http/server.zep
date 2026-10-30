@@ -14,12 +14,6 @@ import std.text.string.String
 
 var REQUEST_READ_SIZE: i64 = 4095
 
-@serializable
-struct ErrorBody {
-    public:
-        var error: String
-}
-
 struct Route {
     public:
         var method: Method
@@ -39,10 +33,6 @@ public struct HttpServer {
     private:
         var listener: TcpListener
         var routes: Vector<Route>
-
-        static fn not_found(request: *Request, response: *mut Response) -> void {
-            response->status(Status::NotFound)->text("not found")
-        }
 
         fn dispatch(request: *Request, response: *mut Response) -> void {
             for (var mut index: i32 = 0; index < routes.size(); index = index + 1) {

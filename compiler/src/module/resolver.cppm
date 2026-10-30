@@ -24,12 +24,8 @@ export class ResolvedModule {
 export class ModuleResolver {
   private:
     static std::optional<std::filesystem::path>
-    find_source(const std::filesystem::path& source_directory, const ModulePath& path,
-                bool root_module) {
-        auto base = source_directory;
-        if (!root_module) {
-            base /= path.path();
-        }
+    find_source(const std::filesystem::path& source_directory, const ModulePath& path) {
+        auto base = source_directory / path.path();
 
         auto file = base;
         file += ".zep";
@@ -45,32 +41,6 @@ export class ModuleResolver {
         return std::nullopt;
     }
 
-    static std::optional<std::filesystem::path> find_dependency_source(const Package& package,
-                                                                       const ModulePath& path) {
-        if (path.segments.empty()) {
-            return std::nullopt;
-        }
-
-        if (path.segments.size() == 1) {
-            auto root = package.source_directory / "lib.zep";
-            if (std::filesystem::is_regular_file(root)) {
-                return root;
-            }
-        }
-
-        std::vector<std::string> segments;
-        segments.reserve(path.segments.size() - 1);
-        for (std::size_t index = 1; index < path.segments.size(); ++index) {
-            segments.push_back(path.segments[index]);
-        }
-
-        if (segments.empty()) {
-            return std::nullopt;
-        }
-
-        return find_source(package.source_directory, ModulePath(std::move(segments)), false);
-    }
-
   public:
     std::optional<ResolvedModule> resolve(Package& importing, ModulePath path) const {
         auto local_path = path;
@@ -78,7 +48,7 @@ export class ModuleResolver {
             local_path.segments.front() == importing.manifest.name) {
             local_path.segments.erase(local_path.segments.begin());
         }
-        if (auto local = find_source(importing.source_directory, local_path, false);
+        if (auto local = find_source(importing.source_directory, local_path);
             local.has_value()) {
             return ResolvedModule(&importing, local_path, std::move(*local));
         }
@@ -92,18 +62,25 @@ export class ModuleResolver {
                 continue;
             }
 
-            if (auto source = find_dependency_source(*dependency, path); source.has_value()) {
-                std::vector<std::string> module_segments;
-                if (path.segments.size() == 1) {
-                    module_segments.push_back("lib");
-                } else {
-                    module_segments.reserve(path.segments.size() - 1);
-                    for (std::size_t index = 1; index < path.segments.size(); ++index) {
-                        module_segments.push_back(path.segments[index]);
-                    }
+            if (path.segments.size() == 1) {
+                auto source = dependency->source_directory / "lib.zep";
+                if (std::filesystem::is_regular_file(source)) {
+                    return ResolvedModule(dependency, ModulePath::from_string("lib"),
+                                          std::move(source));
                 }
-                return ResolvedModule(dependency, ModulePath(std::move(module_segments)),
-                                      std::move(*source));
+                continue;
+            }
+
+            std::vector<std::string> segments;
+            segments.reserve(path.segments.size() - 1);
+            for (auto index = std::size_t{1}; index < path.segments.size(); ++index) {
+                segments.push_back(path.segments[index]);
+            }
+
+            ModulePath module_path(std::move(segments));
+            if (auto source = find_source(dependency->source_directory, module_path);
+                source.has_value()) {
+                return ResolvedModule(dependency, std::move(module_path), std::move(*source));
             }
         }
 

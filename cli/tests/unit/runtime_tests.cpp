@@ -405,3 +405,65 @@ public fn main() -> i32 {
     EXPECT_EQ(result.stdout_text, "");
     EXPECT_EQ(result.stderr_text, "fatal error\n");
 }
+
+TEST(CliZep, PreservesFormatArgumentsGrowthBoundsOverloadsAndReuse) {
+    CliTestHarness harness("cli_zep_format_arguments", ZEP_ZEP_EXECUTABLE);
+    write_project_config(harness, "format_arguments");
+    harness.workspace.write("src/main.zep",
+                            TextFile::read(TestPaths::source_root() /
+                                           "fixtures/format_arguments.zep"));
+
+    auto result = build_and_run(harness, "format_arguments");
+
+    EXPECT_TRUE(result.succeeded()) << result.stderr_text << "exit status: " << result.exit.status;
+    EXPECT_TRUE(result.stdout_text.empty());
+    EXPECT_TRUE(result.stderr_text.empty());
+}
+
+TEST(CliZep, CompilesStandardLibraryHttpModules) {
+    CliTestHarness harness("cli_zep_http_modules", ZEP_ZEP_EXECUTABLE);
+    write_project_config(harness, "http_modules");
+    harness.workspace.write("src/main.zep",
+                            TextFile::read(TestPaths::source_root() / "fixtures/http_modules.zep"));
+
+    auto result = build_and_run(harness, "http_modules");
+
+    EXPECT_TRUE(result.succeeded()) << result.stderr_text;
+}
+
+TEST(CliZep, DropsSpecializedGenericFieldsInNonGenericOwners) {
+    CliTestHarness harness("cli_zep_generic_field_cleanup", ZEP_ZEP_EXECUTABLE);
+    write_project_config(harness, "generic_field_cleanup");
+    harness.workspace.write("src/owner.zep", R"zep(
+extern fn putchar(value: i32) -> i32
+
+public struct Cell<T> {
+    public:
+        var value: T
+        fn ~Cell() -> void { putchar(67) }
+}
+
+struct Owner {
+    public:
+        var cell: Cell<i32>
+}
+
+public fn exercise() -> void {
+    var owner = Owner { cell: Cell<i32> { value: 7 } }
+}
+)zep");
+    harness.workspace.write("src/main.zep", R"zep(
+import owner.exercise
+
+public fn main() -> i32 {
+    exercise()
+    return 0
+}
+)zep");
+
+    auto result = build_and_run(harness, "generic_field_cleanup");
+
+    EXPECT_TRUE(result.succeeded()) << result.stderr_text << "exit status: " << result.exit.status;
+    EXPECT_EQ(result.stdout_text, "C");
+    EXPECT_TRUE(result.stderr_text.empty());
+}

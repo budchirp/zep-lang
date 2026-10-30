@@ -13,13 +13,15 @@ export module zep.frontend.node;
 
 import zep.common.source.span;
 import zep.frontend.sema.type;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 import zep.frontend.sema.scope;
 import zep.common.arena;
-import zep.frontend.token;
 
 export template <typename T>
 class Visitor;
+
+export template <typename T>
+class ExpressionVisitor;
 
 export class Node {
   public:
@@ -117,11 +119,6 @@ export class Node {
 
 export using NodeArena = Arena<Node>;
 
-export class Intrinsic {
-  public:
-    enum class Type : std::uint8_t { InlineAssembly };
-};
-
 export class CallTarget {
   public:
     class Kind {
@@ -177,13 +174,6 @@ export class IntrinsicCallTarget final : public CallTarget {
         : CallTarget(static_kind), intrinsic(intrinsic) {}
 };
 
-export class ResolvedCall {
-  public:
-    std::unique_ptr<CallTarget> target;
-
-    explicit ResolvedCall(std::unique_ptr<CallTarget> target) : target(std::move(target)) {}
-};
-
 export class Expression : public Node {
   protected:
     explicit Expression(Kind::Type kind, Span span)
@@ -229,11 +219,6 @@ export class TypeExpression : public Expression {
         this->array_sizes = std::move(array_sizes);
         this->type = type;
     }
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class GenericParameter : public Node {
@@ -255,11 +240,6 @@ export class GenericParameter : public Node {
           value_type(value_type) {}
 
     bool is_const() const { return kind == GenericParameterType::Kind::Type::Const; }
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class GenericArgument : public Node {
@@ -281,11 +261,6 @@ export class GenericArgument : public Node {
           const_binding(std::nullopt) {}
 
     bool is_const() const { return value != nullptr || const_binding.has_value(); }
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class Parameter : public Node {
@@ -302,11 +277,6 @@ export class Parameter : public Node {
               std::vector<Attribute*> attributes = {})
         : Node(static_kind, span), name(std::move(name)), type(type_expression),
           attributes(std::move(attributes)) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class Argument : public Node {
@@ -319,11 +289,6 @@ export class Argument : public Node {
 
     Argument(Span span, std::string name, Expression* value)
         : Node(static_kind, span), name(std::move(name)), value(value) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class FunctionPrototype : public Node {
@@ -352,11 +317,6 @@ export class FunctionPrototype : public Node {
           receiver_kind(ReceiverKind::Type::None), name(std::move(name)),
           generic_parameters(std::move(generic_parameters)), parameters(std::move(parameters)),
           return_type(return_type) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class Field : public Node {
@@ -375,11 +335,6 @@ export class Field : public Node {
           std::string name, TypeExpression* type_expression, Expression* default_value = nullptr)
         : Node(static_kind, span), visibility(visibility), attributes(std::move(attributes)),
           name(std::move(name)), type(type_expression), default_value(default_value) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class EnumVariant : public Node {
@@ -396,11 +351,6 @@ export class EnumVariant : public Node {
                 std::vector<Field*> fields, Expression* value_expression = nullptr)
         : Node(static_kind, span), attributes(std::move(attributes)), name(std::move(name)),
           fields(std::move(fields)), value_expression(value_expression) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class StructLiteralField : public Node {
@@ -413,11 +363,6 @@ export class StructLiteralField : public Node {
 
     StructLiteralField(Span span, std::string name, Expression* value)
         : Node(static_kind, span), name(std::move(name)), value(value) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class WhenPatternField : public Node {
@@ -431,11 +376,6 @@ export class WhenPatternField : public Node {
     WhenPatternField(Span span, std::string field_name, std::string binding_name)
         : Node(static_kind, span), field_name(std::move(field_name)),
           binding_name(std::move(binding_name)) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class WhenPattern : public Node {
@@ -473,11 +413,6 @@ export class WhenPattern : public Node {
           expression(nullptr), enum_name(enum_name),
           generic_arguments(std::move(generic_arguments)), variant_name(std::move(variant_name)),
           fields(std::move(fields)), enum_type(nullptr), variant_type(nullptr) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class Attribute : public Node {
@@ -490,11 +425,6 @@ export class Attribute : public Node {
 
     Attribute(Span span, std::string name, std::vector<Expression*> arguments)
         : Node(static_kind, span), name(std::move(name)), arguments(std::move(arguments)) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export Attribute* find_attribute(const std::vector<Attribute*>& attributes,
@@ -522,11 +452,6 @@ export class WhenArm : public Node {
             Statement* body)
         : Node(static_kind, span), is_else(is_else), patterns(std::move(patterns)), guard(guard),
           body(body) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class NumberLiteral : public Expression {
@@ -538,11 +463,6 @@ export class NumberLiteral : public Expression {
 
     NumberLiteral(Span span, std::string value)
         : Expression(static_kind, span), value(std::move(value)) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class FloatLiteral : public Expression {
@@ -554,11 +474,6 @@ export class FloatLiteral : public Expression {
 
     FloatLiteral(Span span, std::string value)
         : Expression(static_kind, span), value(std::move(value)) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class StringLiteral : public Expression {
@@ -570,11 +485,6 @@ export class StringLiteral : public Expression {
 
     StringLiteral(Span span, std::string value)
         : Expression(static_kind, span), value(std::move(value)) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class CharLiteral : public Expression {
@@ -584,11 +494,6 @@ export class CharLiteral : public Expression {
     std::uint8_t value;
 
     CharLiteral(Span span, std::uint8_t value) : Expression(static_kind, span), value(value) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class BooleanLiteral : public Expression {
@@ -599,11 +504,6 @@ export class BooleanLiteral : public Expression {
     bool value;
 
     BooleanLiteral(Span span, bool value) : Expression(static_kind, span), value(value) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class NullLiteral : public Expression {
@@ -611,11 +511,6 @@ export class NullLiteral : public Expression {
     static constexpr Kind::Type static_kind = Kind::Type::NullLiteral;
 
     NullLiteral(Span span) : Expression(static_kind, span) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class IdentifierExpression : public Expression {
@@ -636,129 +531,13 @@ export class IdentifierExpression : public Expression {
         : Expression(static_kind, span), name(std::move(name)), var_symbol(nullptr),
           function_symbol(nullptr), generic_declaration(nullptr), implicit_self_field(false),
           generic_arguments(std::move(generic_arguments)) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class BinaryExpression : public Expression {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::BinaryExpression;
 
-    class Operator {
-      public:
-        enum class Type : std::uint8_t {
-            Plus,
-            Minus,
-            Asterisk,
-            Divide,
-            Modulo,
-            Equals,
-            NotEquals,
-            LessThan,
-            GreaterThan,
-            LessEqual,
-            GreaterEqual,
-            And,
-            Or,
-            As,
-            Is,
-        };
-
-        static std::string to_string(Type op) {
-            switch (op) {
-            case Type::Plus:
-                return "+";
-            case Type::Minus:
-                return "-";
-            case Type::Asterisk:
-                return "*";
-            case Type::Divide:
-                return "/";
-            case Type::Modulo:
-                return "%";
-            case Type::Equals:
-                return "==";
-            case Type::NotEquals:
-                return "!=";
-            case Type::LessThan:
-                return "<";
-            case Type::GreaterThan:
-                return ">";
-            case Type::LessEqual:
-                return "<=";
-            case Type::GreaterEqual:
-                return ">=";
-            case Type::And:
-                return "&&";
-            case Type::Or:
-                return "||";
-            case Type::As:
-                return "as";
-            case Type::Is:
-                return "is";
-            }
-            return "?";
-        }
-
-        static std::optional<Type> from_token(Token::Type token_type) {
-            Type op;
-
-            switch (token_type) {
-            case Token::Type::Plus:
-                op = Type::Plus;
-                break;
-            case Token::Type::Minus:
-                op = Type::Minus;
-                break;
-            case Token::Type::Asterisk:
-                op = Type::Asterisk;
-                break;
-            case Token::Type::Divide:
-                op = Type::Divide;
-                break;
-            case Token::Type::Modulo:
-                op = Type::Modulo;
-                break;
-            case Token::Type::Equals:
-                op = Type::Equals;
-                break;
-            case Token::Type::NotEquals:
-                op = Type::NotEquals;
-                break;
-            case Token::Type::LessThan:
-                op = Type::LessThan;
-                break;
-            case Token::Type::GreaterThan:
-                op = Type::GreaterThan;
-                break;
-            case Token::Type::LessEqual:
-                op = Type::LessEqual;
-                break;
-            case Token::Type::GreaterEqual:
-                op = Type::GreaterEqual;
-                break;
-            case Token::Type::And:
-                op = Type::And;
-                break;
-            case Token::Type::Or:
-                op = Type::Or;
-                break;
-            case Token::Type::As:
-                op = Type::As;
-                break;
-            case Token::Type::Is:
-                op = Type::Is;
-                break;
-            default:
-                return std::nullopt;
-            }
-
-            return op;
-        }
-    };
+    using Operator = BinaryOperator;
 
     Expression* left;
     Operator::Type op;
@@ -766,11 +545,6 @@ export class BinaryExpression : public Expression {
 
     BinaryExpression(Span span, Expression* left, Operator::Type op, Expression* right)
         : Expression(static_kind, span), left(left), op(op), right(right) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class UnaryExpression : public Expression {
@@ -778,72 +552,13 @@ export class UnaryExpression : public Expression {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::UnaryExpression;
 
-    class Operator {
-      public:
-        enum class Type : std::uint8_t {
-            Plus,
-            Minus,
-            Not,
-            Dereference,
-            AddressOf,
-            AddressOfMut,
-        };
-
-        static std::string to_string(Type op) {
-            switch (op) {
-            case Type::Plus:
-                return "+";
-            case Type::Minus:
-                return "-";
-            case Type::Not:
-                return "!";
-            case Type::Dereference:
-                return "*";
-            case Type::AddressOf:
-                return "&";
-            case Type::AddressOfMut:
-                return "&mut ";
-            }
-            return "?";
-        }
-
-        static std::optional<Type> from_token(Token::Type type) {
-            Type op;
-
-            switch (type) {
-            case Token::Type::Minus:
-                op = Type::Minus;
-                break;
-            case Token::Type::Plus:
-                op = Type::Plus;
-                break;
-            case Token::Type::Not:
-                op = Type::Not;
-                break;
-            case Token::Type::Asterisk:
-                op = Type::Dereference;
-                break;
-            case Token::Type::Ampersand:
-                op = Type::AddressOf;
-                break;
-            default:
-                return std::nullopt;
-            }
-
-            return op;
-        }
-    };
+    using Operator = UnaryOperator;
 
     Operator::Type op;
     Expression* operand;
 
     UnaryExpression(Span span, Operator::Type op, Expression* operand)
         : Expression(static_kind, span), op(op), operand(operand) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class CoerceExpression : public Expression {
@@ -860,11 +575,6 @@ export class CoerceExpression : public Expression {
         : Expression(static_kind, span), value(value), coercion(coercion),
           source_type(source_type) {
         type = target_type;
-    }
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
     }
 };
 
@@ -886,11 +596,6 @@ export class CallExpression : public Expression {
         : Expression(static_kind, span), callee(callee),
           generic_arguments(std::move(generic_arguments)), arguments(std::move(arguments)),
           resolved_target(nullptr) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class IndexExpression : public Expression {
@@ -902,11 +607,6 @@ export class IndexExpression : public Expression {
     Expression* index;
     IndexExpression(Span span, Expression* value, Expression* index)
         : Expression(static_kind, span), value(value), index(index) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class MemberExpression : public Expression {
@@ -918,11 +618,6 @@ export class MemberExpression : public Expression {
     std::string member;
     MemberExpression(Span span, Expression* value, std::string member)
         : Expression(static_kind, span), value(value), member(std::move(member)) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class QualifiedAccessExpression : public Expression {
@@ -946,11 +641,6 @@ export class QualifiedAccessExpression : public Expression {
           parent_generic_arguments(std::move(parent_generic_arguments)), member(std::move(member)),
           enum_type(nullptr), variant_type(nullptr), enum_value(std::nullopt),
           function_symbol(nullptr) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class AssignExpression : public Expression {
@@ -963,11 +653,6 @@ export class AssignExpression : public Expression {
 
     AssignExpression(Span span, Expression* target, Expression* value)
         : Expression(static_kind, span), target(target), value(value) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class StructLiteralExpression : public Expression {
@@ -986,11 +671,6 @@ export class StructLiteralExpression : public Expression {
                             std::vector<StructLiteralField*> fields)
         : Expression(static_kind, span), name(name),
           generic_arguments(std::move(generic_arguments)), fields(std::move(fields)) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class EnumVariantExpression : public Expression {
@@ -1018,11 +698,6 @@ export class EnumVariantExpression : public Expression {
           generic_arguments(std::move(generic_arguments)), variant_name(std::move(variant_name)),
           has_payload(has_payload), fields(std::move(fields)), enum_type(nullptr),
           variant_type(nullptr) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class BlockStatement : public Statement {
@@ -1035,11 +710,6 @@ export class BlockStatement : public Statement {
 
     BlockStatement(Span span, std::vector<Statement*> statements)
         : Statement(static_kind, span), statements(std::move(statements)), scope(nullptr) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class ExpressionStatement : public Statement {
@@ -1051,11 +721,6 @@ export class ExpressionStatement : public Statement {
 
     explicit ExpressionStatement(Expression* expression)
         : Statement(static_kind, expression->span), expression(expression) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class IfExpression : public Expression {
@@ -1070,11 +735,6 @@ export class IfExpression : public Expression {
     IfExpression(Span span, Expression* condition, Statement* then_branch, Statement* else_branch)
         : Expression(static_kind, span), condition(condition), then_branch(then_branch),
           else_branch(else_branch) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class WhenExpression : public Expression {
@@ -1089,11 +749,6 @@ export class WhenExpression : public Expression {
     WhenExpression(Span span, Expression* subject, std::vector<WhenArm*> arms)
         : Expression(static_kind, span), subject(subject), arms(std::move(arms)),
           is_exhaustive(false) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class ClosureExpression : public Expression {
@@ -1106,11 +761,6 @@ export class ClosureExpression : public Expression {
 
     ClosureExpression(Span span, std::vector<Parameter*> parameters, BlockStatement* body)
         : Expression(static_kind, span), parameters(std::move(parameters)), body(body) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class BlockExpression : public Expression {
@@ -1120,11 +770,6 @@ export class BlockExpression : public Expression {
     BlockStatement* body;
 
     BlockExpression(Span span, BlockStatement* body) : Expression(static_kind, span), body(body) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class BuiltinCall : public Expression {
@@ -1140,11 +785,6 @@ export class BuiltinCall : public Expression {
                 std::vector<Expression*> arguments)
         : Expression(static_kind, span), name(std::move(name)), type_argument(type_argument),
           arguments(std::move(arguments)) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class ArrayLiteralExpression : public Expression {
@@ -1155,11 +795,6 @@ export class ArrayLiteralExpression : public Expression {
 
     ArrayLiteralExpression(Span span, std::vector<Expression*> elements)
         : Expression(static_kind, span), elements(std::move(elements)) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class ReturnStatement : public Statement {
@@ -1170,11 +805,6 @@ export class ReturnStatement : public Statement {
     Expression* value;
 
     ReturnStatement(Span span, Expression* value) : Statement(static_kind, span), value(value) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class WhileStatement : public Statement {
@@ -1187,11 +817,6 @@ export class WhileStatement : public Statement {
 
     WhileStatement(Span span, Expression* condition, BlockStatement* body)
         : Statement(static_kind, span), condition(condition), body(body) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class ForStatement : public Statement {
@@ -1208,11 +833,6 @@ export class ForStatement : public Statement {
                  BlockStatement* body)
         : Statement(static_kind, span), initializer(initializer), condition(condition), step(step),
           body(body) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class DeferStatement : public Statement {
@@ -1223,11 +843,6 @@ export class DeferStatement : public Statement {
     Statement* body;
 
     DeferStatement(Span span, Statement* body) : Statement(static_kind, span), body(body) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class FunctionDeclaration : public Statement {
@@ -1240,10 +855,9 @@ export class FunctionDeclaration : public Statement {
         Span span;
         bool is_static;
         bool is_override;
-        bool is_mutable_receiver;
 
         explicit MemberModifiers(Span span)
-            : span(span), is_static(false), is_override(false), is_mutable_receiver(false) {}
+            : span(span), is_static(false), is_override(false) {}
     };
 
     Visibility::Type visibility;
@@ -1290,11 +904,6 @@ export class FunctionDeclaration : public Statement {
     }
 
     bool is_member() const { return !parent.empty(); }
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class InterfaceDeclaration;
@@ -1325,11 +934,6 @@ export class InterfaceDeclaration : public Statement {
         : Statement(static_kind, span), visibility(visibility), name(std::move(name)),
           attributes(std::move(attributes)), generic_parameters(std::move(generic_parameters)),
           inheritance(std::move(inheritance)), methods(std::move(methods)) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class StructDeclaration : public Statement {
@@ -1362,11 +966,6 @@ export class StructDeclaration : public Statement {
           attributes(std::move(attributes)), generic_parameters(std::move(generic_parameters)),
           inheritance(std::move(inheritance)), fields(std::move(fields)),
           methods(std::move(methods)), structs(std::move(structs)), enums(std::move(enums)) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class EnumDeclaration : public Statement {
@@ -1396,11 +995,6 @@ export class EnumDeclaration : public Statement {
           attributes(std::move(attributes)), generic_parameters(std::move(generic_parameters)),
           backing_type(backing_type), inheritance(std::move(inheritance)),
           variants(std::move(variants)), methods(std::move(methods)) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class VarDeclaration : public Statement {
@@ -1425,11 +1019,6 @@ export class VarDeclaration : public Statement {
         : Statement(static_kind, span), visibility(visibility), storage_kind(storage_kind),
           attributes(std::move(attributes)), name(std::move(name)), annotation(annotation),
           initializer(initializer), type(nullptr), variable_symbol(nullptr) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class ExternFunctionDeclaration : public Statement {
@@ -1466,11 +1055,6 @@ export class ExternFunctionDeclaration : public Statement {
 
         return true;
     }
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class ExternVarDeclaration : public Statement {
@@ -1491,11 +1075,6 @@ export class ExternVarDeclaration : public Statement {
                          std::string name, TypeExpression* annotation)
         : Statement(static_kind, span), visibility(visibility), attributes(std::move(attributes)),
           name(std::move(name)), annotation(annotation), type(nullptr), variable_symbol(nullptr) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class ImportStatement : public Statement {
@@ -1508,11 +1087,6 @@ export class ImportStatement : public Statement {
 
     ImportStatement(Span span, std::vector<IdentifierExpression*> path, std::string alias)
         : Statement(static_kind, span), path(std::move(path)), alias(std::move(alias)) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class TypeAliasDeclaration : public Statement {
@@ -1531,33 +1105,14 @@ export class TypeAliasDeclaration : public Statement {
                          std::vector<GenericParameter*> generic_parameters, TypeExpression* target)
         : Statement(static_kind, span), visibility(visibility), name(std::move(name)),
           generic_parameters(std::move(generic_parameters)), target(target) {}
-
-    template <typename T>
-    T accept(Visitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export template <typename T>
-class Visitor {
-
+class ExpressionVisitor {
   public:
-    virtual ~Visitor() = default;
+    virtual ~ExpressionVisitor() = default;
 
     virtual T visit(TypeExpression& node) = 0;
-    virtual T visit(Attribute& node) = 0;
-    virtual T visit(GenericParameter& node) = 0;
-    virtual T visit(GenericArgument& node) = 0;
-    virtual T visit(Parameter& node) = 0;
-    virtual T visit(Argument& node) = 0;
-    virtual T visit(FunctionPrototype& node) = 0;
-    virtual T visit(Field& node) = 0;
-    virtual T visit(EnumVariant& node) = 0;
-    virtual T visit(StructLiteralField& node) = 0;
-    virtual T visit(WhenPatternField& node) = 0;
-    virtual T visit(WhenPattern& node) = 0;
-    virtual T visit(WhenArm& node) = 0;
-
     virtual T visit(NumberLiteral& node) = 0;
     virtual T visit(FloatLiteral& node) = 0;
     virtual T visit(StringLiteral& node) = 0;
@@ -1579,23 +1134,7 @@ class Visitor {
     virtual T visit(ClosureExpression& node) = 0;
     virtual T visit(BlockExpression& node) = 0;
     virtual T visit(BuiltinCall& node) = 0;
-
-    virtual T visit(BlockStatement& node) = 0;
-    virtual T visit(ExpressionStatement& node) = 0;
     virtual T visit(IfExpression& node) = 0;
-    virtual T visit(ReturnStatement& node) = 0;
-    virtual T visit(WhileStatement& node) = 0;
-    virtual T visit(ForStatement& node) = 0;
-    virtual T visit(DeferStatement& node) = 0;
-    virtual T visit(InterfaceDeclaration& node) = 0;
-    virtual T visit(StructDeclaration& node) = 0;
-    virtual T visit(EnumDeclaration& node) = 0;
-    virtual T visit(VarDeclaration& node) = 0;
-    virtual T visit(FunctionDeclaration& node) = 0;
-    virtual T visit(ExternFunctionDeclaration& node) = 0;
-    virtual T visit(ExternVarDeclaration& node) = 0;
-    virtual T visit(ImportStatement& node) = 0;
-    virtual T visit(TypeAliasDeclaration& node) = 0;
     virtual T visit(ArrayLiteralExpression& node) = 0;
 
     T visit_expression(Expression& expression) {
@@ -1677,6 +1216,42 @@ class Visitor {
 
         return T();
     }
+
+};
+
+export template <typename T>
+class Visitor : public ExpressionVisitor<T> {
+  public:
+    using ExpressionVisitor<T>::visit;
+    using ExpressionVisitor<T>::visit_expression;
+
+    virtual T visit(Attribute& node) = 0;
+    virtual T visit(GenericParameter& node) = 0;
+    virtual T visit(GenericArgument& node) = 0;
+    virtual T visit(Parameter& node) = 0;
+    virtual T visit(Argument& node) = 0;
+    virtual T visit(FunctionPrototype& node) = 0;
+    virtual T visit(Field& node) = 0;
+    virtual T visit(EnumVariant& node) = 0;
+    virtual T visit(StructLiteralField& node) = 0;
+    virtual T visit(WhenPatternField& node) = 0;
+    virtual T visit(WhenPattern& node) = 0;
+    virtual T visit(WhenArm& node) = 0;
+    virtual T visit(BlockStatement& node) = 0;
+    virtual T visit(ExpressionStatement& node) = 0;
+    virtual T visit(ReturnStatement& node) = 0;
+    virtual T visit(WhileStatement& node) = 0;
+    virtual T visit(ForStatement& node) = 0;
+    virtual T visit(DeferStatement& node) = 0;
+    virtual T visit(InterfaceDeclaration& node) = 0;
+    virtual T visit(StructDeclaration& node) = 0;
+    virtual T visit(EnumDeclaration& node) = 0;
+    virtual T visit(VarDeclaration& node) = 0;
+    virtual T visit(FunctionDeclaration& node) = 0;
+    virtual T visit(ExternFunctionDeclaration& node) = 0;
+    virtual T visit(ExternVarDeclaration& node) = 0;
+    virtual T visit(ImportStatement& node) = 0;
+    virtual T visit(TypeAliasDeclaration& node) = 0;
 
     T visit_statement(Statement& statement) {
         if (auto* block = statement.as<BlockStatement>(); block != nullptr) {

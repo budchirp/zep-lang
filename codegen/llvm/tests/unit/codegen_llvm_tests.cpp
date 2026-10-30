@@ -44,7 +44,7 @@ TEST(CodegenLlvm, LowersEvaluatedFloatPayloadWithoutReinterpretingBitsAsDigits) 
     auto* returned = function->body->statements[0]->as<ReturnStatement>();
     ASSERT_NE(returned, nullptr);
     returned->value->compile_time_value =
-        CompileTimeValue(-1.25, harness.frontend.sema.builtin_resolver.primitives.at("f64"));
+        CompileTimeValue(-1.25, harness.frontend.sema.primitives.entries.at("f64"));
     auto program = harness.lower();
     LLVMBackend backend;
 
@@ -135,4 +135,27 @@ TEST(CodegenLlvm, EmitsExternVarWithName) {
     });
 
     EXPECT_NE(ir.find("@custom_errno = external global i32"), std::string::npos);
+}
+
+TEST(CodegenLlvm, EmitsUnterminatedConditionalLoopAndShortCircuitBlocks) {
+    TestWorkspace workspace("llvm_control_flow_terminators");
+    HirHarness harness(R"zep(
+fn main() -> i32 {
+    var mut value: i32 = 0
+    while (value < 3) {
+        value = value + 1
+    }
+    return if (value == 3 && true) { value } else { 0 }
+}
+)zep");
+    ASSERT_TRUE(harness.succeeded());
+
+    auto program = harness.lower();
+    ASSERT_NE(program, nullptr);
+    LLVMBackend backend;
+
+    auto result = backend.generate(*program, workspace.file("control_flow.o"), CodegenOptions());
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(std::filesystem::exists(workspace.file("control_flow.o")));
 }

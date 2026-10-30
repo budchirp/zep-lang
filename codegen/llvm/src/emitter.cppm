@@ -32,7 +32,7 @@ import zep.hir.node;
 import zep.hir.program;
 import zep.frontend.sema.type;
 import zep.frontend.node;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 import zep.frontend.sema.scope;
 import zep.codegen.llvm.type;
 import zep.codegen.llvm.scope;
@@ -49,7 +49,6 @@ export class FunctionEmitter : public HIRVisitor<llvm::Value*> {
     CodegenScope& scope;
     DispatchBuilder& dispatch;
     DeclarationEmitter& declarations;
-    const HIRFunctionDeclaration* current_function = nullptr;
 
     llvm::Value* equal(llvm::Value* left, llvm::Value* right) {
         if (left == nullptr || right == nullptr) {
@@ -114,7 +113,7 @@ export class FunctionEmitter : public HIRVisitor<llvm::Value*> {
 
     void return_fallback(const Type* return_type, llvm::Value* last_value) {
         auto* block = builder.GetInsertBlock();
-        if (block == nullptr || block->getTerminator() != nullptr) {
+        if (block == nullptr || block->hasTerminator()) {
             return;
         }
 
@@ -246,7 +245,7 @@ export class FunctionEmitter : public HIRVisitor<llvm::Value*> {
         scope.exit();
 
         auto reaches_merge = false;
-        if (builder.GetInsertBlock()->getTerminator() == nullptr) {
+        if (!builder.GetInsertBlock()->hasTerminator()) {
             builder.CreateBr(merge_block);
             reaches_merge = true;
         }
@@ -1020,7 +1019,7 @@ export class FunctionEmitter : public HIRVisitor<llvm::Value*> {
 
         builder.SetInsertPoint(then_block);
         auto* then_value = visit_statement(*node.then_branch);
-        auto then_reaches_merge = builder.GetInsertBlock()->getTerminator() == nullptr;
+        auto then_reaches_merge = !builder.GetInsertBlock()->hasTerminator();
         if (then_reaches_merge) {
             builder.CreateBr(merge_block);
         }
@@ -1033,7 +1032,7 @@ export class FunctionEmitter : public HIRVisitor<llvm::Value*> {
         if (node.else_branch != nullptr) {
             else_value = visit_statement(*node.else_branch);
         }
-        auto else_reaches_merge = builder.GetInsertBlock()->getTerminator() == nullptr;
+        auto else_reaches_merge = !builder.GetInsertBlock()->hasTerminator();
         if (else_reaches_merge) {
             builder.CreateBr(merge_block);
         }
@@ -1100,7 +1099,7 @@ export class FunctionEmitter : public HIRVisitor<llvm::Value*> {
                           merge_block, next_block, function, incoming_values, incoming_blocks);
         }
 
-        if (builder.GetInsertBlock()->getTerminator() == nullptr) {
+        if (!builder.GetInsertBlock()->hasTerminator()) {
             if (node.is_exhaustive) {
                 builder.CreateUnreachable();
             } else {
@@ -1180,7 +1179,7 @@ export class FunctionEmitter : public HIRVisitor<llvm::Value*> {
 
         builder.SetInsertPoint(body_block);
         visit_statement(*node.body);
-        if (builder.GetInsertBlock()->getTerminator() == nullptr) {
+        if (!builder.GetInsertBlock()->hasTerminator()) {
             builder.CreateBr(step_block);
         }
 
@@ -1188,7 +1187,7 @@ export class FunctionEmitter : public HIRVisitor<llvm::Value*> {
         if (node.step != nullptr) {
             visit_expression(*node.step);
         }
-        if (builder.GetInsertBlock()->getTerminator() == nullptr) {
+        if (!builder.GetInsertBlock()->hasTerminator()) {
             builder.CreateBr(condition_block);
         }
 
@@ -1243,10 +1242,7 @@ export class FunctionEmitter : public HIRVisitor<llvm::Value*> {
 
         scope.enter();
         setup_parameters(function, node.type->as<FunctionType>());
-        auto* saved_current_function = current_function;
-        current_function = &node;
         auto* last_value = visit_statement(*node.body);
-        current_function = saved_current_function;
         scope.exit();
 
         return_fallback(node.return_type, last_value);
@@ -1262,8 +1258,6 @@ export class FunctionEmitter : public HIRVisitor<llvm::Value*> {
                              DispatchBuilder& dispatch, DeclarationEmitter& declarations)
         : context(context), module(module), builder(builder), lowerer(lowerer), scope(scope),
           dispatch(dispatch), declarations(declarations) {}
-
-    llvm::Value* emit_function(HIRFunctionDeclaration& node) { return visit(node); }
 
     void emit_definitions(const HIRProgram& program) {
         for (auto* statement : program.statements) {

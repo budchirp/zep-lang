@@ -81,9 +81,5 @@ export class ModulePath {
         return result;
     }
 
-    std::filesystem::path source_path(const std::filesystem::path& root) const {
-        return root / path().replace_extension(".zep");
-    }
-
     bool operator==(const ModulePath& other) const = default;
 };

@@ -9,7 +9,7 @@ export module zep.frontend.sema.scope:symbol;
 
 import zep.common.source.span;
 import zep.common.arena;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 import zep.frontend.sema.type;
 
 export class Scope;
@@ -178,11 +178,6 @@ export class EnumVariantSymbol final : public Symbol {
                       const EnumType* enum_type, const EnumVariantType* variant_type)
         : Symbol(static_kind, std::move(name), span, visibility, enum_type), enum_type(enum_type),
           variant_type(variant_type) {}
-};
-
-export class OverloadSet {
-  public:
-    std::vector<FunctionSymbol*> functions;
 };
 
 export using SymbolArena = Arena<Symbol>;

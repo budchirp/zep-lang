@@ -3,12 +3,13 @@
 
 import zep.frontend.test.harness;
 import zep.frontend.sema.type;
-import zep.frontend.sema.type.resolver;
+import zep.frontend.sema.type_resolver;
 import zep.common.source.span;
+import zep.common.source.position;
 import zep.frontend.sema.context;
-import zep.frontend.sema.constant.environment;
+import zep.frontend.sema.substitution;
 import zep.frontend.sema.constant.evaluator;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 import zep.frontend.node;
 
 TEST(FrontendTypeCheckerPositive, AcceptsGenericFunctionsStructsAndNamedGenericArguments) {
@@ -30,6 +31,35 @@ fn main() -> i32 {
 )zep";
 
     EXPECT_TRUE(assert_type_check_ok(source));
+}
+
+TEST(FrontendTypeCheckerPositive, AcceptsReorderedNamedCallAndLiteralArguments) {
+    EXPECT_TRUE(assert_type_check_ok(R"zep(
+struct Pair<A, B> { public: var first: A var second: B }
+fn first<A, B>(left: A, right: B) -> A { return left }
+fn main() -> i32 {
+    var pair = Pair<B: cstr, A: i32> { first: 7, second: "zep" }
+    return first<B: cstr, A: i32>(pair.first, pair.second)
+}
+)zep"));
+}
+
+TEST(FrontendGenerics, PreservesLiteralArgumentDiagnosticOrderAndLocations) {
+    FrontendHarness harness(
+        "struct Pair<A, B> { public: var first: A var second: B }\n"
+        "fn first<A, B>(left: A, right: B) -> A { return left }\n"
+        "fn test() -> void { var value = Pair<A: i32, A: i32> { first: 1, second: 2 } }\n");
+    harness.type_check();
+
+    const auto& diagnostics = harness.context.diagnostics.entries;
+    ASSERT_EQ(diagnostics.size(), 3U);
+    EXPECT_EQ(diagnostics[0].message, "duplicate generic argument 'A'");
+    EXPECT_EQ(diagnostics[1].message, "missing generic argument 'B'");
+    EXPECT_EQ(diagnostics[2].message, "cannot determine type of variable 'value'");
+    EXPECT_TRUE(assert_diagnostic(harness, diagnostics[0].message,
+                                  Span(Position(3, 46), Position(3, 47))));
+    EXPECT_TRUE(assert_diagnostic(harness, diagnostics[1].message,
+                                  Span(Position(3, 33), Position(3, 37))));
 }
 
 TEST(FrontendTypeCheckerPositive, AcceptsConstGenericsAndGenericArraySizes) {
@@ -130,7 +160,7 @@ TEST(FrontendConstGenerics, NominalCacheDistinguishesDefinitionsWithTheSameName)
     ASSERT_TRUE(harness.type_check_succeeded());
     auto& sema = harness.sema;
     TypeResolver resolver(sema.types, sema.env, harness.context.diagnostics);
-    const auto* integer = sema.builtin_resolver.primitives.at("i32");
+    const auto* integer = sema.primitives.entries.at("i32");
     StructType first("Item", {}, {FieldType("first", integer)});
     StructType second("Item", {}, {FieldType("second", integer)});
     NamedType first_wrapper("Wrapper", {GenericArgumentType("", &first)});
@@ -165,17 +195,17 @@ type Second = Pair<B: i32, A: cstr>
     ASSERT_EQ(first->fields.size(), 2);
     ASSERT_EQ(second->fields.size(), 2);
 
-    EXPECT_EQ(first->fields[0].type, sema.builtin_resolver.primitives.at("i32"));
-    EXPECT_EQ(first->fields[1].type, sema.builtin_resolver.primitives.at("cstr"));
-    EXPECT_EQ(second->fields[0].type, sema.builtin_resolver.primitives.at("cstr"));
-    EXPECT_EQ(second->fields[1].type, sema.builtin_resolver.primitives.at("i32"));
+    EXPECT_EQ(first->fields[0].type, sema.primitives.entries.at("i32"));
+    EXPECT_EQ(first->fields[1].type, sema.primitives.entries.at("cstr"));
+    EXPECT_EQ(second->fields[0].type, sema.primitives.entries.at("cstr"));
+    EXPECT_EQ(second->fields[1].type, sema.primitives.entries.at("i32"));
 }
 
 TEST(FrontendConstGenerics, SubstitutionUsesDeclarationIdentityAcrossShadowing) {
     FrontendHarness harness("");
     auto& sema = harness.sema;
     TypeResolver resolver(sema.types, sema.env, harness.context.diagnostics);
-    const auto* integer = sema.builtin_resolver.primitives.at("i32");
+    const auto* integer = sema.primitives.entries.at("i32");
     const auto outer_identity = static_cast<const void*>(&resolver);
     const auto inner_identity = static_cast<const void*>(&integer);
     GenericParameterType outer(GenericParameterType::Kind::Type::Const, "N", integer,
@@ -237,7 +267,7 @@ TEST(FrontendConstGenerics, NormalizesConstArgumentPayloadsToTheDeclaredType) {
 
     EXPECT_EQ(*binding.value,
               CompileTimeValue(CompileTimeValue::Kind::Type::SignedInteger,
-                               sema.builtin_resolver.primitives.at("i64"), std::int64_t{3}));
+                               sema.primitives.entries.at("i64"), std::int64_t{3}));
 }
 
 TEST(FrontendConstGenerics, RejectsTypeAndConstArgumentCategoryMismatches) {
@@ -263,19 +293,21 @@ type Callback = (Buffer<1 + 2>) -> Buffer<2 + 2>
     const auto* nested_argument = nested_declaration->fields[0]->type->generic_arguments[0];
     ASSERT_TRUE(nested_argument->const_binding.has_value());
     ASSERT_FALSE(nested_argument->const_binding->value.has_value());
-    const auto* expression = static_cast<const Expression*>(nested_argument->const_binding->source);
+    auto* expression =
+        static_cast<Expression*>(nested_argument->const_binding->expression);
     ASSERT_NE(expression->as<BinaryExpression>(), nullptr);
     CompileTimeEnvironment environment;
     environment.bind("N",
                      GenericBinding(ConstBinding(CompileTimeValue(
                          CompileTimeValue::Kind::Type::SignedInteger,
-                         harness.sema.builtin_resolver.primitives.at("i64"), std::int64_t{2}))),
+                         harness.sema.primitives.entries.at("i64"), std::int64_t{2}))),
                      nested_declaration->generic_parameters[0]);
-    Evaluator evaluator(harness.context.diagnostics, &harness.sema.env, &environment, true);
-    const auto direct_value = evaluator.evaluate_uncached(*const_cast<Expression*>(expression));
+    Evaluator evaluator(harness.context.diagnostics, &harness.sema.env, &environment,
+                        EvaluationPolicy::Type::Dependent);
+    const auto direct_value = evaluator.evaluate(*expression).value;
     ASSERT_TRUE(direct_value.has_value());
     EXPECT_EQ(*direct_value, CompileTimeValue(CompileTimeValue::Kind::Type::SignedInteger,
-                                              harness.sema.builtin_resolver.primitives.at("i64"),
+                                              harness.sema.primitives.entries.at("i64"),
                                               std::int64_t{3}));
     const auto* nested_alias = harness.program.statements[2]->as<TypeAliasDeclaration>();
     ASSERT_NE(nested_alias, nullptr);
@@ -319,7 +351,7 @@ TEST(FrontendConstGenerics, PreservesUnsignedTypeArgumentsAboveSignedRange) {
     const auto& binding = *type->generic_arguments[0].const_binding;
     ASSERT_TRUE(binding.is_concrete());
     EXPECT_EQ(*binding.value, CompileTimeValue(CompileTimeValue::Kind::Type::UnsignedInteger,
-                                               harness.sema.builtin_resolver.primitives.at("u64"),
+                                               harness.sema.primitives.entries.at("u64"),
                                                static_cast<std::uint64_t>(UINT64_MAX)));
 }
 

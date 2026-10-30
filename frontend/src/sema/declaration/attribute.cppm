@@ -7,7 +7,7 @@ module;
 #include <utility>
 #include <vector>
 
-export module zep.frontend.sema.resolver.attribute;
+export module zep.frontend.sema.declaration.attribute;
 
 import zep.common.context;
 import zep.common.source.span;

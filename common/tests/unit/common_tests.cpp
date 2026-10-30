@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 import zep.common.arena;
@@ -35,6 +36,19 @@ class ArenaValue : public ArenaBase {
     explicit ArenaValue(int value) : value(value) {}
 };
 
+class TrackedArenaValue : public ArenaBase {
+  private:
+    std::vector<int>& destroyed;
+
+  public:
+    int value;
+
+    TrackedArenaValue(std::vector<int>& destroyed, int value)
+        : destroyed(destroyed), value(value) {}
+
+    ~TrackedArenaValue() override { destroyed.push_back(value); }
+};
+
 TEST(CommonArena, StoresCreatedObjects) {
     Arena<ArenaBase> arena;
 
@@ -45,6 +59,48 @@ TEST(CommonArena, StoresCreatedObjects) {
     ASSERT_NE(second, nullptr);
     EXPECT_EQ(first->value, 1);
     EXPECT_EQ(second->value, 2);
+}
+
+TEST(CommonArena, DestroysObjectsInCreationOrder) {
+    std::vector<int> destroyed;
+    destroyed.reserve(2);
+
+    {
+        Arena<ArenaBase> arena;
+        static_cast<void>(arena.create<TrackedArenaValue>(destroyed, 1));
+        static_cast<void>(arena.create<TrackedArenaValue>(destroyed, 2));
+        EXPECT_TRUE(destroyed.empty());
+    }
+
+    EXPECT_EQ(destroyed, (std::vector<int>{1, 2}));
+}
+
+TEST(CommonArena, MovesOwnershipAndDestroysReplacedObjects) {
+    std::vector<int> destroyed;
+    destroyed.reserve(3);
+
+    {
+        Arena<ArenaBase> source;
+        auto* first = source.create<TrackedArenaValue>(destroyed, 1);
+        auto* second = source.create<TrackedArenaValue>(destroyed, 2);
+        Arena<ArenaBase> moved(std::move(source));
+        EXPECT_TRUE(destroyed.empty());
+
+        Arena<ArenaBase> destination;
+        static_cast<void>(destination.create<TrackedArenaValue>(destroyed, 3));
+        destination = std::move(moved);
+
+        EXPECT_EQ(destroyed, (std::vector<int>{3}));
+        EXPECT_EQ(first->value, 1);
+        EXPECT_EQ(second->value, 2);
+
+        auto* same = &destination;
+        destination = std::move(*same);
+        EXPECT_EQ(destroyed, (std::vector<int>{3}));
+        EXPECT_EQ(first->value, 1);
+    }
+
+    EXPECT_EQ(destroyed, (std::vector<int>{3, 1, 2}));
 }
 
 TEST(CommonProcess, RejectsEmptyCommand) {

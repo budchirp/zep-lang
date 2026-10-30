@@ -15,8 +15,8 @@ export module zep.lsp.analysis.completion;
 import zep.common.source.position;
 import zep.common.source.span;
 import zep.frontend.node;
-import zep.frontend.sema.kind;
-import zep.frontend.sema.resolver.builtin;
+import zep.frontend.kind;
+import zep.frontend.sema.expression.builtin;
 import zep.frontend.sema.scope;
 import zep.frontend.sema.type;
 import zep.frontend.token.keywords;
@@ -409,7 +409,7 @@ export class Completer {
             }
 
             const FunctionSymbol* selected = nullptr;
-            for (const auto* function : overloads->functions) {
+            for (const auto* function : overloads) {
                 if (function != nullptr &&
                     function->callable_kind == FunctionSymbol::Kind::Type::StaticMethod) {
                     selected = function;
@@ -574,8 +574,8 @@ export class Completer {
                 for (const auto& [name, overloads] : current_scope->local_functions()) {
                     if ((current_scope->kind == Scope::Kind::Type::Function ||
                          current_scope->kind == Scope::Kind::Type::Block) &&
-                        !overloads->functions.empty() &&
-                        overloads->functions.front()->span.start.line > target_line) {
+                        !overloads.empty() &&
+                        overloads.front()->span.start.line > target_line) {
                         continue;
                     }
                     if (seen.insert(name).second) {
@@ -596,7 +596,8 @@ export class Completer {
             }
         }
 
-        for (const auto& builtin_name : BuiltinResolver::builtin_names()) {
+        for (const auto name : BuiltinChecker::names) {
+            auto builtin_name = "#" + std::string(name);
             if (seen.insert(builtin_name).second) {
                 items.emplace_back(builtin_name, CompletionKind::Type::Function, "builtin");
             }

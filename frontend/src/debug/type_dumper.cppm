@@ -8,7 +8,7 @@ export module zep.frontend.debug.type_dumper;
 
 import zep.common.logger;
 import zep.frontend.sema.type;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 
 export class TypeDumper {
   public:
@@ -61,7 +61,9 @@ export class TypeDumper {
         Logger::print("type: ");
 
         if (arg.is_const()) {
-            Logger::print(arg.const_binding->to_string());
+            Logger::print(arg.const_binding->value.has_value()
+                              ? arg.const_binding->value->to_string()
+                              : "<dependent>");
         } else if (arg.type != nullptr) {
             dump(arg.type, depth + 1, false, false);
         } else {
@@ -153,97 +155,49 @@ export class TypeDumper {
             return;
         }
 
+        if (with_indent) {
+            Logger::print_indent(depth);
+        }
+
         switch (type->kind) {
         case Type::Kind::Type::Any: {
-            if (with_indent) {
-                Logger::print_indent(depth);
-            }
-
             Logger::print("AnyType()");
-
-            if (trailing_newline) {
-                Logger::print("\n");
-            }
 
             break;
         }
 
         case Type::Kind::Type::Void: {
-            if (with_indent) {
-                Logger::print_indent(depth);
-            }
-
             Logger::print("VoidType()");
-
-            if (trailing_newline) {
-                Logger::print("\n");
-            }
 
             break;
         }
 
         case Type::Kind::Type::Never: {
-            if (with_indent) {
-                Logger::print_indent(depth);
-            }
-
             Logger::print("NeverType()");
-
-            if (trailing_newline) {
-                Logger::print("\n");
-            }
 
             break;
         }
 
         case Type::Kind::Type::String: {
-            if (with_indent) {
-                Logger::print_indent(depth);
-            }
-
             Logger::print("StringType()");
-
-            if (trailing_newline) {
-                Logger::print("\n");
-            }
 
             break;
         }
 
         case Type::Kind::Type::Boolean: {
-            if (with_indent) {
-                Logger::print_indent(depth);
-            }
-
             Logger::print("BooleanType()");
-
-            if (trailing_newline) {
-                Logger::print("\n");
-            }
 
             break;
         }
 
         case Type::Kind::Type::Char: {
-            if (with_indent) {
-                Logger::print_indent(depth);
-            }
-
             Logger::print("CharType()");
-
-            if (trailing_newline) {
-                Logger::print("\n");
-            }
 
             break;
         }
 
         case Type::Kind::Type::Integer: {
             const auto* integer = type->as<IntegerType>();
-
-            if (with_indent) {
-                Logger::print_indent(depth);
-            }
 
             Logger::print("IntegerType(\n");
 
@@ -256,35 +210,19 @@ export class TypeDumper {
             Logger::print_indent(depth);
             Logger::print(")");
 
-            if (trailing_newline) {
-                Logger::print("\n");
-            }
-
             break;
         }
 
         case Type::Kind::Type::Float: {
             const auto* floating = type->as<FloatType>();
 
-            if (with_indent) {
-                Logger::print_indent(depth);
-            }
-
             Logger::print("FloatType(size: ", floating->size, ")");
-
-            if (trailing_newline) {
-                Logger::print("\n");
-            }
 
             break;
         }
 
         case Type::Kind::Type::Named: {
             const auto* named = type->as<NamedType>();
-
-            if (with_indent) {
-                Logger::print_indent(depth);
-            }
 
             Logger::print("NamedType(\n");
 
@@ -311,19 +249,11 @@ export class TypeDumper {
             Logger::print_indent(depth);
             Logger::print(")");
 
-            if (trailing_newline) {
-                Logger::print("\n");
-            }
-
             break;
         }
 
         case Type::Kind::Type::Array: {
             const auto* array = type->as<ArrayType>();
-
-            if (with_indent) {
-                Logger::print_indent(depth);
-            }
 
             Logger::print("ArrayType(\n");
 
@@ -345,19 +275,11 @@ export class TypeDumper {
             Logger::print_indent(depth);
             Logger::print(")");
 
-            if (trailing_newline) {
-                Logger::print("\n");
-            }
-
             break;
         }
 
         case Type::Kind::Type::Pointer: {
             const auto* pointer = type->as<PointerType>();
-
-            if (with_indent) {
-                Logger::print_indent(depth);
-            }
 
             Logger::print("PointerType(\n");
 
@@ -372,19 +294,11 @@ export class TypeDumper {
             Logger::print_indent(depth);
             Logger::print(")");
 
-            if (trailing_newline) {
-                Logger::print("\n");
-            }
-
             break;
         }
 
         case Type::Kind::Type::Struct: {
             const auto* structure = type->as<StructType>();
-
-            if (with_indent) {
-                Logger::print_indent(depth);
-            }
 
             Logger::print("StructType(\n");
 
@@ -429,19 +343,11 @@ export class TypeDumper {
             Logger::print_indent(depth);
             Logger::print(")");
 
-            if (trailing_newline) {
-                Logger::print("\n");
-            }
-
             break;
         }
 
         case Type::Kind::Type::Enum: {
             const auto* enumeration = type->as<EnumType>();
-
-            if (with_indent) {
-                Logger::print_indent(depth);
-            }
 
             Logger::print("EnumType(\n");
 
@@ -512,19 +418,11 @@ export class TypeDumper {
             Logger::print_indent(depth);
             Logger::print(")");
 
-            if (trailing_newline) {
-                Logger::print("\n");
-            }
-
             break;
         }
 
         case Type::Kind::Type::Interface: {
             const auto* interface_type = type->as<InterfaceType>();
-
-            if (with_indent) {
-                Logger::print_indent(depth);
-            }
 
             Logger::print("InterfaceType(\n");
 
@@ -537,19 +435,11 @@ export class TypeDumper {
             Logger::print_indent(depth);
             Logger::print(")");
 
-            if (trailing_newline) {
-                Logger::print("\n");
-            }
-
             break;
         }
 
         case Type::Kind::Type::Function: {
             const auto* function = type->as<FunctionType>();
-
-            if (with_indent) {
-                Logger::print_indent(depth);
-            }
 
             Logger::print("FunctionType(\n");
 
@@ -607,12 +497,12 @@ export class TypeDumper {
             Logger::print_indent(depth);
             Logger::print(")");
 
-            if (trailing_newline) {
-                Logger::print("\n");
-            }
-
             break;
         }
+        }
+
+        if (trailing_newline) {
+            Logger::print("\n");
         }
     }
 };

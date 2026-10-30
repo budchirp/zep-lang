@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <limits>
 #include <gtest/gtest.h>
 #include <string>
 #include <unordered_map>
@@ -8,6 +9,7 @@ import zep.frontend.debug.ast_dumper;
 import zep.frontend.lexer;
 import zep.frontend.node;
 import zep.frontend.sema.context;
+import zep.frontend.sema.scope;
 import zep.frontend.sema.type;
 import zep.frontend.test.harness;
 import zep.frontend.token;
@@ -91,11 +93,44 @@ TEST(FrontendParser, AstSnapshotRemainsStable) {
     EXPECT_TRUE(Snapshot::matches("fixtures/snapshots/simple_ast.txt", output));
 }
 
+TEST(FrontendScopes, PreservesOverloadOrderVisibilityAndReferencesAcrossInsertions) {
+    FrontendHarness harness("public fn choose(value: i32) -> i32 { return value }\n"
+                            "fn choose(value: i64) -> i64 { return value }\n");
+    ASSERT_TRUE(harness.type_check_succeeded());
+
+    auto& root = *harness.sema.env.root_scope;
+    const auto& overloads = root.lookup_function_overloads("choose");
+    ASSERT_EQ(overloads.size(), 2U);
+    EXPECT_EQ(overloads[0]->function_type->parameters[0].type,
+              harness.sema.primitives.entries.at("i32"));
+    EXPECT_EQ(overloads[1]->function_type->parameters[0].type,
+              harness.sema.primitives.entries.at("i64"));
+
+    const auto* stored = root.find_local_function_overloads("choose");
+    for (auto index = 0; index < 100; ++index) {
+        root.define_function("alias_" + std::to_string(index), overloads.front());
+    }
+
+    EXPECT_EQ(root.find_local_function_overloads("choose"), stored);
+    EXPECT_EQ(root.lookup_function("choose"), overloads.front());
+    const auto exported = root.find_exported_function_overloads("choose");
+    ASSERT_EQ(exported.size(), 1U);
+    EXPECT_EQ(exported.front(), overloads.front());
+
+    Scope child(Scope::Kind::Type::Block, "child", &root);
+    EXPECT_EQ(&child.lookup_function_overloads("choose"), stored);
+    child.define_function("choose", overloads.back());
+    ASSERT_EQ(child.lookup_function_overloads("choose").size(), 1U);
+    EXPECT_EQ(child.lookup_function("choose"), overloads.back());
+    EXPECT_EQ(child.find_local_function_overloads("missing"), nullptr);
+    EXPECT_TRUE(child.lookup_function_overloads("missing").empty());
+}
+
 TEST(FrontendTypes, ChecksCompatibilityRules) {
     SemaContext sema;
-    const Type* i32 = sema.builtin_resolver.primitives.at("i32");
-    const Type* u32 = sema.builtin_resolver.primitives.at("u32");
-    const Type* void_type = sema.builtin_resolver.primitives.at("void");
+    const Type* i32 = sema.primitives.entries.at("i32");
+    const Type* u32 = sema.primitives.entries.at("u32");
+    const Type* void_type = sema.primitives.entries.at("void");
 
     PointerType mutable_i32(i32, true);
     PointerType immutable_i32(i32, false);
@@ -109,6 +144,44 @@ TEST(FrontendTypes, ChecksCompatibilityRules) {
     EXPECT_FALSE(mutable_i32.accepts(&immutable_i32));
     EXPECT_TRUE(immutable_void.accepts(&mutable_i32));
     EXPECT_FALSE(four_i32.accepts(&four_u32));
+}
+
+TEST(FrontendTypes, LayoutDistinguishesDependentInvalidAndConcreteTypes) {
+    SemaContext sema;
+    TypeLayout layout;
+    NamedType parameter("T", {});
+    ArrayType unsized(sema.primitives.entries.at("i32"), UnsizedArrayExtent());
+    ArrayType overflow(sema.primitives.entries.at("i64"),
+                       static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()));
+
+    EXPECT_EQ(layout.resolve(&parameter).state, TypeLayout::Result::State::Dependent);
+    EXPECT_EQ(layout.resolve(&unsized).state, TypeLayout::Result::State::Invalid);
+    EXPECT_EQ(layout.resolve(&overflow).state, TypeLayout::Result::State::Invalid);
+    EXPECT_EQ(layout.resolve(sema.primitives.entries.at("void")).state,
+              TypeLayout::Result::State::Invalid);
+
+    const auto integer = layout.resolve(sema.primitives.entries.at("i32"));
+    ASSERT_EQ(integer.state, TypeLayout::Result::State::Concrete);
+    EXPECT_EQ(integer.size, 4U);
+    EXPECT_EQ(integer.alignment, 4U);
+}
+
+TEST(FrontendTypes, LayoutPadsAggregatesAndRejectsCycles) {
+    SemaContext sema;
+    StructType aggregate("Padded", {},
+                         {FieldType("first", sema.primitives.entries.at("char")),
+                          FieldType("second", sema.primitives.entries.at("i64")),
+                          FieldType("third", sema.primitives.entries.at("char"))});
+    TypeLayout layout;
+    const auto result = layout.resolve(&aggregate);
+    ASSERT_EQ(result.state, TypeLayout::Result::State::Concrete);
+    EXPECT_EQ(result.size, 24U);
+    EXPECT_EQ(result.alignment, 8U);
+
+    StructType recursive("Recursive", {}, {});
+    recursive.fields.emplace_back("self", &recursive);
+    EXPECT_EQ(layout.resolve(&recursive).state, TypeLayout::Result::State::Invalid);
+    EXPECT_EQ(layout.resolve(&aggregate).state, TypeLayout::Result::State::Concrete);
 }
 
 TEST(FrontendSema, AcceptsRepresentativeLanguageFeatures) {
@@ -133,6 +206,6 @@ TEST(FrontendSema, AcceptsRepresentativeLanguageFeatures) {
         "fn main() -> i32 { var owner = Owner { value: 1 } return take(owner) }\n"};
 
     for (const auto& snippet : snippets) {
-        EXPECT_TRUE(FrontendChecks::type_check_ok(snippet)) << snippet;
+        EXPECT_TRUE(assert_type_check_ok(snippet));
     }
 }

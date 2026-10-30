@@ -4,17 +4,11 @@
 #include <string>
 
 import zep.codegen.api;
-import zep.codegen.format;
 import zep.codegen.options;
 
 class FakeBackend : public CodegenBackend {
   public:
-    CodegenFormat::Type selected_format;
     std::filesystem::path selected_output;
-
-    explicit FakeBackend(CodegenFormat::Type format) : selected_format(format) {}
-
-    CodegenFormat::Type format() const override { return selected_format; }
 
     std::expected<void, std::string> generate(const HIRProgram&,
                                               const std::filesystem::path& output,
@@ -24,15 +18,13 @@ class FakeBackend : public CodegenBackend {
     }
 };
 
-TEST(CodegenApi, UsesOneOutputPathForAllFormats) {
+TEST(CodegenApi, PassesOutputPathToBackend) {
     HIRProgram program;
-    for (auto format : {CodegenFormat::Type::Object, CodegenFormat::Type::CSource,
-                        CodegenFormat::Type::Assembly}) {
-        FakeBackend backend(format);
-        auto result = backend.generate(program, "out", CodegenOptions());
-        EXPECT_TRUE(result.has_value());
-        EXPECT_EQ(backend.selected_output, "out");
-    }
+    FakeBackend backend;
+    auto result = backend.generate(program, "out", CodegenOptions());
+
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(backend.selected_output, "out");
 }
 
 TEST(CodegenApi, ParsesOptimizationLevels) {

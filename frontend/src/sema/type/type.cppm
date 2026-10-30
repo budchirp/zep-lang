@@ -8,6 +8,7 @@ module;
 #include <optional>
 #include <string>
 #include <unordered_set>
+#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -16,7 +17,8 @@ export module zep.frontend.sema.type;
 
 export import :base;
 export import :value;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
+
 
 export class GenericParameterType {
   public:
@@ -267,7 +269,9 @@ export class NamedType : public Type {
                     result += arg.name + " = ";
                 }
                 if (arg.is_const()) {
-                    result += arg.const_binding->to_string();
+                    result += arg.const_binding->value.has_value()
+                                  ? arg.const_binding->value->to_string()
+                                  : "<dependent>";
                 } else {
                     result += arg.type == nullptr ? std::string("unknown") : arg.type->to_string();
                 }
@@ -357,7 +361,9 @@ export class NominalType : public Type {
                     result += ", ";
                 }
                 if (generic_arguments[i].is_const()) {
-                    result += generic_arguments[i].const_binding->to_string();
+                    result += generic_arguments[i].const_binding->value.has_value()
+                                  ? generic_arguments[i].const_binding->value->to_string()
+                                  : "<dependent>";
                 } else if (generic_arguments[i].type != nullptr) {
                     result += generic_arguments[i].type->to_string();
                 } else {
@@ -902,6 +908,9 @@ bool Type::accepts(const Type* other) const {
     case Type::Kind::Type::Char:
         return true;
 
+    case Type::Kind::Type::Pointer:
+        break;
+
     case Type::Kind::Type::Integer: {
         const auto* left_integer = as<IntegerType>();
         const auto* right_integer = other->as<IntegerType>();
@@ -923,25 +932,6 @@ bool Type::accepts(const Type* other) const {
         }
 
         return left_float->size == right_float->size;
-    }
-
-    case Type::Kind::Type::Pointer: {
-        const auto* left_pointer = as<PointerType>();
-        const auto* right_pointer = other->as<PointerType>();
-
-        if (left_pointer->is_mutable && !right_pointer->is_mutable) {
-            return false;
-        }
-
-        if (left_pointer->element == nullptr || right_pointer->element == nullptr) {
-            return false;
-        }
-
-        if (left_pointer->element->is<VoidType>() || right_pointer->element->is<VoidType>()) {
-            return true;
-        }
-
-        return left_pointer->element->accepts(right_pointer->element);
     }
 
     case Type::Kind::Type::Array: {
@@ -1028,3 +1018,160 @@ bool Type::accepts(const Type* other) const {
 
     return false;
 }
+
+export class PrimitiveTypes {
+  public:
+    std::unordered_map<std::string, const Type*> entries;
+
+    explicit PrimitiveTypes(TypeArena& types) {
+        entries.reserve(16);
+        entries.emplace("void", types.create<VoidType>());
+        entries.emplace("never", types.create<NeverType>());
+        entries.emplace("cstr", types.create<StringType>());
+        entries.emplace("boolean", types.create<BooleanType>());
+        entries.emplace("char", types.create<CharType>());
+        entries.emplace("any", types.create<AnyType>());
+
+        for (auto width : {8, 16, 32, 64}) {
+            entries.emplace("i" + std::to_string(width),
+                            types.create<IntegerType>(false, static_cast<std::uint8_t>(width)));
+            entries.emplace("u" + std::to_string(width),
+                            types.create<IntegerType>(true, static_cast<std::uint8_t>(width)));
+        }
+
+        for (auto width : {32, 64}) {
+            entries.emplace("f" + std::to_string(width),
+                            types.create<FloatType>(static_cast<std::uint8_t>(width)));
+        }
+    }
+};
+
+export class TypeLayout {
+  public:
+    class Result {
+      public:
+        enum class State : std::uint8_t {
+            Concrete,
+            Dependent,
+            Invalid,
+        };
+
+        State state;
+        std::size_t size;
+        std::size_t alignment;
+
+        Result(State state, std::size_t size = 0, std::size_t alignment = 1)
+            : state(state), size(size), alignment(alignment) {}
+
+        explicit Result(std::size_t size = 0, std::size_t alignment = 1)
+            : state(State::Concrete), size(size), alignment(alignment) {}
+
+        bool append(const Result& field) {
+            alignment = std::max(alignment, field.alignment);
+
+            if (state == State::Invalid || field.state == State::Invalid) {
+                state = State::Invalid;
+                return false;
+            }
+
+            if (state == State::Dependent || field.state == State::Dependent) {
+                state = State::Dependent;
+                return true;
+            }
+
+            const auto padding = (field.alignment - size % field.alignment) % field.alignment;
+            if (padding > limit - size || field.size > limit - size - padding) {
+                state = State::Invalid;
+                return false;
+            }
+
+            size += padding + field.size;
+            return true;
+        }
+    };
+
+  private:
+    static constexpr auto limit =
+        static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max());
+
+    std::unordered_set<const Type*> active;
+
+    Result measure(const Type& type) {
+        if (type.is<NamedType>()) {
+            return Result(Result::State::Dependent);
+        }
+
+        if (const auto* array = type.as<ArrayType>(); array != nullptr) {
+            if (std::holds_alternative<UnsizedArrayExtent>(array->extent)) {
+                return Result(Result::State::Invalid);
+            }
+
+            const auto element = resolve(array->element);
+            if (element.state == Result::State::Invalid) {
+                return element;
+            }
+
+            const auto* extent = std::get_if<ConcreteArrayExtent>(&array->extent);
+            if (extent == nullptr || element.state == Result::State::Dependent) {
+                return Result(Result::State::Dependent, 0, element.alignment);
+            }
+
+            if (element.size != 0 && extent->value > limit / element.size) {
+                return Result(Result::State::Invalid);
+            }
+
+            return Result(element.size * extent->value, element.alignment);
+        }
+
+        Result result;
+        if (const auto* structure = type.as<StructType>(); structure != nullptr) {
+            append_fields(result, structure->fields);
+        } else if (const auto* enumeration = type.as<EnumType>(); enumeration != nullptr) {
+            if (enumeration->backing_type != nullptr) {
+                return resolve(enumeration->backing_type);
+            }
+
+            result = Result(4, 4);
+            for (const auto& variant : enumeration->variants) {
+                if (!append_fields(result, variant.fields)) {
+                    return result;
+                }
+            }
+        } else {
+            return Result(type.byte_size(), type.alignment());
+        }
+
+        if (result.state != Result::State::Invalid) {
+            if (const auto* nominal = type.as_nominal();
+                nominal != nullptr && !nominal->generic_parameters.empty()) {
+                result.state = Result::State::Dependent;
+            } else {
+                result.append(Result(0, result.alignment));
+            }
+        }
+
+        return result;
+    }
+
+    bool append_fields(Result& result, const std::vector<FieldType>& fields) {
+        for (const auto& field : fields) {
+            if (!result.append(resolve(field.type))) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+  public:
+    Result resolve(const Type* type) {
+        if (type == nullptr || type->is<VoidType>() || type->is<NeverType>() ||
+            !active.insert(type).second) {
+            return Result(Result::State::Invalid);
+        }
+
+        auto result = measure(*type);
+        active.erase(type);
+        return result;
+    }
+};

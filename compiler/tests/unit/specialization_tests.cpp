@@ -4,7 +4,7 @@
 import zep.common.source.span;
 import zep.frontend.node;
 import zep.frontend.sema.context;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 import zep.frontend.sema.type;
 import zep.compiler.lowering.mangler;
 import zep.compiler.lowering.specialization;
@@ -13,15 +13,15 @@ class MonomorphizerTest : public testing::Test {
   protected:
     SemaContext sema;
 
-    const Type* i32_type() const { return sema.builtin_resolver.primitives.at("i32"); }
+    const Type* i32_type() const { return sema.primitives.entries.at("i32"); }
 
-    const Type* u32_type() const { return sema.builtin_resolver.primitives.at("u32"); }
+    const Type* u32_type() const { return sema.primitives.entries.at("u32"); }
 
-    const Type* f32_type() const { return sema.builtin_resolver.primitives.at("f32"); }
+    const Type* f32_type() const { return sema.primitives.entries.at("f32"); }
 
-    const Type* boolean_type() const { return sema.builtin_resolver.primitives.at("boolean"); }
+    const Type* boolean_type() const { return sema.primitives.entries.at("boolean"); }
 
-    const Type* void_type() const { return sema.builtin_resolver.primitives.at("void"); }
+    const Type* void_type() const { return sema.primitives.entries.at("void"); }
 
     static std::size_t hash(const GenericBinding& binding) { return GenericBindingHash{}(binding); }
 };
@@ -36,7 +36,7 @@ TEST_F(MonomorphizerTest, EncodesFloatType) {
 }
 
 TEST_F(MonomorphizerTest, EncodesExactTypedFloatPayloads) {
-    const auto* wide = sema.builtin_resolver.primitives.at("f64");
+    const auto* wide = sema.primitives.entries.at("f64");
     NamedType positive("Value", {GenericArgumentType("", CompileTimeValue(0.0, wide))});
     NamedType negative("Value", {GenericArgumentType("", CompileTimeValue(-0.0, wide))});
     NamedType single("Value", {GenericArgumentType("", CompileTimeValue(0.0, f32_type()))});
@@ -135,7 +135,7 @@ TEST_F(MonomorphizerTest, ConstBindingsDistinguishPayloadsAndTypes) {
     const auto second =
         CompileTimeValue(CompileTimeValue::Kind::Type::SignedInteger, i32_type(), std::int64_t{5});
     const auto wide = CompileTimeValue(CompileTimeValue::Kind::Type::SignedInteger,
-                                       sema.builtin_resolver.primitives.at("i64"), std::int64_t{2});
+                                       sema.primitives.entries.at("i64"), std::int64_t{2});
     const auto first_result = cache.get_or_create(i32_type(), "count", {ConstBinding(first)});
     const auto second_result = cache.get_or_create(i32_type(), "count", {ConstBinding(second)});
     const auto wide_result = cache.get_or_create(i32_type(), "count", {ConstBinding(wide)});
@@ -162,8 +162,8 @@ TEST_F(MonomorphizerTest, ConcreteConstBindingsShareStableKeys) {
 TEST_F(MonomorphizerTest, UnevaluatedConstBindingsCannotBeMangled) {
     NumberLiteral first(Span(), "7");
     NumberLiteral second(Span(), "7");
-    const GenericBinding left = ConstBinding(&first, i32_type(), true);
-    const GenericBinding right = ConstBinding(&second, i32_type(), true);
+    const GenericBinding left = ConstBinding::dependent_expression(&first, i32_type());
+    const GenericBinding right = ConstBinding::dependent_expression(&second, i32_type());
 
     EXPECT_NE(left, right);
     EXPECT_NE(hash(left), hash(right));

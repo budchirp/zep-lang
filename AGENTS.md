@@ -65,34 +65,33 @@ frontend/         Compiler frontend
   parser/         Recursive descent parser with precedence climbing
   token/          Token types and keyword mappings
   sema/           Semantic analysis
-    type/         Type system (checker, builder, resolver, type definitions)
+    type/         Type definitions, compatibility, and layout
     scope/        Scope and symbol management
-    resolver/     Call, generic, enum, struct, attribute, builtin, when, member resolution
+    resolution/   Callable and member resolution
+    expression/   Generic arguments, literals, operators, builtins, and when checking
     const/        Compile-time evaluation and constant values
     declaration/  Declaration checking
-  debug/          AST, Sema, and Type dumpers
+  debug/          AST and type dumpers
   tests/          Lexer, parser, type compatibility, and semantic tests
-hir/              High-level IR
-  hir/            HIR node and program definitions
-  debug/          HIR dumper
-  builder.cppm    Visitor that lowers AST to HIR
-  lowerer.cppm    Type lowering and monomorphization helpers (templated)
-  monomorphizer.cppm  Generic specialization cache and mangling
-  tests/          HIR lowering and monomorphization tests
-codegen/          Code generation orchestrator
-  common/         Abstract driver interface (CodegenDriver, Backend enum)
+hir/              High-level IR node and program definitions
+  tests/          Node identity, ownership, and ordering tests
+codegen/          Code generation interfaces and implementations
+  api/            Backend interface and generation options
   llvm/           LLVM backend (isolated; LLVM find_package lives here)
-    codegen.cppm  LLVMCodegen visitor (inherits CodegenDriver + HIRVisitor)
-    context.cppm  LLVMCodegenContext (llvm::LLVMContext, IRBuilder, Module)
-    helper.cppm   LLVMCodegenHelper (type mapping, function/struct declarations)
+    backend.cppm  LLVMBackend implementation of CodegenBackend
+    context.cppm  LLVM context, target setup, optimization, and object emission
+    type.cppm     Semantic type to LLVM type lowering
+    declarations.cppm  LLVM function and global declarations
+    emitter.cppm  HIR expression and statement emission
+    dispatch.cppm Interface method tables
     scope.cppm    CodegenScope (LLVM value scope stack)
-  codegen.cppm    Codegen orchestrator (selects backend via Backend::Type)
-  tests/          Codegen orchestration tests
 workspace/        Manifest, Project model, package graph, and environment discovery
 compiler/         Module graph, parsing, semantic checking, and HIR lowering
   module/         Module metadata, graph loading, and import resolution
-builder/          Direct build, object generation, dependency fetch, installation, and linking
-  tests/          Project config, module loading, and object compilation tests
+  lowering/       AST to HIR lowering, cleanup, specialization, and mangling
+  tests/          Module resolution, lowering, and specialization tests
+builder/          Direct build, object generation, and linking
+  tests/          Backend and process orchestration tests
 lsp/              Modular Language Server Protocol boundary
   analysis/       Project snapshots, syntax index, completion, and language queries
   core/           Session, JSON-RPC dispatch, server lifecycle, and cache ownership

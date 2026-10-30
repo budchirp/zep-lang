@@ -78,15 +78,15 @@ optimization passes before object emission and select the matching LLVM codegen 
 ## Project Structure
 
 ```text
-common/           Shared utilities: arena, logger, diagnostics, source, span, JSON
-frontend/         Lexer, parser, AST, imports, semantic analysis, and debug dumpers
-hir/              High-level IR nodes, lowering, and monomorphization
-codegen/          Backend-agnostic codegen orchestration
-codegen/common/   Codegen driver interface and backend enum
+common/           Shared utilities: arena, logger, diagnostics, source, span, processes
+frontend/         Lexer, parser, AST, semantic analysis, and debug dumpers
+hir/              High-level IR node and program definitions
+codegen/          Code generation interfaces and implementations
+codegen/api/      Backend interface and generation options
 codegen/llvm/     LLVM backend and LLVM-specific type/IR helpers
- workspace/        Manifest, package graph, and environment model
- compiler/         Module graph, parsing, semantic checking, and HIR lowering
- builder/          Build plans and structured tool-process execution
+workspace/        Manifest, package graph, and environment model
+compiler/         Module graph, semantic checking, HIR lowering, and specialization
+builder/          Object generation, linking, and structured tool-process execution
 lsp/              Language Server Protocol server implementation
 cli/              Command-line interface (build, compile, lsp, fetch, install)
 cmake/            Build helpers for modules, tests, fuzzing, benchmarks, and coverage
@@ -129,7 +129,7 @@ TEST(FrontendParser, ParsesStructDefaultsAndNestedTypes) {
     const std::string source =
         "struct Box { public: var value: i32 = 1 }";
 
-    EXPECT_TRUE(FrontendChecks::parse_ok(source)) << source;
+    EXPECT_TRUE(assert_parse_ok(source));
 }
 ```
 
@@ -141,7 +141,7 @@ TEST(FrontendTypeChecker, AcceptsNamedArguments) {
         "fn add(left: i32, right: i32) -> i32 { return left + right }\n"
         "fn main() -> i32 { return add(right: 2, left: 1) }\n";
 
-    EXPECT_TRUE(FrontendChecks::type_check_ok(source)) << source;
+    EXPECT_TRUE(assert_type_check_ok(source));
 }
 ```
 

@@ -1,12 +1,12 @@
 module;
 
-export module zep.frontend.sema.type.coercion;
+export module zep.frontend.sema.expression.coercion;
 
 import zep.frontend.node;
 import zep.frontend.sema.context;
 import zep.frontend.sema.type;
-import zep.frontend.sema.kind;
-import zep.frontend.sema.type.resolver;
+import zep.frontend.kind;
+import zep.frontend.sema.type_resolver;
 
 export class TypeCoercion {
   public:

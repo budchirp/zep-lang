@@ -75,7 +75,7 @@ enum Automatic : u8 { First Second }
 enum Payload { None Some { value: i32 } }
 )zep");
     ASSERT_TRUE(harness.type_check_succeeded());
-    const auto& primitives = harness.sema.builtin_resolver.primitives;
+    const auto& primitives = harness.sema.primitives.entries;
     const auto* signed_type =
         harness.program.statements[0]->as<EnumDeclaration>()->type->as<EnumType>();
     ASSERT_EQ(signed_type->variants.size(), 4);
@@ -125,7 +125,7 @@ enum Code : i32 { First = 3 Second = Code::First.value + 1 }
 enum Flag { Off On }
 )zep");
     ASSERT_TRUE(harness.type_check_succeeded());
-    const auto* integer = harness.sema.builtin_resolver.primitives.at("i32");
+    const auto* integer = harness.sema.primitives.entries.at("i32");
     const auto* code = harness.program.statements[0]->as<EnumDeclaration>()->type->as<EnumType>();
     const auto* flag = harness.program.statements[1]->as<EnumDeclaration>()->type->as<EnumType>();
     EXPECT_EQ(
@@ -143,7 +143,7 @@ enum Flags : boolean { Off = false On = true }
 enum Letters : char { A = 'a' B = 'b' }
 )zep");
     ASSERT_TRUE(harness.type_check_succeeded());
-    const auto& primitives = harness.sema.builtin_resolver.primitives;
+    const auto& primitives = harness.sema.primitives.entries;
     const auto* names = harness.program.statements[0]->as<EnumDeclaration>()->type->as<EnumType>();
     EXPECT_EQ(names->variants[1].discriminant,
               CompileTimeValue(CompileTimeValue::Kind::Type::String, primitives.at("cstr"),

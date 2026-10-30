@@ -19,8 +19,6 @@ class FakeBackend final : public CodegenBackend {
     std::vector<std::filesystem::path> outputs;
     std::vector<std::string> targets;
 
-    CodegenFormat::Type format() const override { return CodegenFormat::Type::Object; }
-
     std::expected<void, std::string> generate(const HIRProgram& program,
                                               const std::filesystem::path& output,
                                               const CodegenOptions& options) override {

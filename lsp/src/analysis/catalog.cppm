@@ -180,14 +180,9 @@ export class ModuleCatalog {
     }
 
   public:
-    explicit ModuleCatalog(const Project& project) {
-        std::set<std::string> visited;
-        add_package(*project.root_package, true, visited);
-        std::ranges::sort(modules, {}, &CatalogModule::name);
-    }
-
-    std::optional<std::vector<Completion>> complete(std::string_view content, Position position,
-                                                    const std::filesystem::path& current_path) const {
+    static std::optional<std::vector<Completion>>
+    complete(const Project& project, std::string_view content, Position position,
+             const std::filesystem::path& current_path) {
         std::size_t line = 1;
         std::size_t line_start = 0;
         for (std::size_t index = 0; index < content.length() && line < position.line; ++index) {
@@ -215,6 +210,11 @@ export class ModuleCatalog {
         if (prefix.find(" as ") != std::string::npos) {
             return std::vector<Completion>();
         }
+
+        ModuleCatalog catalog;
+        std::set<std::string> visited;
+        catalog.add_package(*project.root_package, true, visited);
+        std::ranges::sort(catalog.modules, {}, &CatalogModule::name);
 
         auto parts = split(prefix);
         auto partial = parts.empty() ? std::string() : parts.back();
@@ -251,7 +251,7 @@ export class ModuleCatalog {
         std::vector<Completion> result;
         result.reserve(32);
 
-        for (const auto& module : modules) {
+        for (const auto& module : catalog.modules) {
             std::error_code error_code;
             if (std::filesystem::equivalent(module.path, current_path, error_code) && !error_code) {
                 continue;

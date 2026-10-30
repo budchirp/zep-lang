@@ -5,54 +5,84 @@ module;
 #include <utility>
 #include <vector>
 
-export module zep.frontend.sema.resolver.facade;
+export module zep.frontend.sema.facade;
 
 import zep.frontend.node;
-import zep.frontend.sema.context;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 import zep.frontend.sema.scope;
 import zep.frontend.sema.type;
-import zep.frontend.sema.constant.environment;
-import zep.frontend.sema.type.resolver;
+import zep.frontend.sema.substitution;
+import zep.frontend.sema.type_resolver;
+
+class FacadeEntry {
+  public:
+    const StructType* type;
+    const Type* backing_type;
+    std::string backing_parameter;
+    const Type* backing_constraint;
+
+    FacadeEntry(const StructType* type, const Type* backing_type,
+                std::string backing_parameter, const Type* backing_constraint)
+        : type(type), backing_type(backing_type),
+          backing_parameter(std::move(backing_parameter)),
+          backing_constraint(backing_constraint) {}
+};
+
+export class FacadeRegistry {
+  private:
+    friend class FacadeResolver;
+
+    std::unordered_map<const StructType*, FacadeEntry> entries;
+    std::unordered_map<const Type*, const StructType*> types_by_backing;
+
+    static const StructType* identity(const StructType& type) {
+        const auto* definition = type.definition != nullptr
+                                     ? type.definition->as<StructType>()
+                                     : nullptr;
+        return definition != nullptr ? definition : &type;
+    }
+
+    void register_facade(FacadeEntry entry, const Type* backing_type = nullptr) {
+        const auto* type = identity(*entry.type);
+
+        if (backing_type != nullptr) {
+            types_by_backing.insert_or_assign(backing_type, type);
+        }
+
+        entries.insert_or_assign(type, std::move(entry));
+    }
+
+    const FacadeEntry* find(const StructType& type) const {
+        const auto iterator = entries.find(identity(type));
+        return iterator != entries.end() ? &iterator->second : nullptr;
+    }
+
+    const FacadeEntry* find(const Type* backing_type) const {
+        const auto type = types_by_backing.find(backing_type);
+        return type != types_by_backing.end() ? find(*type->second) : nullptr;
+    }
+};
 
 export class FacadeResolver {
   private:
-    SemaContext& sema;
+    FacadeRegistry& registry;
+    TypeArena& types;
+
     TypeResolver& type_resolver;
 
-    const PrimitiveFacadeInfo* lookup_info_by_name(const std::string& name) const {
-        if (const auto* info = sema.facades.find_by_name(name); info != nullptr) {
-            return info;
-        }
-
-        auto dot = name.rfind('.');
-        auto colon = name.rfind("::");
-        auto position = dot;
-        if (colon != std::string::npos && (position == std::string::npos || colon > position)) {
-            position = colon + 1;
-        }
-
-        if (position != std::string::npos && position + 1 < name.size()) {
-            auto local_name = name.substr(position + 1);
-            return sema.facades.find_by_name(local_name);
-        }
-
-        return nullptr;
-    }
-
-    const PrimitiveFacadeInfo* lookup_info_by_backing(const Type* type) const {
+    const FacadeEntry* lookup_info_by_backing(const Type* type) const {
         const auto* resolved = type_resolver.resolve_type(type);
         if (resolved == nullptr) {
             return nullptr;
         }
 
-        if (const auto* info = sema.facades.find_by_backing(resolved); info != nullptr) {
+        if (const auto* info = registry.find(resolved); info != nullptr) {
             return info;
         }
 
-        for (const auto& entry : sema.facades.all()) {
+        for (const auto& entry : registry.entries) {
             const auto& info = entry.second;
-            if (!info.is_generic() || info.backing_constraint == nullptr) {
+            if (info.backing_parameter.empty() || info.backing_constraint == nullptr) {
                 continue;
             }
 
@@ -64,9 +94,9 @@ export class FacadeResolver {
         return nullptr;
     }
 
-    const Type* resolve_generic_backing(const PrimitiveFacadeInfo& info,
+    const Type* resolve_generic_backing(const FacadeEntry& info,
                                         const StructType& type) const {
-        if (!info.is_generic() || info.type == nullptr) {
+        if (info.backing_parameter.empty() || info.type == nullptr) {
             return nullptr;
         }
 
@@ -85,13 +115,13 @@ export class FacadeResolver {
         return nullptr;
     }
 
-    const StructType* instantiate_facade(const PrimitiveFacadeInfo& info,
+    const StructType* instantiate_facade(const FacadeEntry& info,
                                          const Type* backing_type) const {
         if (info.type == nullptr) {
             return nullptr;
         }
 
-        if (!info.is_generic()) {
+        if (info.backing_parameter.empty()) {
             return info.type;
         }
 
@@ -116,8 +146,8 @@ export class FacadeResolver {
     }
 
   public:
-    FacadeResolver(SemaContext& sema, TypeResolver& type_resolver)
-        : sema(sema), type_resolver(type_resolver) {}
+    FacadeResolver(FacadeRegistry& registry, TypeArena& types, TypeResolver& type_resolver)
+        : registry(registry), types(types), type_resolver(type_resolver) {}
 
     void register_struct(const StructType& type, Visibility::Type visibility) {
         if (visibility != Visibility::Type::Public) {
@@ -145,9 +175,9 @@ export class FacadeResolver {
         if (left_named != nullptr && right_named != nullptr &&
             left_named->name == right_named->name) {
             const auto* named = backing_type->as<NamedType>();
-            auto info = PrimitiveFacadeInfo(type.name, &type, nullptr, named->name,
-                                            find_parameter_constraint(type, named->name));
-            sema.facades.register_facade(type.name, std::move(info));
+            FacadeEntry info(&type, nullptr, named->name,
+                             find_parameter_constraint(type, named->name));
+            registry.register_facade(std::move(info));
             return;
         }
 
@@ -158,8 +188,8 @@ export class FacadeResolver {
             return;
         }
 
-        auto info = PrimitiveFacadeInfo(type.name, &type, resolved_backing, std::string(), nullptr);
-        sema.facades.register_facade(type.name, std::move(info), resolved_backing);
+        FacadeEntry info(&type, resolved_backing, std::string(), nullptr);
+        registry.register_facade(std::move(info), resolved_backing);
     }
 
     const StructType* resolve_facade(const Type* type) const {
@@ -169,7 +199,7 @@ export class FacadeResolver {
         }
 
         if (const auto* struct_type = resolved->as<StructType>(); struct_type != nullptr) {
-            if (lookup_info_by_name(struct_type->name) != nullptr) {
+            if (registry.find(*struct_type) != nullptr) {
                 return struct_type;
             }
         }
@@ -180,21 +210,6 @@ export class FacadeResolver {
         }
 
         return instantiate_facade(*info, resolved);
-    }
-
-    const PrimitiveFacadeInfo* resolve_facade_info(const Type* type) const {
-        const auto* resolved = type_resolver.resolve_type(type);
-        if (resolved == nullptr) {
-            return nullptr;
-        }
-
-        if (const auto* struct_type = resolved->as<StructType>(); struct_type != nullptr) {
-            if (auto* info = lookup_info_by_name(struct_type->name); info != nullptr) {
-                return info;
-            }
-        }
-
-        return lookup_info_by_backing(resolved);
     }
 
     Scope* resolve_scope(const Type* type) const {
@@ -213,12 +228,12 @@ export class FacadeResolver {
             return nullptr;
         }
 
-        const auto* info = lookup_info_by_name(struct_type->name);
+        const auto* info = registry.find(*struct_type);
         if (info == nullptr) {
             return nullptr;
         }
 
-        if (info->is_generic()) {
+        if (!info->backing_parameter.empty()) {
             return resolve_generic_backing(*info, *struct_type);
         }
 
@@ -278,7 +293,7 @@ export class FacadeResolver {
                     return true;
                 }
                 const auto* ptr_backing =
-                    sema.types.create<PointerType>(backing, expected_pointer->is_mutable);
+                    types.create<PointerType>(backing, expected_pointer->is_mutable);
                 if (ptr_backing->accepts(actual) || accepts(ptr_backing, actual)) {
                     return true;
                 }
@@ -292,7 +307,7 @@ export class FacadeResolver {
                     return true;
                 }
                 const auto* ptr_backing =
-                    sema.types.create<PointerType>(backing, actual_pointer->is_mutable);
+                    types.create<PointerType>(backing, actual_pointer->is_mutable);
                 if (expected->accepts(ptr_backing) || accepts(expected, ptr_backing)) {
                     return true;
                 }

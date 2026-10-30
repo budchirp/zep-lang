@@ -2,15 +2,15 @@ module;
 
 #include <string>
 
-export module zep.frontend.sema.resolver.operator_resolver;
+export module zep.frontend.sema.expression.operator_checker;
 
 import zep.common.context;
 import zep.frontend.node;
 import zep.frontend.sema.context;
 import zep.frontend.sema.type;
-import zep.frontend.sema.type.resolver;
+import zep.frontend.sema.type_resolver;
 
-export class OperatorResolver {
+export class OperatorChecker {
   private:
     Context& context;
     SemaContext& sema;
@@ -88,7 +88,7 @@ export class OperatorResolver {
     }
 
   public:
-    explicit OperatorResolver(Context& context, SemaContext& sema, TypeResolver& type_resolver)
+    explicit OperatorChecker(Context& context, SemaContext& sema, TypeResolver& type_resolver)
         : context(context), sema(sema), type_resolver(type_resolver) {}
 
     void resolve(BinaryExpression& node) {

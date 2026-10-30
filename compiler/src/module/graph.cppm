@@ -107,16 +107,9 @@ export class ModuleGraph {
         return result;
     }
 
-    Module* visit(Package& package, ModulePath path, const std::filesystem::path& source_path,
-                  Diagnostics& diagnostics) {
-        auto* module = load_module(package, std::move(path), source_path, diagnostics);
-        if (module == nullptr) {
-            return nullptr;
-        }
-
-        if (std::find(active_modules.begin(), active_modules.end(), module) !=
-            active_modules.end()) {
-            auto position = std::find(active_modules.begin(), active_modules.end(), module);
+    void visit(Module& module, Diagnostics& diagnostics) {
+        if (auto position = std::find(active_modules.begin(), active_modules.end(), &module);
+            position != active_modules.end()) {
             auto offset = static_cast<std::size_t>(position - active_modules.begin());
             std::string chain;
             for (std::size_t index = offset; index < active_modules.size(); ++index) {
@@ -125,28 +118,28 @@ export class ModuleGraph {
                 }
                 chain += active_modules[index]->path.string();
             }
-            chain += " -> " + module->path.string();
+            chain += " -> " + module.path.string();
             auto* edge = active_edges.back();
             diagnostics.add_error(*edge->importing->source, edge->syntax->span,
                                   "module import cycle: " + chain);
-            return module;
+            return;
         }
 
-        if (std::find(modules.begin(), modules.end(), module) != modules.end()) {
-            return module;
+        if (std::find(modules.begin(), modules.end(), &module) != modules.end()) {
+            return;
         }
 
-        active_modules.push_back(module);
-        for (auto* statement : module->syntax.statements) {
+        active_modules.push_back(&module);
+        for (auto* statement : module.syntax.statements) {
             auto* import = statement->as<ImportStatement>();
             if (import == nullptr) {
                 continue;
             }
 
             auto requested = import_path(*import);
-            auto resolved = resolver.resolve(*module->owner, std::move(requested));
+            auto resolved = resolver.resolve(*module.owner, std::move(requested));
             if (!resolved.has_value()) {
-                diagnostics.add_error(*module->source, import->span,
+                diagnostics.add_error(*module.source, import->span,
                                       "could not resolve module import");
                 continue;
             }
@@ -157,22 +150,16 @@ export class ModuleGraph {
                 continue;
             }
 
-            auto edge = std::make_unique<ModuleImport>(module, imported, import);
+            auto edge = std::make_unique<ModuleImport>(&module, imported, import);
             auto* edge_ptr = edge.get();
             edges.push_back(std::move(edge));
-            module->imports.push_back(edge_ptr);
+            module.imports.push_back(edge_ptr);
             active_edges.push_back(edge_ptr);
-            if (visit(*resolved->owner, resolved->path, resolved->source_path, diagnostics) ==
-                nullptr) {
-                active_edges.pop_back();
-                active_modules.pop_back();
-                return nullptr;
-            }
+            visit(*imported, diagnostics);
             active_edges.pop_back();
         }
         active_modules.pop_back();
-        modules.push_back(module);
-        return module;
+        modules.push_back(&module);
     }
 
   public:
@@ -187,13 +174,21 @@ export class ModuleGraph {
     Module* load(Package& package, ModulePath path, Diagnostics& diagnostics,
                  std::filesystem::path source_path = {}) {
         auto builtins = resolver.resolve(package, ModulePath::from_string("std.builtins"));
-        if (builtins.has_value() && visit(*builtins->owner, builtins->path, builtins->source_path,
-                                          diagnostics) == nullptr) {
-            return nullptr;
+        if (builtins.has_value()) {
+            auto* module = load_module(*builtins->owner, std::move(builtins->path),
+                                       builtins->source_path, diagnostics);
+            if (module == nullptr) {
+                return nullptr;
+            }
+            visit(*module, diagnostics);
         }
 
         if (!source_path.empty()) {
-            return visit(package, std::move(path), source_path, diagnostics);
+            auto* module = load_module(package, std::move(path), source_path, diagnostics);
+            if (module != nullptr) {
+                visit(*module, diagnostics);
+            }
+            return module;
         }
 
         auto resolved = resolver.resolve(package, std::move(path));
@@ -203,7 +198,11 @@ export class ModuleGraph {
                                   "could not resolve requested module");
             return nullptr;
         }
-        return visit(*resolved->owner, std::move(resolved->path), resolved->source_path,
-                     diagnostics);
+        auto* module = load_module(*resolved->owner, std::move(resolved->path),
+                                   resolved->source_path, diagnostics);
+        if (module != nullptr) {
+            visit(*module, diagnostics);
+        }
+        return module;
     }
 };

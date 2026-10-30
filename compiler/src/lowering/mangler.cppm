@@ -11,72 +11,12 @@ module;
 
 export module zep.compiler.lowering.mangler;
 
-import zep.frontend.sema.kind;
-import zep.frontend.sema.resolver.attribute;
+import zep.frontend.kind;
+import zep.frontend.sema.declaration.attribute;
 import zep.frontend.sema.scope;
 import zep.frontend.sema.type;
 export class Mangler {
   private:
-    static std::string encode_string_value(const std::string& value) {
-        auto result = std::to_string(value.size()) + "_";
-
-        for (const auto ch : value) {
-            result += std::to_string(static_cast<unsigned>(static_cast<unsigned char>(ch))) + "_";
-        }
-
-        return result;
-    }
-
-    static std::string encode_signed_integer(auto value) {
-        auto result = std::to_string(value);
-        if (!result.empty() && result.front() == '-') {
-            result.front() = 'n';
-            return result;
-        }
-
-        return "p" + result;
-    }
-
-    static std::string encode_compile_time_value(const CompileTimeValue& value) {
-        switch (value.kind) {
-        case CompileTimeValue::Kind::Type::SignedInteger:
-            return "s" + encode_signed_integer(std::get<std::int64_t>(value.payload));
-
-        case CompileTimeValue::Kind::Type::UnsignedInteger:
-            return "u" + std::to_string(std::get<std::uint64_t>(value.payload));
-
-        case CompileTimeValue::Kind::Type::Float:
-            return "f" + std::to_string(std::get<std::uint64_t>(value.payload));
-
-        case CompileTimeValue::Kind::Type::Boolean:
-            return std::get<bool>(value.payload) ? "b1" : "b0";
-
-        case CompileTimeValue::Kind::Type::Char:
-            return "h" + std::to_string(std::get<std::uint8_t>(value.payload));
-
-        case CompileTimeValue::Kind::Type::String:
-            return "t" + encode_string_value(std::get<std::string>(value.payload));
-
-        case CompileTimeValue::Kind::Type::Null:
-            return "null";
-
-        case CompileTimeValue::Kind::Type::Struct:
-        case CompileTimeValue::Kind::Type::Array: {
-            const auto& elements = std::get<std::vector<CompileTimeValue>>(value.payload);
-            auto result = value.kind == CompileTimeValue::Kind::Type::Struct ? std::string("s")
-                                                                             : std::string("a");
-            result += std::to_string(elements.size()) + "_";
-            for (const auto& element : elements) {
-                const auto encoded = encode(element.type) + encode_compile_time_value(element);
-                result += std::to_string(encoded.size()) + "_" + encoded;
-            }
-            return result;
-        }
-        }
-
-        return {};
-    }
-
   public:
     static std::string encode(const Type* type) {
         if (type == nullptr) {
@@ -150,7 +90,7 @@ export class Mangler {
             throw std::invalid_argument("cannot mangle a dependent const binding");
         }
 
-        return "c" + encode(value->type) + "_" + encode_compile_time_value(*value);
+        return "c" + encode(value->type) + "_" + value->stable_encoding();
     }
 
     static std::string mangle(const std::string& name,

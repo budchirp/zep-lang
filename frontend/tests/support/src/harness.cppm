@@ -149,31 +149,3 @@ export testing::AssertionResult assert_type_check_error(const std::string& conte
     return testing::AssertionFailure() << "expected type check error but succeeded for:\n"
                                        << content;
 }
-
-export class FrontendChecks {
-  public:
-    static bool parse_ok(const std::string& content) {
-        FrontendHarness harness(content);
-
-        return harness.parse_succeeded();
-    }
-
-    static bool type_check_ok(const std::string& content) {
-        FrontendHarness harness(content);
-        if (!harness.parse_succeeded()) {
-            return false;
-        }
-
-        return harness.type_check_succeeded();
-    }
-
-    static bool type_check_error(const std::string& content) {
-        FrontendHarness harness(content);
-        if (!harness.parse_succeeded()) {
-            return false;
-        }
-
-        harness.type_check();
-        return harness.context.diagnostics.has_errors();
-    }
-};

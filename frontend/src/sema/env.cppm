@@ -8,7 +8,7 @@ export module zep.frontend.sema.env;
 
 import zep.common.arena;
 import zep.common.source.span;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 import zep.frontend.sema.scope;
 import zep.frontend.sema.type;
 
@@ -17,8 +17,6 @@ export class Env {
     ScopeArena scopes;
 
     SymbolArena symbols;
-
-    Arena<OverloadSet> overloads;
 
     Scope* current_scope;
 
@@ -39,13 +37,4 @@ export class Env {
         }
     }
 
-    void push_scope(Scope::Kind::Type kind, std::string name) {
-        current_scope = scopes.create<Scope>(kind, std::move(name), current_scope);
-    }
-
-    void pop_scope() {
-        if (current_scope->parent != nullptr) {
-            current_scope = current_scope->parent;
-        }
-    }
 };

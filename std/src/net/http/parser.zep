@@ -2,8 +2,6 @@ import std.text.string.String
 import std.net.http.types.Method
 import std.net.http.types.Request
 
-var REQUEST_BUFFER_SIZE: i32 = 4096
-
 public struct RequestParser {
     private:
         var buffer: *mut u8

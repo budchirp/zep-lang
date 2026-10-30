@@ -10,44 +10,36 @@ import zep.common.context;
 import zep.frontend.node;
 import zep.frontend.node.program;
 import zep.frontend.sema.context;
-import zep.frontend.sema.kind;
-import zep.frontend.sema.resolver.facade;
+import zep.frontend.kind;
+import zep.frontend.sema.facade;
 import zep.frontend.sema.scope;
 import zep.frontend.sema.type;
-import zep.frontend.sema.type.builder;
-import zep.frontend.sema.type.resolver;
+import zep.frontend.sema.type_resolver;
 export import zep.frontend.sema.declaration.function;
-export import zep.frontend.sema.declaration.variable;
-export import zep.frontend.sema.declaration.struct_checker;
-export import zep.frontend.sema.declaration.enum_checker;
+import zep.frontend.sema.declaration.attribute;
+export import zep.frontend.sema.declaration.nominal;
 
 export class DeclarationChecker {
   private:
     Context& context;
     SemaContext& sema;
     TypeResolver& resolver;
-    TypeBuilder& builder;
+    DeclarationTypeBuilder& builder;
     Visitor<void>& visitor;
 
   public:
     FacadeResolver facades;
     FunctionDeclarationChecker functions;
-    VariableDeclarationChecker variables;
-    StructDeclarationChecker structs;
-    EnumDeclarationChecker enums;
-
-    const FunctionSymbol* current_function = nullptr;
-    std::string current_parent;
+    NominalDeclarationChecker nominals;
 
     DeclarationChecker(Context& context, SemaContext& sema, TypeResolver& resolver,
-                       TypeBuilder& builder, Visitor<void>& visitor,
+                       DeclarationTypeBuilder& builder, Visitor<void>& visitor,
                        std::function<void(Expression&, const Type*)> check_expression)
         : context(context), sema(sema), resolver(resolver), builder(builder), visitor(visitor),
-          facades(sema, resolver), functions(context, sema, resolver, builder, facades),
-          variables(context, sema, resolver, visitor),
-          structs(context, sema, builder, facades, functions,
-                  [this](EnumDeclaration& node) { enums.declare_enum_type(node); }),
-          enums(context, sema, resolver, builder, functions, visitor, std::move(check_expression)) {
+          facades(sema.facades, sema.types, resolver),
+          functions(context, sema, resolver, builder, facades),
+          nominals(context, sema, resolver, builder, facades, functions, visitor,
+                   std::move(check_expression)) {
     }
 
     void declare_type_alias(TypeAliasDeclaration& node) {
@@ -78,57 +70,84 @@ export class DeclarationChecker {
         }
     }
 
-    void declare_interface_type(InterfaceDeclaration& node) {
-        structs.declare_interface_type(node);
+    void declare_variable(VarDeclaration& node) {
+        if (node.type != nullptr) {
+            return;
+        }
+
+        if (node.annotation != nullptr) {
+            visitor.visit(*node.annotation);
+        }
+
+        const Type* type = nullptr;
+        if (node.annotation != nullptr) {
+            type = resolver.resolve_type(node.annotation->type);
+        }
+        node.type = type;
+
+        auto attribute_infos = AttributeResolver::convert(node.attributes);
+        AttributeResolver::validate(attribute_infos, {sema, context, node.span, node.name, {}});
+
+        auto* symbol = sema.env.symbols.create<VariableSymbol>(node.name, node.span,
+                                                               node.visibility, node.storage_kind,
+                                                               type, std::move(attribute_infos));
+        node.variable_symbol = symbol;
+
+        if (!sema.env.current_scope->define_var(node.name, symbol)) {
+            context.diagnostics.add_error(node.span,
+                                          "redefinition of variable '" + node.name + "'");
+        }
     }
-
-    void declare_struct_type(StructDeclaration& node) { structs.declare_struct_type(node); }
-
-    void declare_enum_type(EnumDeclaration& node) { enums.declare_enum_type(node); }
-
-    const FunctionSymbol* declare_function(FunctionDeclaration& node) {
-        return functions.declare_function(node);
-    }
-
-    void declare_extern_function(ExternFunctionDeclaration& node) {
-        functions.declare_extern_function(node);
-    }
-
-    void declare_variable(VarDeclaration& node) { variables.declare_variable(node); }
 
     void declare_extern_variable(ExternVarDeclaration& node) {
-        variables.declare_extern_variable(node);
-    }
+        if (node.type != nullptr) {
+            return;
+        }
 
-    bool validate_function_declaration(FunctionDeclaration& node, const FunctionSymbol* symbol) {
-        return functions.validate_function_declaration(node, symbol);
+        visitor.visit(*node.annotation);
+
+        const auto* type = resolver.resolve_type(node.annotation->type);
+        node.type = type;
+
+        auto attribute_infos = AttributeResolver::convert(node.attributes);
+        AttributeResolver::validate(attribute_infos, {sema, context, node.span, node.name, {}});
+
+        auto* symbol = sema.env.symbols.create<VariableSymbol>(
+            node.name, node.span, node.visibility, StorageKind::Type::Var, type,
+            std::move(attribute_infos));
+        node.variable_symbol = symbol;
+
+        if (!sema.env.current_scope->define_var(node.name, symbol)) {
+            context.diagnostics.add_error(node.span,
+                                          "redefinition of variable '" + node.name + "'");
+        }
     }
 
     void declare_program_symbols(Program& program) {
         for (auto& statement : program.statements) {
             if (auto* interface_declaration = statement->as<InterfaceDeclaration>();
                 interface_declaration != nullptr) {
-                declare_interface_type(*interface_declaration);
+                nominals.declare_interface_type(*interface_declaration);
             }
 
             if (auto* struct_declaration = statement->as<StructDeclaration>();
                 struct_declaration != nullptr) {
-                declare_struct_type(*struct_declaration);
+                nominals.declare_struct_type(*struct_declaration);
             }
 
             if (auto* enum_declaration = statement->as<EnumDeclaration>();
                 enum_declaration != nullptr) {
-                declare_enum_type(*enum_declaration);
+                nominals.declare_enum_type(*enum_declaration);
             }
 
             if (auto* function_declaration = statement->as<FunctionDeclaration>();
                 function_declaration != nullptr) {
-                declare_function(*function_declaration);
+                functions.declare_function(*function_declaration);
             }
 
             if (auto* extern_function_declaration = statement->as<ExternFunctionDeclaration>();
                 extern_function_declaration != nullptr) {
-                declare_extern_function(*extern_function_declaration);
+                functions.declare_extern_function(*extern_function_declaration);
             }
 
             if (auto* var_declaration = statement->as<VarDeclaration>();

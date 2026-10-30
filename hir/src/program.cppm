@@ -5,16 +5,13 @@ module;
 export module zep.hir.program;
 
 import zep.hir.node;
-import zep.hir.context;
 import zep.frontend.sema.scope;
 
 export class HIRProgram {
   public:
-    HIRContext context;
+    HIRNodeArena nodes;
 
     std::vector<const TypeSymbol*> referenced_types;
-    std::vector<HIRVarDeclaration*> globals;
-    std::vector<HIRFunctionDeclaration*> functions;
 
     std::vector<HIRStatement*> statements;
 

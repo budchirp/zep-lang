@@ -97,8 +97,6 @@ export class MonomorphizationCache {
         return iterator != structs.end() ? iterator->second : nullptr;
     }
 
-    void clear_pending_specializations() { pending_specializations.clear(); }
-
     void enqueue_specialization(HIRFunctionDeclaration* function) {
         pending_specializations.push_back(function);
     }

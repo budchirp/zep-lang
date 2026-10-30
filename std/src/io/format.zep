@@ -1,6 +1,6 @@
 import std.core.option.Option
 import std.core.result.Result
-import std.memory.Memory
+import std.collections.vector.Vector
 import std.text.string.String
 
 public enum FormatError {
@@ -57,49 +57,15 @@ enum FormatArgument {
 
 public struct FormatArguments {
     private:
-        var ptr: *mut FormatArgument
-        var length: i32
-        var capacity: i32
-
-        fn ensure_capacity(required_capacity: i32) mut -> void {
-            if (required_capacity <= capacity) {
-                return
-            }
-
-            var mut next_capacity: i32 = 4
-            if (capacity != 0) {
-                next_capacity = capacity * 2
-            }
-            while (next_capacity < required_capacity) {
-                next_capacity = next_capacity * 2
-            }
-
-            var next_ptr = Memory::allocate_many<FormatArgument>(next_capacity as i64)
-            if (ptr != null) {
-                for (var mut index: i32 = 0; index < length; index = index + 1) {
-                    next_ptr[index] = ptr[index]
-                }
-
-                Memory::free(ptr as *mut void)
-            }
-
-            ptr = next_ptr
-            capacity = next_capacity
-        }
-
-        fn push(argument: FormatArgument) mut -> void {
-            self->ensure_capacity(length + 1)
-            ptr[length] = argument
-            length = length + 1
-        }
+        var values: Vector<FormatArgument>
 
     public:
         fn FormatArguments() -> FormatArguments {
-            return FormatArguments { ptr: null, length: 0, capacity: 0 }
+            return FormatArguments { values: Vector<FormatArgument>() }
         }
 
         fn add(value: cstr) mut -> void {
-            self->push(FormatArgument::Text { value: value })
+            values.push(FormatArgument::Text { value: value })
         }
 
         fn add(value: *String) mut -> void {
@@ -111,7 +77,7 @@ public struct FormatArguments {
         fn add(value: i32) mut -> void { self->add(value as i64) }
 
         fn add(value: i64) mut -> void {
-            self->push(FormatArgument::SignedInteger { value: value })
+            values.push(FormatArgument::SignedInteger { value: value })
         }
 
         fn add(value: u8) mut -> void { self->add(value as u64) }
@@ -119,48 +85,45 @@ public struct FormatArguments {
         fn add(value: u32) mut -> void { self->add(value as u64) }
 
         fn add(value: u64) mut -> void {
-            self->push(FormatArgument::UnsignedInteger { value: value })
+            values.push(FormatArgument::UnsignedInteger { value: value })
         }
 
         fn add(value: f32) mut -> void { self->add(value as f64) }
 
         fn add(value: f64) mut -> void {
-            self->push(FormatArgument::FloatingPoint { value: value })
+            values.push(FormatArgument::FloatingPoint { value: value })
         }
 
         fn add(value: boolean) mut -> void {
-            self->push(FormatArgument::Boolean { value: value })
+            values.push(FormatArgument::Boolean { value: value })
         }
 
         fn add(value: char) mut -> void {
-            self->push(FormatArgument::Character { value: value })
+            values.push(FormatArgument::Character { value: value })
         }
 
         fn render(index: i32) -> Option<String> {
-            if (index < 0 || index >= length) {
+            var argument = values.get(index)
+            if (argument.is_none()) {
                 return Option<String>::None
             }
 
-            return Option<String>::Some { value: ptr[index].render() }
+            return Option<String>::Some { value: argument.unwrap()->render() }
         }
 
         fn size() -> i32 {
-            return length
+            return values.size()
         }
 
         fn is_empty() -> boolean {
-            return length == 0
+            return values.is_empty()
         }
 
         fn clear() mut -> void {
-            length = 0
+            values.clear()
         }
 
-        fn ~FormatArguments() -> void {
-            if (ptr != null) {
-                Memory::free(ptr as *mut void)
-            }
-        }
+        fn ~FormatArguments() -> void {}
 }
 
 public fn sprint(format: cstr, arguments: *FormatArguments) -> Result<String, FormatError> {

@@ -6,7 +6,7 @@ import zep.frontend.test.harness;
 import zep.compiler.lowering;
 import zep.hir.node;
 import zep.hir.program;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 
 class HirHarness {
   public:

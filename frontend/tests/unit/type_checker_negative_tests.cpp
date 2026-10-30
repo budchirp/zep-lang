@@ -178,7 +178,7 @@ fn main() -> i32 {
 )zep"};
 
     for (const auto& snippet : snippets) {
-        EXPECT_TRUE(FrontendChecks::type_check_error(snippet)) << snippet;
+        EXPECT_TRUE(assert_type_check_error(snippet));
     }
 }
 
@@ -218,7 +218,7 @@ fn main() -> i32 {
 )zep"};
 
     for (const auto& snippet : snippets) {
-        EXPECT_TRUE(FrontendChecks::type_check_error(snippet)) << snippet;
+        EXPECT_TRUE(assert_type_check_error(snippet));
     }
 }
 

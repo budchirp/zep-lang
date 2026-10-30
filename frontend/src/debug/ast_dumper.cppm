@@ -13,7 +13,7 @@ import zep.frontend.node.program;
 import zep.frontend.sema.type;
 import zep.frontend.sema.scope;
 import zep.frontend.sema.env;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 import zep.frontend.debug.type_dumper;
 
 export class AstDumper : public Visitor<void> {
@@ -36,11 +36,6 @@ export class AstDumper : public Visitor<void> {
         depth = saved_depth;
         with_indent = saved_indent;
         trailing_newline = saved_newline;
-    }
-
-    void dump_type(const Type* type, int depth, bool with_indent = true,
-                   bool trailing_newline = true) {
-        type_dumper.dump(type, depth, with_indent, trailing_newline);
     }
 
   public:
@@ -71,7 +66,7 @@ export class AstDumper : public Visitor<void> {
 
         Logger::print("TypeExpression(type: ");
         if (node.type != nullptr) {
-            dump_type(node.type, depth, false, false);
+            type_dumper.dump(node.type, depth, false, false);
         } else {
             Logger::print("null");
         }
@@ -1389,21 +1384,15 @@ export class AstDumper : public Visitor<void> {
 
         if (!node.generic_parameters.empty()) {
             Logger::print_indent(depth + 1);
-            Logger::print("generic_parameters: [");
+            Logger::print("generic_parameters: [\n");
 
-            if (node.generic_parameters.empty()) {
-                Logger::print("]");
-            } else {
-                Logger::print("\n");
-                for (std::size_t i = 0; i < node.generic_parameters.size(); ++i) {
-                    visit_child(*node.generic_parameters[i], depth + 2, true, false);
-                    Logger::print((i + 1 < node.generic_parameters.size() ? ",\n" : "\n"));
-                }
-                Logger::print_indent(depth + 1);
-                Logger::print("]");
+            for (auto index = std::size_t{0}; index < node.generic_parameters.size(); ++index) {
+                visit_child(*node.generic_parameters[index], depth + 2, true, false);
+                Logger::print((index + 1 < node.generic_parameters.size() ? ",\n" : "\n"));
             }
 
-            Logger::print("\n");
+            Logger::print_indent(depth + 1);
+            Logger::print("]\n");
         }
 
         Logger::print_indent(depth + 1);

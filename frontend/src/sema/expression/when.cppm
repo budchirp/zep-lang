@@ -4,18 +4,18 @@ module;
 #include <unordered_set>
 #include <vector>
 
-export module zep.frontend.sema.resolver.when;
+export module zep.frontend.sema.expression.when;
 
 import zep.common.context;
 import zep.frontend.node;
 import zep.frontend.sema.context;
 import zep.frontend.sema.env;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 import zep.frontend.sema.scope;
 import zep.frontend.sema.type;
-import zep.frontend.sema.type.resolver;
+import zep.frontend.sema.type_resolver;
 
-export class WhenResolver {
+export class WhenChecker {
   private:
     Context& context;
     SemaContext& sema;
@@ -216,8 +216,8 @@ export class WhenResolver {
     }
 
   public:
-    explicit WhenResolver(Context& context, SemaContext& sema, TypeResolver& type_resolver,
-                          Visitor<void>& visitor)
+    explicit WhenChecker(Context& context, SemaContext& sema, TypeResolver& type_resolver,
+                         Visitor<void>& visitor)
         : context(context), sema(sema), type_resolver(type_resolver), visitor(visitor) {}
 
     void resolve(WhenExpression& node) {
@@ -329,6 +329,6 @@ export class WhenResolver {
         }
 
         node.type =
-            result_type != nullptr ? result_type : sema.builtin_resolver.primitives.at("void");
+            result_type != nullptr ? result_type : sema.primitives.entries.at("void");
     }
 };

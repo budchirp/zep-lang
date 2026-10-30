@@ -6,7 +6,6 @@ module;
 #include <functional>
 #include <limits>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -18,12 +17,46 @@ export module zep.frontend.sema.type:value;
 import zep.common.diagnostic.diagnostic;
 import zep.common.diagnostic.collection;
 import zep.common.source.span;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 import :base;
 
-export class CompileTimeValue;
-
 export class CompileTimeValue {
+  private:
+    static std::size_t combine(std::size_t seed, std::size_t value) {
+        return seed ^ (value + 0x9e3779b9 + (seed << 6) + (seed >> 2));
+    }
+
+    static std::string encode_string(const std::string& value) {
+        auto result = std::to_string(value.size()) + "_";
+
+        for (const auto character : value) {
+            result += std::to_string(
+                          static_cast<unsigned>(static_cast<unsigned char>(character))) +
+                      "_";
+        }
+
+        return result;
+    }
+
+    class IntegerRange {
+      public:
+        __int128 minimum;
+        __int128 maximum;
+
+        explicit IntegerRange(const Type& type) {
+            const auto is_char = type.is_char();
+            const auto width = is_char ? 8 : type.bit_width();
+            const auto is_unsigned = is_char || type.is_unsigned_type();
+
+            minimum = is_unsigned ? __int128{0} : -(__int128{1} << (width - 1));
+            maximum = (__int128{1} << (is_unsigned ? width : width - 1)) - 1;
+        }
+
+        bool contains(__int128 value) const {
+            return value >= minimum && value <= maximum;
+        }
+    };
+
   public:
     class Kind {
       public:
@@ -57,20 +90,6 @@ export class CompileTimeValue {
                             std::bit_cast<std::uint32_t>(static_cast<float>(value)))
                       : std::bit_cast<std::uint64_t>(value)) {}
 
-    static bool integer_in_range(__int128 value, const Type* type) {
-        if (type == nullptr || (!type->is_integer() && !type->is_char())) {
-            return false;
-        }
-
-        const auto is_ch = type->is_char();
-        const auto width = is_ch ? 8 : type->bit_width();
-        const auto is_unsigned = is_ch || type->is_unsigned_type();
-        const auto minimum = is_unsigned ? __int128{0} : -(__int128{1} << (width - 1));
-        const auto maximum = (__int128{1} << (is_unsigned ? width : width - 1)) - 1;
-
-        return value >= minimum && value <= maximum;
-    }
-
     static std::optional<CompileTimeValue> checked_integer(Diagnostics& diagnostics, __int128 value,
                                                            const Type* type, Span span,
                                                            bool arithmetic = false) {
@@ -81,11 +100,8 @@ export class CompileTimeValue {
             return std::nullopt;
         }
 
-        const auto width = is_ch ? 8 : type->bit_width();
         const auto is_unsigned = is_ch || type->is_unsigned_type();
-        const auto minimum = is_unsigned ? __int128{0} : -(__int128{1} << (width - 1));
-        const auto maximum = (__int128{1} << (is_unsigned ? width : width - 1)) - 1;
-        if (value < minimum || value > maximum) {
+        if (!IntegerRange(*type).contains(value)) {
             diagnostics.add_error(span, arithmetic ? "integer overflow in constant expression"
                                                    : "constant integer is out of range for '" +
                                                          type->to_string() + "'");
@@ -232,34 +248,64 @@ export class CompileTimeValue {
     }
 
     std::size_t hash() const {
-        return std::hash<std::string>{}(to_string()) ^
-               (type == nullptr ? 0 : std::hash<std::string>{}(type->to_string()));
+        auto result = combine(static_cast<std::size_t>(kind), Type::hash(type));
+
+        return std::visit(
+            [result](const auto& value) mutable {
+                using Value = std::decay_t<decltype(value)>;
+
+                if constexpr (std::is_same_v<Value, std::vector<CompileTimeValue>>) {
+                    for (const auto& element : value) {
+                        result = combine(result, element.hash());
+                    }
+                } else {
+                    result = combine(result, std::hash<Value>{}(value));
+                }
+
+                return result;
+            },
+            payload);
     }
 
-    std::optional<std::int64_t> try_as_signed_integer() const {
+    std::string stable_encoding() const {
         switch (kind) {
-        case Kind::Type::SignedInteger:
-            return std::get<std::int64_t>(payload);
-        case Kind::Type::UnsignedInteger: {
-            const auto value = std::get<std::uint64_t>(payload);
-            if (value > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-                return std::nullopt;
+        case Kind::Type::SignedInteger: {
+            auto value = std::to_string(std::get<std::int64_t>(payload));
+            if (!value.empty() && value.front() == '-') {
+                value.front() = 'n';
+            } else {
+                value.insert(value.begin(), 'p');
+            }
+            return "s" + value;
+        }
+        case Kind::Type::UnsignedInteger:
+            return "u" + std::to_string(std::get<std::uint64_t>(payload));
+        case Kind::Type::Float:
+            return "f" + std::to_string(std::get<std::uint64_t>(payload));
+        case Kind::Type::Boolean:
+            return std::get<bool>(payload) ? "b1" : "b0";
+        case Kind::Type::Char:
+            return "h" + std::to_string(std::get<std::uint8_t>(payload));
+        case Kind::Type::String:
+            return "t" + encode_string(std::get<std::string>(payload));
+        case Kind::Type::Null:
+            return "null";
+        case Kind::Type::Struct:
+        case Kind::Type::Array: {
+            const auto& elements = std::get<std::vector<CompileTimeValue>>(payload);
+            auto result = kind == Kind::Type::Struct ? std::string("s") : std::string("a");
+            result += std::to_string(elements.size()) + "_";
+
+            for (const auto& element : elements) {
+                const auto encoded = element.stable_encoding();
+                result += std::to_string(encoded.size()) + "_" + encoded;
             }
 
-            return static_cast<std::int64_t>(value);
+            return result;
         }
-        case Kind::Type::Char:
-            return static_cast<std::int64_t>(std::get<std::uint8_t>(payload));
-        case Kind::Type::Boolean:
-        case Kind::Type::Float:
-        case Kind::Type::String:
-        case Kind::Type::Null:
-        case Kind::Type::Struct:
-        case Kind::Type::Array:
-            return std::nullopt;
         }
 
-        return std::nullopt;
+        return {};
     }
 
     std::optional<std::uint64_t> try_as_unsigned_integer() const {
@@ -286,22 +332,6 @@ export class CompileTimeValue {
         }
 
         return std::nullopt;
-    }
-
-    std::int64_t as_signed_integer() const {
-        auto value = try_as_signed_integer();
-        if (!value.has_value()) {
-            throw std::runtime_error("compile-time value is not a concrete signed integer");
-        }
-        return *value;
-    }
-
-    std::uint64_t as_unsigned_integer() const {
-        auto value = try_as_unsigned_integer();
-        if (!value.has_value()) {
-            throw std::runtime_error("compile-time value is not a concrete unsigned integer");
-        }
-        return *value;
     }
 
     std::string to_string() const {
@@ -375,10 +405,10 @@ export class ConcreteArrayExtent {
 
 export class DependentArrayExtent {
   public:
-    const void* expression;
+    void* expression;
     const void* declaration;
 
-    explicit DependentArrayExtent(const void* expression, const void* declaration = nullptr)
+    explicit DependentArrayExtent(void* expression, const void* declaration = nullptr)
         : expression(expression), declaration(declaration) {}
 
     bool operator==(const DependentArrayExtent& other) const {
@@ -403,27 +433,34 @@ export class TypeBinding {
 };
 
 export class ConstBinding {
+  private:
+    ConstBinding(const Type* type, void* expression, const void* declaration)
+        : type(type), value(std::nullopt), expression(expression), declaration(declaration) {}
+
   public:
     const Type* type;
     std::optional<CompileTimeValue> value;
-    const void* source;
-    bool source_is_expression;
+    void* expression;
+    const void* declaration;
 
     explicit ConstBinding(CompileTimeValue value)
-        : type(value.type), value(std::move(value)), source(nullptr), source_is_expression(false) {}
+        : type(value.type), value(std::move(value)), expression(nullptr), declaration(nullptr) {}
 
-    ConstBinding(const void* source, const Type* type, bool source_is_expression)
-        : type(type), value(std::nullopt), source(source),
-          source_is_expression(source_is_expression) {}
+    static ConstBinding dependent_expression(void* expression, const Type* type) {
+        return ConstBinding(type, expression, nullptr);
+    }
+
+    static ConstBinding dependent_parameter(const void* declaration, const Type* type) {
+        return ConstBinding(type, nullptr, declaration);
+    }
 
     bool is_concrete() const { return value.has_value(); }
-    std::string to_string() const { return value.has_value() ? value->to_string() : "<dependent>"; }
 
     bool operator==(const ConstBinding& other) const {
         return (type == other.type || (type != nullptr && other.type != nullptr &&
-                                       type->to_string() == other.type->to_string())) &&
-               value == other.value && source == other.source &&
-               source_is_expression == other.source_is_expression;
+                                       type->same(other.type))) &&
+               value == other.value && expression == other.expression &&
+               declaration == other.declaration;
     }
 };
 
@@ -442,9 +479,10 @@ export class GenericBindingHash {
                     if (value.value.has_value()) {
                         result ^= value.value->hash() + 0x9e3779b9 + (result << 6) + (result >> 2);
                     }
-                    result ^= std::hash<const void*>{}(value.source) + 0x9e3779b9 + (result << 6) +
+                    result ^= std::hash<void*>{}(value.expression) + 0x9e3779b9 + (result << 6) +
                               (result >> 2);
-                    result ^= static_cast<std::size_t>(value.source_is_expression);
+                    result ^= std::hash<const void*>{}(value.declaration) + 0x9e3779b9 +
+                              (result << 6) + (result >> 2);
                     return result;
                 }
             },

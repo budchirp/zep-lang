@@ -10,17 +10,17 @@ module;
 #include <variant>
 #include <vector>
 
-export module zep.frontend.sema.type.resolver;
+export module zep.frontend.sema.type_resolver;
 
 import zep.frontend.sema.type;
 import zep.frontend.sema.env;
 import zep.frontend.sema.scope;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 import zep.common.diagnostic.diagnostic;
 import zep.common.diagnostic.collection;
 import zep.common.source.span;
 import zep.frontend.node;
-import zep.frontend.sema.constant.environment;
+import zep.frontend.sema.substitution;
 import zep.frontend.sema.constant.evaluator;
 
 export class TypeResolver {
@@ -33,18 +33,6 @@ export class TypeResolver {
     CompileTimeEnvironment substitutions;
 
   private:
-
-    struct FunctionCacheKeyHash {
-        std::size_t operator()(const std::pair<const FunctionType*, const Scope*>& key) const {
-            return std::hash<const FunctionType*>{}(key.first) ^
-                   (std::hash<const Scope*>{}(key.second) << 1);
-        }
-    };
-
-    std::unordered_map<std::pair<const FunctionType*, const Scope*>, const FunctionType*,
-                       FunctionCacheKeyHash>
-        function_type_cache;
-
     class NominalCacheKey {
       public:
         const Type* base;
@@ -72,28 +60,7 @@ export class TypeResolver {
     };
 
     std::unordered_set<const Type*> resolving_types;
-    class SubstitutionKey {
-      public:
-        const Type* type;
-        const CompileTimeEnvironment* environment;
-
-        SubstitutionKey(const Type* type, const CompileTimeEnvironment* environment)
-            : type(type), environment(environment) {}
-
-        bool operator==(const SubstitutionKey&) const = default;
-    };
-
-    class SubstitutionHash {
-      public:
-        std::size_t operator()(const SubstitutionKey& key) const {
-            auto result = std::hash<const Type*>()(key.type);
-            result ^= std::hash<const CompileTimeEnvironment*>()(key.environment) + 0x9e3779b9 +
-                      (result << 6) + (result >> 2);
-            return result;
-        }
-    };
-
-    std::unordered_set<SubstitutionKey, SubstitutionHash> active_substitutions;
+    std::unordered_set<const Type*> active_substitutions;
 
     using NominalCache = std::unordered_map<NominalCacheKey, const Type*, NominalCacheKeyHash>;
 
@@ -119,52 +86,25 @@ export class TypeResolver {
         }
     };
 
-    class SubstitutionGuard {
-      private:
-        std::unordered_set<SubstitutionKey, SubstitutionHash>& set;
-        SubstitutionKey key;
-
-      public:
-        bool already_present;
-
-        SubstitutionGuard(std::unordered_set<SubstitutionKey, SubstitutionHash>& set,
-                          SubstitutionKey key)
-            : set(set), key(std::move(key)) {
-            already_present = !set.insert(this->key).second;
-        }
-
-        ~SubstitutionGuard() {
-            if (!already_present) {
-                set.erase(key);
-            }
-        }
-    };
-
-    const TypeSymbol* lookup_type_symbol(const std::string& name) const {
-        if (auto* symbol = env.current_scope->lookup_type(name); symbol != nullptr) {
-            return symbol;
-        }
-
-        return nullptr;
-    }
-
     ConstBinding substitute_const_binding(const ConstBinding& binding,
                                           const CompileTimeEnvironment& environment) {
-        if (binding.value.has_value() || binding.source == nullptr) {
+        if (binding.value.has_value() ||
+            (binding.expression == nullptr && binding.declaration == nullptr)) {
             return binding;
         }
 
-        if (!binding.source_is_expression) {
-            const auto* generic = environment.lookup(binding.source);
+        if (binding.declaration != nullptr) {
+            const auto* generic = environment.lookup(binding.declaration);
             const auto* value = generic != nullptr ? std::get_if<ConstBinding>(generic) : nullptr;
             return value != nullptr && *value != binding
                        ? substitute_const_binding(*value, environment)
                        : binding;
         }
 
-        Evaluator evaluator(diagnostics, &env, &environment, true);
-        auto* expression = const_cast<Expression*>(static_cast<const Expression*>(binding.source));
-        const auto result = evaluator.evaluate_uncached(*expression);
+        Evaluator evaluator(diagnostics, &env, &environment,
+                            EvaluationPolicy::Type::Dependent);
+        auto* expression = static_cast<Expression*>(binding.expression);
+        const auto result = evaluator.evaluate(*expression).value;
         return result.has_value() ? ConstBinding(*result) : binding;
     }
 
@@ -260,33 +200,17 @@ export class TypeResolver {
         result.reserve(parameters.size());
 
         for (const auto& parameter : parameters) {
-            if (parameter.is_const()) {
-                if (substitutions.contains(parameter)) {
-                    changed = true;
-                    continue;
-                }
-
-                const auto* value_type = resolve_type(parameter.type);
-                if (value_type != parameter.type) {
-                    changed = true;
-                }
-
-                result.emplace_back(GenericParameterType::Kind::Type::Const, parameter.name,
-                                    value_type, parameter.declaration);
-                continue;
-            }
-
             if (substitutions.contains(parameter)) {
                 changed = true;
                 continue;
             }
 
-            const auto* constraint = resolve_type(parameter.type);
-            if (constraint != parameter.type) {
+            const auto* type = resolve_type(parameter.type);
+            if (type != parameter.type) {
                 changed = true;
             }
 
-            result.emplace_back(parameter.name, constraint, parameter.declaration);
+            result.emplace_back(parameter.kind, parameter.name, type, parameter.declaration);
         }
 
         return result;
@@ -481,7 +405,7 @@ export class TypeResolver {
                 return false;
             }
 
-            if (lookup_type_symbol(named->name) == nullptr) {
+            if (env.current_scope->lookup_type(named->name) == nullptr) {
                 return false;
             }
 
@@ -582,10 +506,10 @@ export class TypeResolver {
             return extent;
         }
 
-        Evaluator evaluator(diagnostics, &env, &bindings, true);
-        auto* expression =
-            const_cast<Expression*>(static_cast<const Expression*>(dependent->expression));
-        const auto value = evaluator.evaluate_uncached(*expression);
+        Evaluator evaluator(diagnostics, &env, &bindings,
+                            EvaluationPolicy::Type::Dependent);
+        auto* expression = static_cast<Expression*>(dependent->expression);
+        const auto value = evaluator.evaluate(*expression).value;
         const auto size = value.has_value() ? value->try_as_unsigned_integer() : std::nullopt;
         if (!size.has_value()) {
             if (value.has_value()) {
@@ -612,7 +536,7 @@ export class TypeResolver {
 
         for (const auto& argument : arguments) {
             if (argument.is_const() && !argument.const_binding->is_concrete() &&
-                argument.const_binding->source_is_expression) {
+                argument.const_binding->expression != nullptr) {
                 return type_arena.create<NamedType>(named.name, std::move(arguments),
                                                     named.declaration);
             }
@@ -662,34 +586,16 @@ export class TypeResolver {
     TypeResolver(TypeArena& type_arena, Env& env, Diagnostics& diagnostics)
         : type_arena(type_arena), env(env), diagnostics(diagnostics) {}
 
-    class SubstitutionScope {
-      private:
-        TypeResolver& context;
-        CompileTimeEnvironment saved;
-
-      public:
-        explicit SubstitutionScope(TypeResolver& context)
-            : context(context), saved(context.substitutions) {}
-
-        SubstitutionScope(const SubstitutionScope&) = delete;
-        SubstitutionScope& operator=(const SubstitutionScope&) = delete;
-        SubstitutionScope(SubstitutionScope&&) = delete;
-        SubstitutionScope& operator=(SubstitutionScope&&) = delete;
-
-        ~SubstitutionScope() {
-            context.substitutions = std::move(saved);
-            context.function_type_cache.clear();
-        }
-    };
-
-    [[nodiscard]] SubstitutionScope create_substitution_scope() { return SubstitutionScope(*this); }
+    [[nodiscard]] CompileTimeEnvironment::Scope create_substitution_scope() {
+        return substitutions.enter_scope();
+    }
 
     const Type* substitute(const Type* type, const CompileTimeEnvironment& substitution_map) {
         if (type == nullptr) {
             return nullptr;
         }
 
-        SubstitutionGuard guard(active_substitutions, SubstitutionKey(type, &substitution_map));
+        ResolvingGuard guard(active_substitutions, type);
         if (guard.already_present) {
             return type;
         }
@@ -697,9 +603,13 @@ export class TypeResolver {
         switch (type->kind) {
         case Type::Kind::Type::Named: {
             const auto* named = type->as<NamedType>();
-            if (const auto* binding = substitution_map.lookup_type(named->name, named->declaration);
-                binding != nullptr) {
-                return binding;
+            const auto* binding = named->declaration != nullptr
+                                      ? substitution_map.lookup(named->declaration)
+                                      : substitution_map.lookup(named->name);
+            if (const auto* type_binding =
+                    binding != nullptr ? std::get_if<TypeBinding>(binding) : nullptr;
+                type_binding != nullptr) {
+                return type_binding->type;
             }
 
             bool changed = false;
@@ -923,7 +833,6 @@ export class TypeResolver {
     void bind_type_parameter(const std::string& name, const Type* type,
                              const void* declaration = nullptr) {
         substitutions.bind(name, TypeBinding(type), declaration);
-        function_type_cache.clear();
     }
 
     GenericBinding resolve_binding(const GenericBinding& binding) {
@@ -950,7 +859,9 @@ export class TypeResolver {
         }
 
         if (!binding.value.has_value()) {
-            return ConstBinding(binding.source, target, binding.source_is_expression);
+            return binding.expression != nullptr
+                       ? ConstBinding::dependent_expression(binding.expression, target)
+                       : ConstBinding::dependent_parameter(binding.declaration, target);
         }
 
         if (!binding.value->is_integer()) {
@@ -972,7 +883,6 @@ export class TypeResolver {
                               const void* declaration = nullptr) {
         const auto resolved = resolve_binding(binding);
         substitutions.bind(name, resolved, declaration);
-        function_type_cache.clear();
     }
 
     std::optional<ConstBinding> const_parameter(const std::string& name) {
@@ -985,7 +895,6 @@ export class TypeResolver {
 
     void use_environment(const CompileTimeEnvironment& environment) {
         substitutions = environment;
-        function_type_cache.clear();
     }
 
     void bind_generic_parameter(const GenericParameterType& parameter, bool as_self = false) {
@@ -995,8 +904,8 @@ export class TypeResolver {
                 return;
             }
             substitutions.bind(parameter,
-                               ConstBinding(parameter.declaration, parameter.type, false));
-            function_type_cache.clear();
+                               ConstBinding::dependent_parameter(parameter.declaration,
+                                                                 parameter.type));
             return;
         }
 
@@ -1015,27 +924,13 @@ export class TypeResolver {
         }
     }
 
-    bool has_type_parameter(const std::string& name) const { return substitutions.contains(name); }
-
-    const void* generic_parameter_declaration(const std::string& name) const {
-        return substitutions.declaration(name);
+    bool has_type_parameter(const std::string& name) const {
+        return substitutions.lookup(name) != nullptr;
     }
 
     bool is_concrete(const Type* type) const {
         std::unordered_set<const Type*> visited;
         return is_concrete_type(type, visited);
-    }
-
-    bool has_symbolic_bindings() const {
-        for (const auto& [name, binding] : substitutions.entries()) {
-            const auto* type = std::get_if<TypeBinding>(&binding);
-            if (type != nullptr ? !is_concrete(type->type)
-                                : !std::get<ConstBinding>(binding).is_concrete()) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     bool satisfies_constraint(const Type* argument, const Type* constraint) {
@@ -1062,12 +957,6 @@ export class TypeResolver {
             return nullptr;
         }
 
-        auto cache_key = std::make_pair(function_type, env.current_scope);
-        if (auto iterator = function_type_cache.find(cache_key);
-            iterator != function_type_cache.end()) {
-            return iterator->second;
-        }
-
         const auto* return_type = resolve_type(function_type->return_type);
 
         auto changed = return_type != function_type->return_type;
@@ -1080,18 +969,15 @@ export class TypeResolver {
             resolve_generic_parameters(function_type->generic_parameters, changed);
 
         if (!changed) {
-            function_type_cache.emplace(cache_key, function_type);
             return function_type;
         }
 
         auto parameters = resolved_parameters.has_value() ? std::move(*resolved_parameters)
                                                           : function_type->parameters;
 
-        const auto* result =
-            type_arena.create<FunctionType>(function_type->name, return_type, std::move(parameters),
-                                            std::move(generic_parameters), function_type->variadic);
-        function_type_cache.emplace(cache_key, result);
-        return result;
+        return type_arena.create<FunctionType>(
+            function_type->name, return_type, std::move(parameters),
+            std::move(generic_parameters), function_type->variadic);
     }
 
     const Type* resolve_type(const Type* type) {
@@ -1108,13 +994,16 @@ export class TypeResolver {
         case Type::Kind::Type::Named: {
             const auto* named = type->as<NamedType>();
 
-            if (const auto* substitution =
-                    substitutions.lookup_type(named->name, named->declaration);
-                substitution != nullptr) {
-                return substitution;
+            const auto* binding = named->declaration != nullptr
+                                      ? substitutions.lookup(named->declaration)
+                                      : substitutions.lookup(named->name);
+            if (const auto* type_binding =
+                    binding != nullptr ? std::get_if<TypeBinding>(binding) : nullptr;
+                type_binding != nullptr) {
+                return type_binding->type;
             }
 
-            auto* symbol = lookup_type_symbol(named->name);
+            auto* symbol = env.current_scope->lookup_type(named->name);
             if (symbol == nullptr) {
                 return type;
             }
@@ -1168,7 +1057,7 @@ export class TypeResolver {
             const auto* struct_type = type->as<StructType>();
 
             if (struct_type->generic_parameters.empty() && struct_type->generic_arguments.empty() &&
-                substitutions.entries().empty()) {
+                substitutions.empty()) {
                 return type;
             }
 
@@ -1217,7 +1106,7 @@ export class TypeResolver {
             const auto* enum_type = type->as<EnumType>();
 
             if (enum_type->generic_parameters.empty() && enum_type->generic_arguments.empty() &&
-                substitutions.entries().empty()) {
+                substitutions.empty()) {
                 return type;
             }
 
@@ -1271,7 +1160,7 @@ export class TypeResolver {
             const auto* interface_type = type->as<InterfaceType>();
 
             if (interface_type->generic_parameters.empty() &&
-                interface_type->generic_arguments.empty() && substitutions.entries().empty()) {
+                interface_type->generic_arguments.empty() && substitutions.empty()) {
                 return type;
             }
 

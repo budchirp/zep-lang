@@ -7,21 +7,21 @@ module;
 #include <utility>
 #include <vector>
 
-export module zep.frontend.sema.resolver.literal;
+export module zep.frontend.sema.expression.literal;
 
 import zep.common.context;
 import zep.common.source.span;
 import zep.frontend.node;
 import zep.frontend.sema.context;
 import zep.frontend.sema.constant.evaluator;
-import zep.frontend.sema.kind;
-import zep.frontend.sema.lifecycle;
-import zep.frontend.sema.resolver.facade;
-import zep.frontend.sema.resolver.generic;
+import zep.frontend.kind;
+import zep.frontend.sema.lifetime;
+import zep.frontend.sema.facade;
+import zep.frontend.sema.expression.generic;
 import zep.frontend.sema.type;
-import zep.frontend.sema.type.resolver;
+import zep.frontend.sema.type_resolver;
 
-export class LiteralResolver {
+export class LiteralChecker {
   private:
     Context& context;
     SemaContext& sema;
@@ -99,110 +99,6 @@ export class LiteralResolver {
         return arguments;
     }
 
-    bool reorder_arguments(std::vector<GenericArgument*>& arguments,
-                           const std::vector<GenericParameterType>& parameters, Span span,
-                           bool emit_errors) {
-        if (arguments.size() != parameters.size()) {
-            if (emit_errors) {
-                context.diagnostics.add_error(
-                    span, "expected " + std::to_string(parameters.size()) +
-                              " generic argument(s), got " + std::to_string(arguments.size()));
-            }
-
-            return false;
-        }
-
-        std::vector<GenericArgument*> ordered(parameters.size(), nullptr);
-        std::unordered_set<std::string> used_names;
-        used_names.reserve(arguments.size());
-
-        bool seen_named = false;
-        bool valid = true;
-        std::size_t positional_index = 0;
-
-        for (auto* argument : arguments) {
-            if (argument->name.empty()) {
-                if (seen_named) {
-                    if (emit_errors) {
-                        context.diagnostics.add_error(
-                            argument->span,
-                            "positional generic argument cannot follow named generic argument");
-                    }
-
-                    valid = false;
-                    continue;
-                }
-
-                ordered[positional_index] = argument;
-                used_names.insert(parameters[positional_index].name);
-                ++positional_index;
-                continue;
-            }
-
-            seen_named = true;
-
-            std::size_t parameter_index = 0;
-            for (; parameter_index < parameters.size(); ++parameter_index) {
-                if (parameters[parameter_index].name == argument->name) {
-                    break;
-                }
-            }
-
-            if (parameter_index == parameters.size()) {
-                if (emit_errors) {
-                    context.diagnostics.add_error(argument->span, "unknown generic argument '" +
-                                                                      argument->name + "'");
-                }
-
-                valid = false;
-                continue;
-            }
-
-            if (!used_names.insert(argument->name).second) {
-                if (emit_errors) {
-                    context.diagnostics.add_error(argument->span, "duplicate generic argument '" +
-                                                                      argument->name + "'");
-                }
-
-                valid = false;
-                continue;
-            }
-
-            ordered[parameter_index] = argument;
-        }
-
-        for (std::size_t i = 0; i < parameters.size(); ++i) {
-            if (ordered[i] != nullptr) {
-                continue;
-            }
-
-            if (emit_errors) {
-                context.diagnostics.add_error(span, "missing generic argument '" +
-                                                        parameters[i].name + "'");
-            }
-
-            valid = false;
-        }
-
-        if (!valid) {
-            return false;
-        }
-
-        arguments = std::move(ordered);
-        return true;
-    }
-
-    bool apply_generic_bindings(std::vector<GenericArgument*>& arguments,
-                                const std::vector<GenericParameterType>& parameters, Span span,
-                                bool emit_errors) {
-        if (!reorder_arguments(arguments, parameters, span, emit_errors)) {
-            return false;
-        }
-
-        GenericArgumentResolver arguments_resolver(context, sema, resolver, visitor);
-        return arguments_resolver.apply(arguments, parameters, emit_errors);
-    }
-
     bool apply_field_generic_bindings(std::vector<GenericArgument*>& arguments,
                                       const std::vector<GenericParameterType>& parameters,
                                       const std::vector<FieldType>& declared_fields,
@@ -215,7 +111,8 @@ export class LiteralResolver {
             }
         }
 
-        return apply_generic_bindings(arguments, parameters, span, emit_errors);
+        GenericArgumentResolver arguments_resolver(context, sema, resolver, visitor);
+        return arguments_resolver.apply(arguments, parameters, span, emit_errors);
     }
 
     template <typename FieldOwner>
@@ -284,21 +181,22 @@ export class LiteralResolver {
 
             visitor.visit_expression(*literal_field->value);
             if (declared != nullptr) {
-                LifecycleResolver lifecycle(sema, resolver);
                 literal_field->value =
-                    lifecycle.copy_construct(literal_field->value, declared->type);
+                    sema.lifetime.copy_construct(literal_field->value, declared->type, resolver);
             }
             target_type = saved_target_type;
         }
     }
 
   public:
-    LiteralResolver(Context& context, SemaContext& sema, TypeResolver& resolver,
-                    Visitor<void>& visitor, const Type*& target_type)
-        : context(context), sema(sema), resolver(resolver), facades(sema, resolver),
+    LiteralChecker(Context& context, SemaContext& sema, TypeResolver& resolver,
+                   Visitor<void>& visitor, const Type*& target_type)
+        : context(context), sema(sema), resolver(resolver),
+          facades(sema.facades, sema.types, resolver),
           visitor(visitor), target_type(target_type) {}
 
-    void resolve_struct_literal(StructLiteralExpression& node, const std::string& current_parent) {
+    void resolve_struct_literal(StructLiteralExpression& node,
+                                const NominalType* enclosing_type) {
         visitor.visit_expression(*node.name);
 
         const auto* struct_type =
@@ -320,8 +218,15 @@ export class LiteralResolver {
             return;
         }
 
+        const auto* definition =
+            struct_type->definition != nullptr ? struct_type->definition : struct_type;
+        const auto* enclosing_definition =
+            enclosing_type != nullptr && enclosing_type->definition != nullptr
+                ? enclosing_type->definition
+                : enclosing_type;
+
         validate_literal_fields(node.span, "struct '" + struct_type->name + "'", node.fields,
-                                *struct_type, struct_type->name != current_parent);
+                                *struct_type, definition != enclosing_definition);
 
         node.type = resolver.resolve_type(struct_type);
     }

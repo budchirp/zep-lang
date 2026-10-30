@@ -10,8 +10,7 @@ export module zep.hir.node;
 
 import zep.common.source.position;
 import zep.common.source.span;
-import zep.frontend.node;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 import zep.frontend.sema.scope;
 import zep.frontend.sema.type;
 import zep.common.arena;
@@ -56,7 +55,6 @@ export class HIRNodeKind {
 };
 
 export class HIRNode {
-  private:
   protected:
     explicit HIRNode(HIRNodeKind::Type kind, Span span) : kind(kind), span(span) {}
 
@@ -114,11 +112,6 @@ export class HIRBlockStatement : public HIRStatement {
 
     explicit HIRBlockStatement(Span span, std::vector<HIRStatement*> statements)
         : HIRStatement(static_kind, span), statements(std::move(statements)) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRBlockExpression : public HIRExpression {
@@ -129,11 +122,6 @@ export class HIRBlockExpression : public HIRExpression {
 
     HIRBlockExpression(Span span, HIRBlockStatement* body, const Type* type)
         : HIRExpression(static_kind, span, type), body(body) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRStatementGroup : public HIRStatement {
@@ -144,11 +132,6 @@ export class HIRStatementGroup : public HIRStatement {
 
     explicit HIRStatementGroup(Span span, std::vector<HIRStatement*> statements)
         : HIRStatement(static_kind, span), statements(std::move(statements)) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRNumberLiteral : public HIRExpression {
@@ -159,11 +142,6 @@ export class HIRNumberLiteral : public HIRExpression {
 
     HIRNumberLiteral(Span span, std::string value, const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), value(std::move(value)) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRFloatLiteral : public HIRExpression {
@@ -174,11 +152,6 @@ export class HIRFloatLiteral : public HIRExpression {
 
     HIRFloatLiteral(Span span, std::string value, const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), value(std::move(value)) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRStringLiteral : public HIRExpression {
@@ -189,11 +162,6 @@ export class HIRStringLiteral : public HIRExpression {
 
     HIRStringLiteral(Span span, std::string value, const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), value(std::move(value)) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRStringArrayExpression : public HIRExpression {
@@ -204,11 +172,6 @@ export class HIRStringArrayExpression : public HIRExpression {
 
     HIRStringArrayExpression(Span span, std::vector<std::string> values, const Type* type)
         : HIRExpression(static_kind, span, type), values(std::move(values)) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRCharLiteral : public HIRExpression {
@@ -219,11 +182,6 @@ export class HIRCharLiteral : public HIRExpression {
 
     HIRCharLiteral(Span span, std::uint8_t value, const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), value(value) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRBooleanLiteral : public HIRExpression {
@@ -234,11 +192,6 @@ export class HIRBooleanLiteral : public HIRExpression {
 
     HIRBooleanLiteral(Span span, bool value, const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), value(value) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRNullLiteral : public HIRExpression {
@@ -247,11 +200,6 @@ export class HIRNullLiteral : public HIRExpression {
 
     HIRNullLiteral(Span span, const Type* type = nullptr)
         : HIRExpression(static_kind, span, type) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRIdentifierExpression : public HIRExpression {
@@ -267,11 +215,6 @@ export class HIRIdentifierExpression : public HIRExpression {
                             const FunctionSymbol* function_symbol = nullptr)
         : HIRExpression(static_kind, span, type), name(std::move(name)),
           variable_symbol(variable_symbol), function_symbol(function_symbol) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRBinaryExpression : public HIRExpression {
@@ -285,11 +228,6 @@ export class HIRBinaryExpression : public HIRExpression {
     HIRBinaryExpression(Span span, HIRExpression* left, BinaryOperator::Type op,
                         HIRExpression* right, const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), left(left), op(op), right(right) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRUnaryExpression : public HIRExpression {
@@ -302,11 +240,6 @@ export class HIRUnaryExpression : public HIRExpression {
     HIRUnaryExpression(Span span, UnaryOperator::Type op, HIRExpression* operand,
                        const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), op(op), operand(operand) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRCoerceExpression : public HIRExpression {
@@ -321,11 +254,6 @@ export class HIRCoerceExpression : public HIRExpression {
                         const Type* source_type)
         : HIRExpression(static_kind, span, type), value(value), coercion(coercion),
           source_type(source_type) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRCallTarget {
@@ -400,11 +328,6 @@ export class HIRCallExpression : public HIRExpression {
                       std::vector<HIRExpression*> arguments, const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), arguments(std::move(arguments)),
           target(std::move(target)) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRIndexExpression : public HIRExpression {
@@ -417,11 +340,6 @@ export class HIRIndexExpression : public HIRExpression {
     HIRIndexExpression(Span span, HIRExpression* object, HIRExpression* index,
                        const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), object(object), index(index) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRMemberExpression : public HIRExpression {
@@ -434,11 +352,6 @@ export class HIRMemberExpression : public HIRExpression {
     HIRMemberExpression(Span span, HIRExpression* object, std::string member,
                         const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), object(object), member(std::move(member)) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRAssignExpression : public HIRExpression {
@@ -451,11 +364,6 @@ export class HIRAssignExpression : public HIRExpression {
     HIRAssignExpression(Span span, HIRExpression* target, HIRExpression* value,
                         const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), target(target), value(value) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRStructLiteralField {
@@ -479,11 +387,6 @@ export class HIRStructLiteralExpression : public HIRExpression {
                                const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), name(std::move(name)), fields(std::move(fields)) {
     }
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIREnumVariantExpression : public HIRExpression {
@@ -501,11 +404,6 @@ export class HIREnumVariantExpression : public HIRExpression {
         : HIRExpression(static_kind, span, type), enum_name(std::move(enum_name)),
           variant_name(std::move(variant_name)), fields(std::move(fields)),
           variant_index(variant_index) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRIfExpression : public HIRExpression {
@@ -520,11 +418,6 @@ export class HIRIfExpression : public HIRExpression {
                     HIRStatement* else_branch, const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), condition(condition), then_branch(then_branch),
           else_branch(else_branch) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRWhenPatternKind {
@@ -590,11 +483,6 @@ export class HIRWhenExpression : public HIRExpression {
                       bool is_exhaustive, const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), subject(subject), arms(std::move(arms)),
           is_exhaustive(is_exhaustive) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRTypeExpression : public HIRExpression {
@@ -605,11 +493,6 @@ export class HIRTypeExpression : public HIRExpression {
 
     HIRTypeExpression(Span span, const Type* type_value)
         : HIRExpression(static_kind, span, type_value), type_value(type_value) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRExpressionStatement : public HIRStatement {
@@ -621,11 +504,6 @@ export class HIRExpressionStatement : public HIRStatement {
     explicit HIRExpressionStatement(Span span, HIRExpression* expression)
         : HIRStatement(static_kind, span, expression != nullptr ? expression->type : nullptr),
           expression(expression) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRReturnStatement : public HIRStatement {
@@ -636,11 +514,6 @@ export class HIRReturnStatement : public HIRStatement {
 
     HIRReturnStatement(Span span, HIRExpression* value, const Type* type = nullptr)
         : HIRStatement(static_kind, span, type), value(value) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRLoopStatement : public HIRStatement {
@@ -656,11 +529,6 @@ export class HIRLoopStatement : public HIRStatement {
                      HIRExpression* step, HIRStatement* body, const Type* type = nullptr)
         : HIRStatement(static_kind, span, type), initializers(std::move(initializers)),
           condition(condition), step(step), body(body) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRArrayLiteralExpression : public HIRExpression {
@@ -672,11 +540,6 @@ export class HIRArrayLiteralExpression : public HIRExpression {
     HIRArrayLiteralExpression(Span span, std::vector<HIRExpression*> elements,
                               const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), elements(std::move(elements)) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRVarDeclaration : public HIRStatement {
@@ -698,11 +561,6 @@ export class HIRVarDeclaration : public HIRStatement {
         : HIRStatement(static_kind, span, type), visibility(visibility), linkage(linkage),
           storage_kind(storage_kind), name(std::move(name)), initializer(initializer),
           is_global(is_global), attributes(std::move(attributes)) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export class HIRFunctionDeclaration : public HIRStatement {
@@ -728,11 +586,6 @@ export class HIRFunctionDeclaration : public HIRStatement {
         : HIRStatement(static_kind, span, type), visibility(visibility), name(std::move(name)),
           function_symbol(function_symbol), return_type(return_type), body(body),
           variadic(variadic), linkage(linkage), is_mangled(is_mangled), abi(abi) {}
-
-    template <typename T>
-    T accept(HIRVisitor<T>& visitor) {
-        return visitor.visit(*this);
-    }
 };
 
 export template <typename T>

@@ -7,16 +7,10 @@ function(zep_configure_target TARGET)
 endfunction()
 
 function(zep_add_module TARGET)
-    cmake_parse_arguments(ARG "" "SOURCE_ROOT" "DEPENDS" ${ARGN})
+    cmake_parse_arguments(ARG "" "" "DEPENDS" ${ARGN})
 
-    if(ARG_SOURCE_ROOT)
-        set(MODULE_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/${ARG_SOURCE_ROOT}")
-    else()
-        set(MODULE_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/src")
-    endif()
-
-    file(GLOB_RECURSE MODULE_SOURCES CONFIGURE_DEPENDS "${MODULE_SOURCE_ROOT}/*.cppm")
-    file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "${MODULE_SOURCE_ROOT}/*.cpp")
+    file(GLOB_RECURSE MODULE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cppm")
+    file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
     add_library(${TARGET} STATIC)
 

@@ -3,18 +3,19 @@ module;
 #include <algorithm>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
 
-export module zep.frontend.sema.resolver.generic;
+export module zep.frontend.sema.expression.generic;
 
 import zep.common.context;
 import zep.common.source.span;
 import zep.frontend.node;
 import zep.frontend.sema.context;
 import zep.frontend.sema.type;
-import zep.frontend.sema.type.resolver;
+import zep.frontend.sema.type_resolver;
 import zep.frontend.sema.constant.evaluator;
 
 export class GenericArgumentResolver {
@@ -75,13 +76,15 @@ export class GenericArgumentResolver {
         if (target != nullptr && target->is_numeric()) {
             contextualize_literal(*argument.value, target);
         }
-        Evaluator evaluator(context.diagnostics, &sema.env, &resolver.substitutions, true);
-        const auto value = evaluator.evaluate_uncached(*argument.value);
+        Evaluator evaluator(context.diagnostics, &sema.env, &resolver.substitutions,
+                            EvaluationPolicy::Type::Dependent);
+        const auto value = evaluator.evaluate(*argument.value).value;
         const auto* identifier = argument.value->as<IdentifierExpression>();
         const auto candidate = value.has_value() ? ConstBinding(*value)
                                : identifier != nullptr && identifier->generic_declaration != nullptr
-                                   ? ConstBinding(identifier->generic_declaration, target, false)
-                                   : ConstBinding(argument.value, target, true);
+                                   ? ConstBinding::dependent_parameter(
+                                         identifier->generic_declaration, target)
+                                   : ConstBinding::dependent_expression(argument.value, target);
         const auto binding = resolver.normalize_const_binding(candidate, target, argument.span);
         if (!binding.has_value()) {
             return std::nullopt;
@@ -204,15 +207,17 @@ export class GenericArgumentResolver {
             }
             visitor.visit(*argument);
             if (argument->value != nullptr) {
-                Evaluator evaluator(context.diagnostics, &sema.env, &resolver.substitutions, true);
-                const auto value = evaluator.evaluate_uncached(*argument->value);
+                Evaluator evaluator(context.diagnostics, &sema.env, &resolver.substitutions,
+                                    EvaluationPolicy::Type::Dependent);
+                const auto value = evaluator.evaluate(*argument->value).value;
                 const auto* identifier = argument->value->as<IdentifierExpression>();
                 argument->const_binding =
                     value.has_value() ? ConstBinding(*value)
                     : identifier != nullptr && identifier->generic_declaration != nullptr
-                        ? ConstBinding(identifier->generic_declaration, argument->value->type,
-                                       false)
-                        : ConstBinding(argument->value, argument->value->type, true);
+                        ? ConstBinding::dependent_parameter(identifier->generic_declaration,
+                                                            argument->value->type)
+                        : ConstBinding::dependent_expression(argument->value,
+                                                             argument->value->type);
                 result.emplace_back(argument->name, *argument->const_binding);
             } else {
                 result.emplace_back(argument->name, argument->type->type);
@@ -221,8 +226,85 @@ export class GenericArgumentResolver {
         return result;
     }
 
-    bool apply(const std::vector<GenericArgument*>& arguments,
-               const std::vector<GenericParameterType>& parameters, bool emit_errors) {
+    bool apply(std::vector<GenericArgument*>& arguments,
+               const std::vector<GenericParameterType>& parameters, Span span, bool emit_errors) {
+        if (arguments.size() != parameters.size()) {
+            if (emit_errors) {
+                context.diagnostics.add_error(
+                    span, "expected " + std::to_string(parameters.size()) +
+                              " generic argument(s), got " + std::to_string(arguments.size()));
+            }
+            return false;
+        }
+
+        std::vector<GenericArgument*> ordered(parameters.size(), nullptr);
+        std::unordered_set<std::string> used_names;
+        used_names.reserve(arguments.size());
+
+        auto seen_named = false;
+        auto valid = true;
+        auto positional_index = std::size_t{0};
+
+        for (auto* argument : arguments) {
+            if (argument->name.empty()) {
+                if (seen_named) {
+                    if (emit_errors) {
+                        context.diagnostics.add_error(
+                            argument->span,
+                            "positional generic argument cannot follow named generic argument");
+                    }
+                    valid = false;
+                    continue;
+                }
+
+                ordered[positional_index] = argument;
+                used_names.insert(parameters[positional_index].name);
+                ++positional_index;
+                continue;
+            }
+
+            seen_named = true;
+            const auto parameter =
+                std::ranges::find(parameters, argument->name, &GenericParameterType::name);
+            if (parameter == parameters.end()) {
+                if (emit_errors) {
+                    context.diagnostics.add_error(argument->span, "unknown generic argument '" +
+                                                                      argument->name + "'");
+                }
+                valid = false;
+                continue;
+            }
+
+            if (!used_names.insert(argument->name).second) {
+                if (emit_errors) {
+                    context.diagnostics.add_error(argument->span, "duplicate generic argument '" +
+                                                                      argument->name + "'");
+                }
+                valid = false;
+                continue;
+            }
+
+            ordered[static_cast<std::size_t>(parameter - parameters.begin())] = argument;
+        }
+
+        for (auto index = std::size_t{0}; index < parameters.size(); ++index) {
+            if (ordered[index] != nullptr) {
+                continue;
+            }
+
+            if (emit_errors) {
+                context.diagnostics.add_error(span, "missing generic argument '" +
+                                                        parameters[index].name + "'");
+            }
+            valid = false;
+        }
+
+        if (!valid) {
+            return false;
+        }
+
+        arguments = std::move(ordered);
+
         std::vector<GenericBinding> bindings;
         bindings.reserve(arguments.size());
         for (std::size_t index = 0; index < arguments.size(); ++index) {

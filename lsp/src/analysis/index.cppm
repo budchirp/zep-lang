@@ -16,7 +16,7 @@ import zep.common.source.span;
 import zep.frontend.lexer;
 import zep.frontend.node;
 import zep.frontend.node.program;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 import zep.frontend.sema.scope;
 import zep.frontend.token;
 import zep.frontend.token.keywords;

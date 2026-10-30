@@ -1,10 +1,7 @@
 module;
 
-#include <cassert>
 #include <llvm/IR/DerivedTypes.h>
-#include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/Module.h>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -16,41 +13,13 @@ export module zep.codegen.llvm.type;
 
 import zep.frontend.sema.type;
 import zep.frontend.sema.scope;
-import zep.frontend.sema.kind;
-import zep.common.logger;
-import zep.hir.node;
+import zep.frontend.kind;
 
 export class TypeLowerer {
   private:
     llvm::LLVMContext& context;
 
     std::unordered_map<std::string, llvm::StructType*> type_cache;
-
-    static llvm::GlobalValue::LinkageTypes llvm_linkage(Linkage::Type linkage) {
-        switch (linkage) {
-        case Linkage::Type::External:
-            return llvm::GlobalValue::ExternalLinkage;
-        case Linkage::Type::Internal:
-            return llvm::GlobalValue::InternalLinkage;
-        case Linkage::Type::LinkOnceODR:
-            return llvm::GlobalValue::LinkOnceODRLinkage;
-        }
-
-        return llvm::GlobalValue::ExternalLinkage;
-    }
-
-    std::string llvm_type_name_for(const Type* type) const {
-        const auto* nominal = type->as_nominal();
-        if (nominal != nullptr) {
-            return nominal->name;
-        }
-
-        return "";
-    }
-
-    static bool is_c_abi_integer_field_type(const Type* type) {
-        return type != nullptr && (type->is<IntegerType>() || type->is<CharType>());
-    }
 
     static std::optional<unsigned> c_abi_integer_struct_bits(const Type* type) {
         const auto* struct_type = type != nullptr ? type->as<StructType>() : nullptr;
@@ -60,7 +29,8 @@ export class TypeLowerer {
 
         std::size_t total = 0;
         for (const auto& field : struct_type->fields) {
-            if (!is_c_abi_integer_field_type(field.type)) {
+            if (field.type == nullptr ||
+                !(field.type->is<IntegerType>() || field.type->is<CharType>())) {
                 return std::nullopt;
             }
 
@@ -95,12 +65,8 @@ export class TypeLowerer {
     }
 
     void populate_interface_body(llvm::StructType* llvm_interface) {
-        std::vector<llvm::Type*> llvm_field_types;
-        llvm_field_types.reserve(2);
-        llvm_field_types.push_back(llvm::PointerType::getUnqual(context));
-        llvm_field_types.push_back(llvm::PointerType::getUnqual(context));
-
-        llvm_interface->setBody(llvm_field_types);
+        llvm_interface->setBody({llvm::PointerType::getUnqual(context),
+                                 llvm::PointerType::getUnqual(context)});
     }
 
     void populate_enum_body(llvm::StructType* llvm_enum, const EnumType* enum_type) {
@@ -198,10 +164,6 @@ export class TypeLowerer {
             return nullptr;
         }
 
-        if (has_unresolved_type(type)) {
-            return nullptr;
-        }
-
         if (type->is<IntegerType>()) {
             const auto* integer_type = type->as<IntegerType>();
             return llvm::Type::getIntNTy(context, static_cast<unsigned>(integer_type->size));
@@ -233,6 +195,14 @@ export class TypeLowerer {
             return llvm::Type::getVoidTy(context);
         }
 
+        if (type->is<StringType>() || type->is<AnyType>()) {
+            return llvm::PointerType::getUnqual(context);
+        }
+
+        if (has_unresolved_type(type)) {
+            return nullptr;
+        }
+
         if (type->is<ArrayType>()) {
             const auto* array_type = type->as<ArrayType>();
             auto* element_type = lower(array_type->element);
@@ -248,8 +218,7 @@ export class TypeLowerer {
             return llvm::ArrayType::get(element_type, concrete->value);
         }
 
-        if (type->is<PointerType>() || type->is<StringType>() || type->is<FunctionType>() ||
-            type->is<AnyType>()) {
+        if (type->is<PointerType>() || type->is<FunctionType>()) {
             return llvm::PointerType::getUnqual(context);
         }
 
@@ -265,8 +234,7 @@ export class TypeLowerer {
                 return iterator->second;
             }
 
-            auto llvm_name = llvm_type_name_for(type);
-            auto* llvm_struct = llvm::StructType::create(context, llvm_name);
+            auto* llvm_struct = llvm::StructType::create(context, type->as_nominal()->name);
             type_cache[std::move(type_key)] = llvm_struct;
 
             populate_type_body(llvm_struct, type);

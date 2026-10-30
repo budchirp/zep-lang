@@ -16,29 +16,65 @@ import zep.common.diagnostic.diagnostic;
 import zep.common.diagnostic.collection;
 import zep.frontend.node;
 import zep.frontend.sema.type;
-import zep.frontend.sema.constant.environment;
+import zep.frontend.sema.substitution;
 import zep.frontend.sema.env;
-import zep.frontend.sema.kind;
+import zep.frontend.kind;
 import zep.frontend.sema.scope;
-import zep.frontend.sema.type;
-import zep.frontend.sema.const_size;
 
-export class Evaluator : public Visitor<std::optional<CompileTimeValue>> {
+export class EvaluationPolicy {
+  public:
+    enum class Type : std::uint8_t {
+        Required,
+        Probe,
+        Dependent,
+    };
+};
+
+export class EvaluationResult {
+  public:
+    enum class State : std::uint8_t {
+        Concrete,
+        Dependent,
+        Invalid,
+    };
+
+    State state;
+    std::optional<CompileTimeValue> value;
+
+    EvaluationResult(State state, std::optional<CompileTimeValue> value = std::nullopt)
+        : state(state), value(std::move(value)) {}
+};
+
+export class Evaluator : public ExpressionVisitor<std::optional<CompileTimeValue>> {
   private:
     Diagnostics& diagnostics;
+    Diagnostics probe_diagnostics;
+
     Env* env;
     const CompileTimeEnvironment* environment;
-    bool allow_dependent;
-    bool cache_results = true;
+    EvaluationPolicy::Type policy;
 
-    std::optional<CompileTimeValue> integer_error(Span span, const std::string& message) {
-        diagnostics.add_error(span, message);
-        return std::nullopt;
+    Diagnostics& output() {
+        return policy == EvaluationPolicy::Type::Probe ? probe_diagnostics : diagnostics;
     }
 
-    std::optional<CompileTimeValue> checked_integer(__int128 value, const Type* type, Span span,
-                                                    bool arithmetic = false) {
-        return CompileTimeValue::checked_integer(diagnostics, value, type, span, arithmetic);
+    std::optional<CompileTimeValue> evaluate_value(Expression& node) {
+        if (environment != nullptr || policy != EvaluationPolicy::Type::Required) {
+            return visit_expression(node);
+        }
+
+        if (node.compile_time_value.has_value()) {
+            return node.compile_time_value;
+        }
+
+        auto result = visit_expression(node);
+        node.compile_time_value = result;
+        return result;
+    }
+
+    std::optional<CompileTimeValue> integer_error(Span span, const std::string& message) {
+        output().add_error(span, message);
+        return std::nullopt;
     }
 
     std::optional<CompileTimeValue> integer_literal(NumberLiteral& node, bool negative = false) {
@@ -66,57 +102,43 @@ export class Evaluator : public Visitor<std::optional<CompileTimeValue>> {
         }
 
         const auto value = static_cast<__int128>(magnitude);
-        return checked_integer(negative ? -value : value, type, node.span);
+        return CompileTimeValue::checked_integer(output(), negative ? -value : value, type,
+                                                 node.span);
     }
 
     template <typename Number>
     std::optional<CompileTimeValue> integer_binary(BinaryExpression& node, Number left,
                                                    Number right) {
-        return CompileTimeValue::evaluate_binary(diagnostics,
-                                                 static_cast<BinaryOperator::Type>(node.op), left,
+        return CompileTimeValue::evaluate_binary(output(),
+                                                 node.op, left,
                                                  right, node.type, node.span);
     }
 
     std::optional<bool> read_boolean(CompileTimeValue value, Span span) {
         if (value.kind != CompileTimeValue::Kind::Type::Boolean) {
-            diagnostics.add_error(span, "constant expression requires a concrete boolean value");
+            output().add_error(span, "constant expression requires a concrete boolean value");
             return std::nullopt;
         }
 
         return std::get<bool>(value.payload);
     }
 
-    std::optional<CompileTimeValue> cast_value(CompileTimeValue value, const Type* target_type,
-                                               Span span) {
-        return value.cast_to(diagnostics, target_type, span);
-    }
-
   public:
     Evaluator(Diagnostics& diagnostics, Env* env = nullptr,
-              const CompileTimeEnvironment* environment = nullptr, bool allow_dependent = false)
+              const CompileTimeEnvironment* environment = nullptr,
+              EvaluationPolicy::Type policy = EvaluationPolicy::Type::Required)
         : diagnostics(diagnostics), env(env), environment(environment),
-          allow_dependent(allow_dependent) {}
+          policy(policy) {}
 
-    std::optional<CompileTimeValue> evaluate(Expression& node) {
-        if (!cache_results) {
-            return visit_expression(node);
+    EvaluationResult evaluate(Expression& node) {
+        auto value = evaluate_value(node);
+        if (value.has_value()) {
+            return EvaluationResult(EvaluationResult::State::Concrete, std::move(value));
         }
 
-        if (node.compile_time_value.has_value()) {
-            return node.compile_time_value;
-        }
-
-        auto result = visit_expression(node);
-        node.compile_time_value = result;
-        return result;
-    }
-
-    std::optional<CompileTimeValue> evaluate_uncached(Expression& node) {
-        const auto previous = cache_results;
-        cache_results = false;
-        auto result = evaluate(node);
-        cache_results = previous;
-        return result;
+        return EvaluationResult(policy == EvaluationPolicy::Type::Dependent
+                                    ? EvaluationResult::State::Dependent
+                                    : EvaluationResult::State::Invalid);
     }
 
     std::optional<CompileTimeValue> visit(NumberLiteral& node) override {
@@ -124,7 +146,7 @@ export class Evaluator : public Visitor<std::optional<CompileTimeValue>> {
     }
 
     std::optional<CompileTimeValue> visit(FloatLiteral& node) override {
-        diagnostics.add_error(node.span, "float literals not supported in const expressions");
+        output().add_error(node.span, "float literals not supported in const expressions");
         return std::nullopt;
     }
 
@@ -154,7 +176,7 @@ export class Evaluator : public Visitor<std::optional<CompileTimeValue>> {
                 return *value->value;
             }
             if (value != nullptr) {
-                if (allow_dependent) {
+                if (policy == EvaluationPolicy::Type::Dependent) {
                     return std::nullopt;
                 }
                 return integer_error(node.span,
@@ -163,25 +185,25 @@ export class Evaluator : public Visitor<std::optional<CompileTimeValue>> {
             }
         }
 
-        if (node.generic_declaration != nullptr && allow_dependent) {
+        if (node.generic_declaration != nullptr && policy == EvaluationPolicy::Type::Dependent) {
             return std::nullopt;
         }
 
-        diagnostics.add_error(node.span,
+        output().add_error(node.span,
                               "constant expression cannot use runtime value '" + node.name + "'");
         return std::nullopt;
     }
 
     std::optional<CompileTimeValue> visit(BinaryExpression& node) override {
         if (node.op == BinaryExpression::Operator::Type::As) {
-            auto value = evaluate(*node.left);
+            auto value = evaluate_value(*node.left);
             if (!value.has_value()) {
                 return std::nullopt;
             }
-            return cast_value(*value, node.right->type, node.span);
+            return value->cast_to(output(), node.right->type, node.span);
         }
 
-        auto left = evaluate(*node.left);
+        auto left = evaluate_value(*node.left);
         if (!left.has_value()) {
             return std::nullopt;
         }
@@ -198,7 +220,7 @@ export class Evaluator : public Visitor<std::optional<CompileTimeValue>> {
             }
         }
 
-        auto right = evaluate(*node.right);
+        auto right = evaluate_value(*node.right);
         if (!right.has_value()) {
             return std::nullopt;
         }
@@ -243,7 +265,7 @@ export class Evaluator : public Visitor<std::optional<CompileTimeValue>> {
             }
         }
 
-        auto value = evaluate(*node.operand);
+        auto value = evaluate_value(*node.operand);
         if (!value.has_value()) {
             return std::nullopt;
         }
@@ -263,7 +285,8 @@ export class Evaluator : public Visitor<std::optional<CompileTimeValue>> {
                     resolved.kind == CompileTimeValue::Kind::Type::SignedInteger
                         ? static_cast<__int128>(std::get<std::int64_t>(resolved.payload))
                         : static_cast<__int128>(std::get<std::uint64_t>(resolved.payload));
-                return checked_integer(-numeric, node.type, node.span, true);
+                return CompileTimeValue::checked_integer(output(), -numeric, node.type,
+                                                         node.span, true);
             }
             break;
         }
@@ -281,12 +304,12 @@ export class Evaluator : public Visitor<std::optional<CompileTimeValue>> {
             break;
         }
 
-        diagnostics.add_error(node.span, "unsupported unary operator in constant expression");
+        output().add_error(node.span, "unsupported unary operator in constant expression");
         return std::nullopt;
     }
 
     std::optional<CompileTimeValue> visit(CoerceExpression& node) override {
-        auto value = evaluate(*node.value);
+        auto value = evaluate_value(*node.value);
         if (!value.has_value()) {
             return std::nullopt;
         }
@@ -296,7 +319,7 @@ export class Evaluator : public Visitor<std::optional<CompileTimeValue>> {
         }
 
         if (node.type != nullptr && node.type->is_scalar()) {
-            return cast_value(*value, node.type, node.span);
+            return value->cast_to(output(), node.type, node.span);
         }
 
         value->type = node.type;
@@ -304,7 +327,7 @@ export class Evaluator : public Visitor<std::optional<CompileTimeValue>> {
     }
 
     std::optional<CompileTimeValue> visit(CallExpression& node) override {
-        diagnostics.add_error(node.span, "function calls are not allowed in constant expressions");
+        output().add_error(node.span, "function calls are not allowed in constant expressions");
         return std::nullopt;
     }
 
@@ -313,20 +336,26 @@ export class Evaluator : public Visitor<std::optional<CompileTimeValue>> {
             const auto* type = node.type_argument->type;
             if (const auto* named = type != nullptr ? type->as<NamedType>() : nullptr;
                 named != nullptr && environment != nullptr) {
-                const auto* binding = environment->lookup_type(named->name, named->declaration);
-                if (binding != nullptr) {
-                    type = binding;
+                const auto* binding = named->declaration != nullptr
+                                          ? environment->lookup(named->declaration)
+                                          : environment->lookup(named->name);
+                if (const auto* type_binding =
+                        binding != nullptr ? std::get_if<TypeBinding>(binding) : nullptr;
+                    type_binding != nullptr) {
+                    type = type_binding->type;
                 }
             }
-            auto size = compile_time_size_of(type);
-            if (!size.has_value()) {
-                if (allow_dependent) {
+            const auto layout = TypeLayout().resolve(type);
+            if (layout.state != TypeLayout::Result::State::Concrete) {
+                if (layout.state == TypeLayout::Result::State::Dependent &&
+                    policy == EvaluationPolicy::Type::Dependent) {
                     return std::nullopt;
                 }
                 return integer_error(node.span, "sizeof requires a concrete sized type");
             }
 
-            return checked_integer(static_cast<__int128>(*size), node.type, node.span);
+            return CompileTimeValue::checked_integer(
+                output(), static_cast<__int128>(layout.size), node.type, node.span);
         }
 
         if (node.name == "length" && node.arguments.size() == 1) {
@@ -341,8 +370,10 @@ export class Evaluator : public Visitor<std::optional<CompileTimeValue>> {
             const auto* array_type = resolved != nullptr ? resolved->as<ArrayType>() : nullptr;
             if (array_type != nullptr &&
                 std::holds_alternative<ConcreteArrayExtent>(array_type->extent)) {
-                return checked_integer(
-                    static_cast<__int128>(std::get<ConcreteArrayExtent>(array_type->extent).value),
+                return CompileTimeValue::checked_integer(
+                    output(),
+                    static_cast<__int128>(
+                        std::get<ConcreteArrayExtent>(array_type->extent).value),
                     node.type, node.span);
             }
 
@@ -350,47 +381,57 @@ export class Evaluator : public Visitor<std::optional<CompileTimeValue>> {
                                             ? std::get_if<DependentArrayExtent>(&array_type->extent)
                                             : nullptr;
                 dependent != nullptr && dependent->expression != nullptr) {
-                auto* expression =
-                    const_cast<Expression*>(static_cast<const Expression*>(dependent->expression));
-                const auto length = evaluate_uncached(*expression);
+                auto* expression = static_cast<Expression*>(dependent->expression);
+                const auto length =
+                    Evaluator(output(), env, environment, EvaluationPolicy::Type::Dependent)
+                        .evaluate_value(*expression);
                 const auto size =
                     length.has_value() ? length->try_as_unsigned_integer() : std::nullopt;
                 if (size.has_value()) {
-                    return checked_integer(static_cast<__int128>(*size), node.type, node.span);
+                    return CompileTimeValue::checked_integer(
+                        output(), static_cast<__int128>(*size), node.type, node.span);
                 }
             }
 
-            if (allow_dependent) {
+            if (policy == EvaluationPolicy::Type::Dependent) {
                 return std::nullopt;
             }
         }
 
         if (node.name == "asm") {
-            diagnostics.add_error(node.span, "asm not supported in const expressions");
+            output().add_error(node.span, "asm not supported in const expressions");
             return std::nullopt;
         }
 
-        diagnostics.add_error(node.span, "unsupported builtin in constant expression");
+        output().add_error(node.span, "unsupported builtin in constant expression");
         return std::nullopt;
     }
 
     std::optional<CompileTimeValue> visit(IndexExpression& node) override {
-        diagnostics.add_error(node.span, "indexing not supported in const expressions");
+        output().add_error(node.span, "indexing not supported in const expressions");
         return std::nullopt;
     }
 
     std::optional<CompileTimeValue> visit(MemberExpression& node) override {
-        diagnostics.add_error(node.span, "member access not supported in const expressions");
+        if (node.member == "value" && node.value->type != nullptr &&
+            node.value->type->is<EnumType>()) {
+            if (const auto* qualified = node.value->as<QualifiedAccessExpression>();
+                qualified != nullptr && qualified->enum_value.has_value()) {
+                return qualified->enum_value;
+            }
+        }
+
+        output().add_error(node.span, "member access not supported in const expressions");
         return std::nullopt;
     }
 
     std::optional<CompileTimeValue> visit(QualifiedAccessExpression& node) override {
-        diagnostics.add_error(node.span, "qualified access not supported in const expressions");
+        output().add_error(node.span, "qualified access not supported in const expressions");
         return std::nullopt;
     }
 
     std::optional<CompileTimeValue> visit(AssignExpression& node) override {
-        diagnostics.add_error(node.span, "assignment not supported in const expressions");
+        output().add_error(node.span, "assignment not supported in const expressions");
         return std::nullopt;
     }
 
@@ -418,7 +459,7 @@ export class Evaluator : public Visitor<std::optional<CompileTimeValue>> {
                                      "missing constant field initializer for '" + field.name + "'");
             }
 
-            auto field_value = evaluate(*initializer);
+            auto field_value = evaluate_value(*initializer);
             if (!field_value.has_value()) {
                 return std::nullopt;
             }
@@ -430,27 +471,27 @@ export class Evaluator : public Visitor<std::optional<CompileTimeValue>> {
     }
 
     std::optional<CompileTimeValue> visit(EnumVariantExpression& node) override {
-        diagnostics.add_error(node.span, "enum variants not supported in const expressions");
+        output().add_error(node.span, "enum variants not supported in const expressions");
         return std::nullopt;
     }
 
     std::optional<CompileTimeValue> visit(IfExpression& node) override {
-        diagnostics.add_error(node.span, "if expressions not supported in const expressions");
+        output().add_error(node.span, "if expressions not supported in const expressions");
         return std::nullopt;
     }
 
     std::optional<CompileTimeValue> visit(WhenExpression& node) override {
-        diagnostics.add_error(node.span, "when expressions not supported in const expressions");
+        output().add_error(node.span, "when expressions not supported in const expressions");
         return std::nullopt;
     }
 
     std::optional<CompileTimeValue> visit(ClosureExpression& node) override {
-        diagnostics.add_error(node.span, "closures not supported in const expressions");
+        output().add_error(node.span, "closures not supported in const expressions");
         return std::nullopt;
     }
 
     std::optional<CompileTimeValue> visit(BlockExpression& node) override {
-        diagnostics.add_error(node.span, "block expressions not supported in const expressions");
+        output().add_error(node.span, "block expressions not supported in const expressions");
         return std::nullopt;
     }
 
@@ -459,7 +500,7 @@ export class Evaluator : public Visitor<std::optional<CompileTimeValue>> {
         elements.reserve(node.elements.size());
 
         for (auto* element : node.elements) {
-            auto element_value = evaluate(*element);
+            auto element_value = evaluate_value(*element);
             if (!element_value.has_value()) {
                 return std::nullopt;
             }
@@ -472,90 +513,8 @@ export class Evaluator : public Visitor<std::optional<CompileTimeValue>> {
     }
 
     std::optional<CompileTimeValue> visit(TypeExpression& node) override {
-        diagnostics.add_error(node.span, "type expressions not supported in const expressions");
+        output().add_error(node.span, "type expressions not supported in const expressions");
         return std::nullopt;
     }
 
-    std::optional<CompileTimeValue> visit([[maybe_unused]] BlockStatement& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] ExpressionStatement& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] ReturnStatement& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] WhileStatement& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] ForStatement& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] DeferStatement& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] InterfaceDeclaration& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] StructDeclaration& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] EnumDeclaration& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] VarDeclaration& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] FunctionDeclaration& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue>
-    visit([[maybe_unused]] ExternFunctionDeclaration& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] ExternVarDeclaration& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] ImportStatement& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] TypeAliasDeclaration& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] Attribute& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] GenericParameter& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] GenericArgument& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] Parameter& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] Argument& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] FunctionPrototype& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] Field& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] EnumVariant& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] StructLiteralField& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] WhenPatternField& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] WhenPattern& node) override {
-        return std::nullopt;
-    }
-    std::optional<CompileTimeValue> visit([[maybe_unused]] WhenArm& node) override {
-        return std::nullopt;
-    }
 };
