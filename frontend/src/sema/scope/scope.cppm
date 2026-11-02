@@ -220,7 +220,7 @@ export class Scope {
         return count;
     }
 
-    bool is_global() const { return parent == nullptr; }
+    bool is_global() const { return parent == nullptr || kind == Kind::Type::Module; }
 };
 
 export using ScopeArena = Arena<Scope>;

@@ -276,5 +276,9 @@ fn main() -> i32 {
 }
 )zep";
 
-    EXPECT_TRUE(assert_type_check_error(source));
+    FrontendHarness harness(source);
+    EXPECT_FALSE(harness.type_check_succeeded());
+    ASSERT_EQ(harness.context.diagnostics.entries.size(), 1U);
+    EXPECT_EQ(harness.context.diagnostics.entries.front().message,
+              "use of destroyed value 'owner'");
 }

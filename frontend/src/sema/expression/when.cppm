@@ -2,6 +2,7 @@ module;
 
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 export module zep.frontend.sema.expression.when;
@@ -106,10 +107,12 @@ export class WhenChecker {
             return;
         }
 
-        if (pattern_enum->name != subject_enum->name) {
+        if (pattern_enum->definition != subject_enum->definition ||
+            (!pattern_enum->generic_arguments.empty() && !pattern_enum->same(subject_enum))) {
             context.diagnostics.add_error(
-                pattern.span, "when enum pattern type mismatch: expected '" + subject_enum->name +
-                                  "', got '" + pattern_enum->name + "'");
+                pattern.span,
+                "when enum pattern type mismatch: expected '" + subject_enum->to_string() +
+                    "', got '" + pattern_enum->to_string() + "'");
             return;
         }
 
@@ -242,11 +245,26 @@ export class WhenChecker {
         auto has_else = false;
         const Type* result_type = nullptr;
 
+        const auto* subject_enum = subject_type != nullptr ? subject_type->as<EnumType>() : nullptr;
         std::unordered_set<std::string> seen_variants;
+        if (subject_enum != nullptr) {
+            seen_variants.reserve(subject_enum->variants.size());
+        }
+
+        auto seen_true = false;
+        auto seen_false = false;
+
         for (std::size_t i = 0; i < node.arms.size(); ++i) {
             auto* arm = node.arms[i];
 
             if (arm->is_else) {
+                const auto complete_enum = subject_enum != nullptr &&
+                                           seen_variants.size() == subject_enum->variants.size();
+                if (complete_enum || (seen_true && seen_false)) {
+                    context.diagnostics.add_warning(arm->span,
+                                                    "unreachable else arm in exhaustive when");
+                }
+
                 if (has_else) {
                     context.diagnostics.add_error(arm->span,
                                                   "duplicate else arm in when expression");
@@ -281,10 +299,31 @@ export class WhenChecker {
                         validate_pattern(*pattern, subject_type, node.subject != nullptr,
                                          subject_comparable, multiple_patterns);
 
-                        if (arm->guard == nullptr &&
-                            pattern->pattern_kind == WhenPattern::PatternKind::Type::EnumVariant) {
-                            if (pattern->variant_type != nullptr) {
-                                seen_variants.insert(pattern->variant_type->name);
+                        if (pattern->pattern_kind == WhenPattern::PatternKind::Type::EnumVariant &&
+                            pattern->variant_type != nullptr) {
+                            const auto& name = pattern->variant_type->name;
+                            if (seen_variants.contains(name)) {
+                                context.diagnostics.add_warning(
+                                    pattern->span, "unreachable when pattern '" + name +
+                                                       "': already covered by an unguarded pattern");
+                            }
+                            if (arm->guard == nullptr) {
+                                seen_variants.insert(name);
+                            }
+                        } else if (subject_type != nullptr && subject_type->is<BooleanType>() &&
+                                   pattern->expression != nullptr) {
+                            const auto* boolean = pattern->expression->as<BooleanLiteral>();
+                            if (boolean != nullptr) {
+                                auto& seen = boolean->value ? seen_true : seen_false;
+                                if (seen) {
+                                    const auto label = std::string(boolean->value ? "true" : "false");
+                                    context.diagnostics.add_warning(
+                                        pattern->span, "unreachable when pattern '" + label +
+                                                           "': already covered by an unguarded pattern");
+                                }
+                                if (arm->guard == nullptr) {
+                                    seen = true;
+                                }
                             }
                         }
                     }
@@ -317,15 +356,29 @@ export class WhenChecker {
         }
 
         auto exhaustive = false;
-        if (subject_type != nullptr && subject_type->is<EnumType>()) {
-            const auto* subject_enum = subject_type->as<EnumType>();
+        std::string missing_variants;
+        if (subject_enum != nullptr) {
             exhaustive = seen_variants.size() == subject_enum->variants.size();
+            for (const auto& variant : subject_enum->variants) {
+                if (!seen_variants.contains(variant.name)) {
+                    if (!missing_variants.empty()) {
+                        missing_variants += ", ";
+                    }
+                    missing_variants += subject_enum->name + "::" + variant.name;
+                }
+            }
+        } else if (subject_type != nullptr && subject_type->is<BooleanType>()) {
+            exhaustive = seen_true && seen_false;
         }
 
         node.is_exhaustive = exhaustive;
 
         if (!has_else && !exhaustive) {
-            context.diagnostics.add_error(node.span, "when expression requires an else arm");
+            auto message = std::string("when expression requires an else arm");
+            if (!missing_variants.empty()) {
+                message += "; missing variants: " + missing_variants;
+            }
+            context.diagnostics.add_error(node.span, std::move(message));
         }
 
         node.type =

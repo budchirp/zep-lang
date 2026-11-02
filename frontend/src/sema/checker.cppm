@@ -942,6 +942,10 @@ export class SemanticChecker : public Visitor<void> {
         }
 
         node.type = var_type;
+
+        if (node.variable_symbol != nullptr) {
+            node.variable_symbol->type = var_type;
+        }
     }
 
     void visit(FunctionDeclaration& node) override {
@@ -1134,7 +1138,15 @@ export class SemanticChecker : public Visitor<void> {
         decl_checker.declare_program_symbols(program);
 
         for (auto* statement : program.statements) {
-            visit_statement(*statement);
+            if (statement->as<VarDeclaration>() != nullptr) {
+                visit_statement(*statement);
+            }
+        }
+
+        for (auto* statement : program.statements) {
+            if (statement->as<VarDeclaration>() == nullptr) {
+                visit_statement(*statement);
+            }
         }
     }
 };

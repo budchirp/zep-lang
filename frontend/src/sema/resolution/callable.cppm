@@ -5,7 +5,6 @@ module;
 #include <optional>
 #include <span>
 #include <string>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <variant>
@@ -453,7 +452,8 @@ export class MemberResolver {
                     continue;
                 }
 
-                if (kind == FunctionSymbol::Kind::Type::InstanceMethod) {
+                if (kind == FunctionSymbol::Kind::Type::InstanceMethod ||
+                    kind == FunctionSymbol::Kind::Type::Destructor) {
                     callables.emplace_back(symbol, receiver, nominal->name);
                 }
             }
@@ -578,80 +578,21 @@ export class CallResolver {
     const NominalType* enclosing_type;
     const Type*& target_type;
 
-    static void infer_type_match(const Type* declared, const Type* actual,
-                                 std::unordered_map<std::string, const Type*>& inferred) {
-        if (declared == nullptr || actual == nullptr) {
-            return;
-        }
-
-        if (const auto* named = declared->as<NamedType>(); named != nullptr) {
-            if (named->generic_arguments.empty()) {
-                inferred.insert_or_assign(named->name, actual);
-            }
-            return;
-        }
-
-        if (const auto* declared_pointer = declared->as<PointerType>();
-            declared_pointer != nullptr) {
-            if (const auto* actual_pointer = actual->as<PointerType>(); actual_pointer != nullptr) {
-                infer_type_match(declared_pointer->element, actual_pointer->element, inferred);
-            }
-            return;
-        }
-
-        if (const auto* declared_array = declared->as<ArrayType>(); declared_array != nullptr) {
-            if (const auto* actual_array = actual->as<ArrayType>(); actual_array != nullptr) {
-                infer_type_match(declared_array->element, actual_array->element, inferred);
-            }
-            return;
-        }
-
-        if (const auto* declared_func = declared->as<FunctionType>(); declared_func != nullptr) {
-            if (const auto* actual_func = actual->as<FunctionType>(); actual_func != nullptr) {
-                infer_type_match(declared_func->return_type, actual_func->return_type, inferred);
-                const auto count =
-                    std::min(declared_func->parameters.size(), actual_func->parameters.size());
-                for (std::size_t i = 0; i < count; ++i) {
-                    infer_type_match(declared_func->parameters[i].type,
-                                     actual_func->parameters[i].type, inferred);
-                }
-            }
-        }
-    }
-
     std::vector<GenericArgument*>
     infer_from_arguments(const std::vector<GenericParameterType>& parameters,
                          std::span<const ParameterType> declared_parameters,
-                         const std::vector<Argument*>& arguments, Span span) {
-        std::unordered_map<std::string, const Type*> inferred;
-        inferred.reserve(parameters.size());
+                         const std::vector<Argument*>& arguments, Span span,
+                         bool emit_errors = false) {
+        GenericInference inference(context, sema, resolver, parameters);
 
         const auto count = std::min(declared_parameters.size(), arguments.size());
         for (std::size_t i = 0; i < count; ++i) {
             if (arguments[i]->value != nullptr && arguments[i]->value->type != nullptr) {
-                infer_type_match(declared_parameters[i].type, arguments[i]->value->type, inferred);
+                inference.match(declared_parameters[i].type, arguments[i]->value->type);
             }
         }
 
-        if (inferred.size() != parameters.size()) {
-            return {};
-        }
-
-        std::vector<GenericArgument*> generic_arguments;
-        generic_arguments.reserve(parameters.size());
-
-        for (const auto& parameter : parameters) {
-            auto iterator = inferred.find(parameter.name);
-            if (iterator == inferred.end() || iterator->second == nullptr) {
-                return {};
-            }
-
-            auto* type_expr = sema.nodes.create<TypeExpression>(span, iterator->second);
-            generic_arguments.push_back(
-                sema.nodes.create<GenericArgument>(span, parameter.name, type_expr));
-        }
-
-        return generic_arguments;
+        return inference.arguments(span, emit_errors);
     }
 
     std::vector<GenericParameterType>
@@ -920,7 +861,7 @@ export class CallResolver {
                 if (!arguments_resolver.apply(call_generics, call_generic_parameters, span, false)) {
                     return -1;
                 }
-            } else if (!call_generics.empty()) {
+            } else {
                 return -1;
             }
         }
@@ -1080,12 +1021,6 @@ export class CallResolver {
     void resolve(CallExpression& node) {
         node.arguments = extract_explicit_arguments(node);
 
-        for (auto* argument : node.arguments) {
-            if (argument != nullptr && argument->value != nullptr) {
-                visitor.visit_expression(*argument->value);
-            }
-        }
-
         std::vector<ResolvedCallable> candidates;
 
         if (auto* ident = node.callee->as<IdentifierExpression>()) {
@@ -1126,6 +1061,41 @@ export class CallResolver {
             return;
         }
 
+        std::span<const ParameterType> contextual_parameters;
+        std::optional<std::vector<Argument*>> contextual_arguments;
+        if (candidates.size() == 1 && get_call_generic_parameters(candidates.front()).empty()) {
+            const auto& candidate = candidates.front();
+            contextual_parameters = candidate.symbol->function_type->parameters;
+            if (candidate.receiver != nullptr && !contextual_parameters.empty() &&
+                contextual_parameters.front().name == "self") {
+                contextual_parameters = contextual_parameters.subspan(1);
+            }
+            contextual_arguments = normalize_arguments(
+                node.arguments, contextual_parameters, node.span,
+                candidate.symbol->function_type->variadic, false);
+        }
+
+        for (auto* argument : node.arguments) {
+            if (argument == nullptr || argument->value == nullptr) {
+                continue;
+            }
+
+            const auto* saved_target = target_type;
+            target_type = nullptr;
+            if (contextual_arguments.has_value()) {
+                const auto found = std::ranges::find(*contextual_arguments, argument);
+                const auto index = static_cast<std::size_t>(found - contextual_arguments->begin());
+                if (index < contextual_parameters.size()) {
+                    const auto* expected = resolver.resolve_type(contextual_parameters[index].type);
+                    if (resolver.is_concrete(expected)) {
+                        target_type = expected;
+                    }
+                }
+            }
+            visitor.visit_expression(*argument->value);
+            target_type = saved_target;
+        }
+
         ResolvedCallable best_candidate(nullptr);
         int best_score = -1;
         bool ambiguous = false;
@@ -1143,6 +1113,27 @@ export class CallResolver {
         }
 
         if (best_score < 0 || best_candidate.symbol == nullptr) {
+            if (candidates.size() == 1 && node.generic_arguments.empty()) {
+                const auto& candidate = candidates.front();
+                auto scope = resolver.create_substitution_scope();
+                apply_candidate_parent_bindings(candidate);
+                const auto parameters = get_call_generic_parameters(candidate);
+                std::span<const ParameterType> effective_parameters(
+                    candidate.symbol->function_type->parameters);
+                if (candidate.receiver != nullptr && !effective_parameters.empty() &&
+                    effective_parameters.front().name == "self") {
+                    effective_parameters = effective_parameters.subspan(1);
+                }
+                auto normalized = normalize_arguments(
+                    node.arguments, effective_parameters, node.span,
+                    candidate.symbol->function_type->variadic, false);
+                if (!parameters.empty() && normalized.has_value() &&
+                    infer_from_arguments(parameters, effective_parameters, *normalized,
+                                         node.span, true).empty()) {
+                    return;
+                }
+            }
+
             context.diagnostics.add_error(node.span, "no matching overload for call");
             return;
         }
@@ -1178,10 +1169,17 @@ export class CallResolver {
                     effective_parameters = effective_parameters.subspan(1);
                 }
 
+                auto normalized = normalize_arguments(node.arguments, effective_parameters,
+                                                      node.span, func_type->variadic, true);
+                if (!normalized.has_value()) {
+                    return;
+                }
                 auto inferred = infer_from_arguments(call_generic_parameters, effective_parameters,
-                                                     node.arguments, node.span);
+                                                      *normalized, node.span, true);
                 if (!inferred.empty()) {
                     node.generic_arguments = std::move(inferred);
+                } else {
+                    return;
                 }
             }
 

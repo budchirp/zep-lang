@@ -817,6 +817,29 @@ bool Type::same(const Type* other) const {
         return true;
     }
 
+    if (const auto* function = as<FunctionType>(); function != nullptr) {
+        const auto* right = other->as<FunctionType>();
+        if (function->variadic != right->variadic ||
+            function->parameters.size() != right->parameters.size() ||
+            function->generic_parameters.size() != right->generic_parameters.size() ||
+            function->return_type == nullptr || !function->return_type->same(right->return_type)) {
+            return false;
+        }
+        for (auto index = std::size_t{0}; index < function->parameters.size(); ++index) {
+            const auto* parameter_type = function->parameters[index].type;
+            if (parameter_type == nullptr || !parameter_type->same(right->parameters[index].type)) {
+                return false;
+            }
+        }
+        for (auto index = std::size_t{0}; index < function->generic_parameters.size(); ++index) {
+            if (function->generic_parameters[index].declaration !=
+                right->generic_parameters[index].declaration) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     return is<BooleanType>() || is<CharType>() || is<StringType>() || is<VoidType>() ||
            is<NeverType>() || is<AnyType>();
 }

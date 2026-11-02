@@ -41,7 +41,7 @@ export class Symbol {
     const Span span;
     const Visibility::Type visibility;
     const std::string name;
-    const Type* const type;
+    const Type* type;
     std::vector<AttributeInfo> attributes;
 
     virtual ~Symbol() = default;

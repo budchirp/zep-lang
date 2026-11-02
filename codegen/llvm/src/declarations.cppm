@@ -5,6 +5,7 @@ module;
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/GlobalVariable.h>
+#include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Type.h>
 #include <string>
@@ -97,6 +98,30 @@ export class DeclarationEmitter {
         if (auto* number = expr.as<HIRNumberLiteral>(); number != nullptr) {
             return llvm::ConstantInt::get(
                 expected_type, static_cast<std::uint64_t>(std::stoull(number->value, nullptr, 0)));
+        }
+
+        if (auto* character = expr.as<HIRCharLiteral>(); character != nullptr) {
+            return llvm::ConstantInt::get(expected_type, character->value);
+        }
+
+        if (auto* string = expr.as<HIRStringLiteral>(); string != nullptr) {
+            llvm::IRBuilder<> builder(module.getContext());
+            return builder.CreateGlobalString(string->value, "", 0, &module);
+        }
+
+        if (auto* strings = expr.as<HIRStringArrayExpression>(); strings != nullptr) {
+            auto* array_type = llvm::dyn_cast<llvm::ArrayType>(expected_type);
+            if (array_type == nullptr) {
+                return nullptr;
+            }
+
+            llvm::IRBuilder<> builder(module.getContext());
+            std::vector<llvm::Constant*> elements;
+            elements.reserve(strings->values.size());
+            for (const auto& value : strings->values) {
+                elements.push_back(builder.CreateGlobalString(value, "", 0, &module));
+            }
+            return llvm::ConstantArray::get(array_type, elements);
         }
 
         if (auto* null_literal = expr.as<HIRNullLiteral>(); null_literal != nullptr) {

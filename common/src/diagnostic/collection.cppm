@@ -2,6 +2,7 @@ module;
 
 #include <algorithm>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -27,14 +28,13 @@ export class Diagnostics {
                std::to_string(static_cast<int>(severity)) + ":" + message;
     }
 
-    void add(const Source* source, Span span, DiagnosticSeverity::Type severity,
+    void add(SourceLocation location, DiagnosticSeverity::Type severity,
              std::string message, std::string code = "") {
-        if (!seen.insert(key(source, span, severity, message)).second) {
+        if (!seen.insert(key(location.source, location.span, severity, message)).second) {
             return;
         }
 
-        entries.emplace_back(SourceLocation(source, span), severity, std::move(message),
-                             std::move(code));
+        entries.emplace_back(std::move(location), severity, std::move(message), std::move(code));
     }
 
   public:
@@ -43,21 +43,29 @@ export class Diagnostics {
     explicit Diagnostics(const Source* default_source = nullptr) : default_source(default_source) {}
 
     void add_error(Span span, std::string message, std::string code = "") {
-        add(default_source, span, DiagnosticSeverity::Type::Error, std::move(message),
+        add(SourceLocation(default_source, span), DiagnosticSeverity::Type::Error, std::move(message),
             std::move(code));
     }
 
     void add_error(const Source& source, Span span, std::string message, std::string code = "") {
-        add(&source, span, DiagnosticSeverity::Type::Error, std::move(message), std::move(code));
-    }
-
-    void add_warning(Span span, std::string message, std::string code = "") {
-        add(default_source, span, DiagnosticSeverity::Type::Warning, std::move(message),
+        add(SourceLocation(&source, span), DiagnosticSeverity::Type::Error, std::move(message),
             std::move(code));
     }
 
+    void add_error(std::shared_ptr<const Source> source, Span span, std::string message,
+                   std::string code = "") {
+        add(SourceLocation(std::move(source), span), DiagnosticSeverity::Type::Error,
+            std::move(message), std::move(code));
+    }
+
+    void add_warning(Span span, std::string message, std::string code = "") {
+        add(SourceLocation(default_source, span), DiagnosticSeverity::Type::Warning,
+            std::move(message), std::move(code));
+    }
+
     void add_warning(const Source& source, Span span, std::string message, std::string code = "") {
-        add(&source, span, DiagnosticSeverity::Type::Warning, std::move(message), std::move(code));
+        add(SourceLocation(&source, span), DiagnosticSeverity::Type::Warning, std::move(message),
+            std::move(code));
     }
 
     bool has_errors() const {

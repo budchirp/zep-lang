@@ -311,6 +311,53 @@ public fn main() -> i32 {
 
 } // namespace
 
+TEST(CliZep, PreservesPrivateModuleGlobalsAcrossImportedCalls) {
+    CliTestHarness harness("cli_module_globals", ZEP_ZEP_EXECUTABLE);
+    write_project_config(harness, "module_globals");
+    harness.workspace.write("src/counter.zep", R"zep(
+public fn read_count() -> i32 { return count }
+var mut count: i32 = 3 + 4
+struct Pair { public: var first: i32 var second: i32 }
+var initial = Pair { second: 4, first: 1 + 2 }
+var marker: char = 'G'
+var message: cstr = "globals"
+var words: cstr[2] = ["first", "second"]
+extern fn strcmp(first: cstr, second: cstr) -> i32
+
+public fn increment() -> void { count = count + initial.first }
+public fn valid_scalars() -> boolean {
+    return marker == 'G' && strcmp(message, "globals") == 0 &&
+        strcmp(words[1], "second") == 0
+}
+)zep");
+    harness.workspace.write("src/other.zep", R"zep(
+var mut count: i32 = 20
+public fn other_count() -> i32 { count = count + 1 return count }
+)zep");
+    harness.workspace.write("src/main.zep", R"zep(
+import counter.increment
+import counter.read_count
+import counter.valid_scalars
+import other.other_count
+public fn main() -> i32 {
+    if (read_count() != 7) { return 1 }
+    increment()
+    if (read_count() != 10) { return 2 }
+    if (other_count() != 21) { return 3 }
+    if (!valid_scalars()) { return 4 }
+    return 0
+}
+)zep");
+
+    for (const auto* level : {"0", "2"}) {
+        auto build = harness.run({"build", "-O", level}, harness.workspace.root());
+        ASSERT_TRUE(build.succeeded()) << build.stderr_text;
+        auto result = TestProcessRunner::run(
+            {harness.workspace.file("build/module_globals").string()}, harness.workspace.root());
+        EXPECT_TRUE(result.succeeded()) << result.stderr_text << "exit: " << result.exit.status;
+    }
+}
+
 TEST(CliZep, RunsImportedFunctionValueFixture) {
     CliTestHarness harness("cli_zep_imported_function_value", ZEP_ZEP_EXECUTABLE,
                            "fixtures/function_value_import");

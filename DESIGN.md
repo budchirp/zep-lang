@@ -162,7 +162,9 @@ Inheritance compatibility:
 - A struct value is compatible with an interface value only when the struct lists that interface and
   implements its required methods. Interface calls use dynamic dispatch through the interface value.
 
-Numeric literals retain their default type (`i32` for integers, `f64` for floats) and do not implicitly widen. To use a literal in a different numeric context, use `as` or annotate.
+Without a numeric expected type, literals default to `i32` for integers and `f64` for floats.
+A concrete numeric expected type contextualizes the literal; already-typed numeric values do not
+implicitly widen. Use `as` for explicit numeric conversions.
 
 ## Declarations
 
@@ -475,11 +477,15 @@ Subject form evaluates the subject once and compares it to each arm condition in
 Subjectless form evaluates each arm condition as a boolean expression. Arm guards must be
 boolean and run only after the arm condition matches. Arm bodies can be a single expression or a
 block; the expression value or final block statement becomes the arm value. All arm values must
-have compatible types. An `else` arm is required and must be last.
+have compatible types. An `else` arm must be last. It can be omitted when unguarded patterns cover
+every enum variant, or both `true` and `false` for a boolean subject. Guarded patterns do not establish
+exhaustiveness. Missing enum variants are listed in the diagnostic. Patterns already covered by an
+unguarded pattern, and redundant `else` arms after complete finite coverage, produce warnings.
 
 V1 supports numeric, boolean, pointer-compatible subject matching, and enum variant matching with
-named payload bindings. String subject matching, ranges, deeper destructuring, and exhaustiveness
-without `else` are deferred.
+named payload bindings. Enum patterns must refer to the subject's enum declaration; a specialized
+enum alias must also match its generic arguments. String subject matching, ranges, deeper
+destructuring, and numeric range exhaustiveness are deferred.
 
 ### Loop Statements
 
@@ -616,6 +622,25 @@ Generic constraints: `<T: Constraint>` — argument must be compatible with cons
 
 Generic instantiation: `identity<i32>(42)`, `Container<i32> { value: 42 }`
 
+Type arguments can be inferred from function arguments and literal fields:
+
+```zep
+var inferred = Container { value: 42 }
+var contextual: Container<i64> = Container { value: 42 }
+var value = identity(42)
+```
+
+The first container and `identity` call infer `i32`. The annotated container checks its field as
+`i64`. Matching expected nominal types also contextualize nested struct/enum literals, return
+expressions, and arguments of unambiguous non-generic calls. Explicit generic arguments take
+precedence over expected-type inference.
+
+Inference matches active generic parameters by declaration identity. It traverses pointers, arrays,
+function types, and arguments of matching nominal declarations. Repeated occurrences of a parameter
+must infer the same type; there is no common numeric type inference. Constraints are checked after
+inference. Unresolved parameters require explicit generic arguments. Const-parameter inference,
+partial `_` arguments, and expected-type-driven overload selection are not supported.
+
 ## Function Overloading
 
 Multiple functions with the same name and different parameter types. Duplicate signatures produce a warning.
@@ -641,6 +666,10 @@ destroys only the active payload. Module globals are destroyed in reverse initia
 
 An explicit `value.~Type()` is an early drop of a mutable local. The value becomes uninitialized;
 reading or destroying it again is an error until assignment reconstructs it.
+
+Implementation limit: cleanup of discarded non-tail owning call statements is supported, but general
+nested-expression temporary cleanup and distinguishing consumed from discarded block tail values
+remain incomplete. Use named owning locals when a temporary's lifetime is significant.
 
 ### `defer` Statement
 

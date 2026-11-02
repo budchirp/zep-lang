@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <map>
+#include <memory>
 #include <nlohmann/json.hpp>
 #include <signal.h>
 #include <stdexcept>
@@ -176,6 +177,28 @@ TEST(CommonSources, KeepsOwnedSourcesStable) {
     EXPECT_EQ(first_ptr->name, "first.zep");
     EXPECT_EQ(first_ptr->content, "fn first() -> i32 { return 1 }");
     EXPECT_EQ(second.name, "second.zep");
+}
+
+TEST(CommonDiagnostics, OwnsSyntheticSourcesThroughEntryCopiesAndMoves) {
+    std::weak_ptr<const Source> lifetime;
+    Diagnostics retained;
+
+    {
+        auto source = std::make_shared<const Source>("synthetic.json", "{}");
+        lifetime = source;
+        Diagnostics diagnostics;
+        diagnostics.add_error(source, Span::from_position(Position()), "failure");
+        diagnostics.add_error(source, Span::from_position(Position()), "failure");
+        ASSERT_EQ(diagnostics.entries.size(), 1U);
+        retained.entries.push_back(diagnostics.entries.front());
+    }
+
+    EXPECT_FALSE(lifetime.expired());
+    Diagnostics moved(std::move(retained));
+    EXPECT_EQ(moved.entries.front().location.source->name, "synthetic.json");
+    EXPECT_EQ(moved.entries.front().location.source->content, "{}");
+    moved.entries.clear();
+    EXPECT_TRUE(lifetime.expired());
 }
 
 TEST(CommonDiagnostics, RetainsSourceForEveryLocation) {

@@ -2,7 +2,6 @@ module;
 
 #include <optional>
 #include <string>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -30,40 +29,40 @@ export class LiteralChecker {
     Visitor<void>& visitor;
     const Type*& target_type;
 
-    static void infer_from_type_match(const Type* declared, const Type* actual,
-                                      std::unordered_map<std::string, const Type*>& inferred) {
-        if (declared == nullptr || actual == nullptr) {
+    void contextual_arguments(std::vector<GenericArgument*>& arguments,
+                              const NominalType& nominal, Span span) {
+        if (!arguments.empty() || nominal.generic_parameters.empty() || target_type == nullptr) {
             return;
         }
 
-        if (const auto* named = declared->as<NamedType>(); named != nullptr) {
-            if (named->generic_arguments.empty()) {
-                inferred.insert_or_assign(named->name, actual);
-            }
+        const auto* expected = resolver.resolve_type(target_type);
+        const auto* expected_nominal = expected != nullptr ? expected->as_nominal() : nullptr;
+        if (expected_nominal == nullptr || expected_nominal->definition != nominal.definition ||
+            expected_nominal->generic_arguments.size() != nominal.generic_parameters.size()) {
             return;
         }
 
-        if (const auto* declared_pointer = declared->as<PointerType>();
-            declared_pointer != nullptr) {
-            if (const auto* actual_pointer = actual->as<PointerType>(); actual_pointer != nullptr) {
-                infer_from_type_match(declared_pointer->element, actual_pointer->element, inferred);
+        for (const auto& argument : expected_nominal->generic_arguments) {
+            if (argument.is_const()) {
+                return;
             }
-            return;
         }
 
-        if (const auto* declared_array = declared->as<ArrayType>(); declared_array != nullptr) {
-            if (const auto* actual_array = actual->as<ArrayType>(); actual_array != nullptr) {
-                infer_from_type_match(declared_array->element, actual_array->element, inferred);
-            }
+        arguments.reserve(nominal.generic_parameters.size());
+        for (auto index = std::size_t{0}; index < nominal.generic_parameters.size(); ++index) {
+            auto* expression = sema.nodes.create<TypeExpression>(
+                span, expected_nominal->generic_arguments[index].type);
+            arguments.push_back(sema.nodes.create<GenericArgument>(
+                span, nominal.generic_parameters[index].name, expression));
         }
     }
 
     std::vector<GenericArgument*>
     infer_from_fields(const std::vector<GenericParameterType>& parameters,
                       const std::vector<FieldType>& declared_fields,
-                      const std::vector<StructLiteralField*>& literal_fields, Span span) {
-        std::unordered_map<std::string, const Type*> inferred;
-        inferred.reserve(parameters.size());
+                      const std::vector<StructLiteralField*>& literal_fields, Span span,
+                      bool emit_errors) {
+        GenericInference inference(context, sema, resolver, parameters);
 
         for (const auto* literal_field : literal_fields) {
             if (literal_field->value == nullptr || literal_field->value->type == nullptr) {
@@ -72,31 +71,13 @@ export class LiteralChecker {
 
             for (const auto& declared : declared_fields) {
                 if (declared.name == literal_field->name) {
-                    infer_from_type_match(declared.type, literal_field->value->type, inferred);
+                    inference.match(declared.type, literal_field->value->type);
                     break;
                 }
             }
         }
 
-        if (inferred.size() != parameters.size()) {
-            return {};
-        }
-
-        std::vector<GenericArgument*> arguments;
-        arguments.reserve(parameters.size());
-
-        for (const auto& parameter : parameters) {
-            auto iterator = inferred.find(parameter.name);
-            if (iterator == inferred.end() || iterator->second == nullptr) {
-                return {};
-            }
-
-            auto* type_expression = sema.nodes.create<TypeExpression>(span, iterator->second);
-            arguments.push_back(
-                sema.nodes.create<GenericArgument>(span, parameter.name, type_expression));
-        }
-
-        return arguments;
+        return inference.arguments(span, emit_errors);
     }
 
     bool apply_field_generic_bindings(std::vector<GenericArgument*>& arguments,
@@ -105,9 +86,10 @@ export class LiteralChecker {
                                       const std::vector<StructLiteralField*>& literal_fields,
                                       Span span, bool emit_errors) {
         if (arguments.empty() && !parameters.empty()) {
-            auto inferred = infer_from_fields(parameters, declared_fields, literal_fields, span);
-            if (!inferred.empty()) {
-                arguments = std::move(inferred);
+            arguments = infer_from_fields(parameters, declared_fields, literal_fields, span,
+                                          emit_errors);
+            if (arguments.empty()) {
+                return false;
             }
         }
 
@@ -176,7 +158,7 @@ export class LiteralChecker {
 
             const auto* saved_target_type = target_type;
             if (declared != nullptr) {
-                target_type = declared->type;
+                target_type = resolver.resolve_type(declared->type);
             }
 
             visitor.visit_expression(*literal_field->value);
@@ -209,13 +191,25 @@ export class LiteralChecker {
             return;
         }
 
-        resolve_field_values(node.fields, struct_type->fields);
-
         auto scope = resolver.create_substitution_scope();
 
-        if (!apply_field_generic_bindings(node.generic_arguments, struct_type->generic_parameters,
-                                          struct_type->fields, node.fields, node.span, true)) {
-            return;
+        contextual_arguments(node.generic_arguments, *struct_type, node.span);
+        const auto has_arguments = !node.generic_arguments.empty();
+        if (has_arguments) {
+            GenericArgumentResolver arguments(context, sema, resolver, visitor);
+            if (!arguments.apply(node.generic_arguments, struct_type->generic_parameters,
+                                 node.span, true)) {
+                return;
+            }
+        }
+
+        resolve_field_values(node.fields, struct_type->fields);
+
+        if (!has_arguments) {
+            if (!apply_field_generic_bindings(node.generic_arguments, struct_type->generic_parameters,
+                                              struct_type->fields, node.fields, node.span, true)) {
+                return;
+            }
         }
 
         const auto* definition =
@@ -252,13 +246,25 @@ export class LiteralChecker {
             return;
         }
 
-        resolve_field_values(node.fields, raw_variant->fields);
-
         auto scope = resolver.create_substitution_scope();
 
-        if (!apply_field_generic_bindings(node.generic_arguments, enum_type->generic_parameters,
-                                          raw_variant->fields, node.fields, node.span, true)) {
-            return;
+        contextual_arguments(node.generic_arguments, *enum_type, node.span);
+        const auto has_arguments = !node.generic_arguments.empty();
+        if (has_arguments) {
+            GenericArgumentResolver arguments(context, sema, resolver, visitor);
+            if (!arguments.apply(node.generic_arguments, enum_type->generic_parameters,
+                                 node.span, true)) {
+                return;
+            }
+        }
+
+        resolve_field_values(node.fields, raw_variant->fields);
+
+        if (!has_arguments) {
+            if (!apply_field_generic_bindings(node.generic_arguments, enum_type->generic_parameters,
+                                              raw_variant->fields, node.fields, node.span, true)) {
+                return;
+            }
         }
 
         const auto* resolved_enum = resolver.resolve_type(enum_type);

@@ -52,11 +52,10 @@ export class PackageResolver {
     Toolchain environment;
     ManifestReader manifest_reader;
     std::set<std::string> resolving;
-    std::vector<std::unique_ptr<Source>> sources;
 
     void report(Diagnostics& diagnostics, const std::filesystem::path& path, std::string message) {
-        sources.push_back(std::make_unique<Source>(path.string(), std::string()));
-        diagnostics.add_error(*sources.back(), Span::from_position(Position()), std::move(message));
+        diagnostics.add_error(std::make_shared<const Source>(path.string(), std::string()),
+                              Span::from_position(Position()), std::move(message));
     }
 
     std::optional<std::filesystem::path> locate(const DependencySpec& dependency,

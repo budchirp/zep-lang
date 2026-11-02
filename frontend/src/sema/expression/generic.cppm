@@ -18,6 +18,129 @@ import zep.frontend.sema.type;
 import zep.frontend.sema.type_resolver;
 import zep.frontend.sema.constant.evaluator;
 
+export class GenericInference {
+  private:
+    Context& context;
+    SemaContext& sema;
+    TypeResolver& resolver;
+    const std::vector<GenericParameterType>& parameters;
+    std::vector<const Type*> inferred;
+    std::string failure;
+
+  public:
+    GenericInference(Context& context, SemaContext& sema, TypeResolver& resolver,
+                     const std::vector<GenericParameterType>& parameters)
+        : context(context), sema(sema), resolver(resolver), parameters(parameters),
+          inferred(parameters.size(), nullptr), failure() {}
+
+    void match(const Type* declared, const Type* actual) {
+        if (declared == nullptr || actual == nullptr || !failure.empty()) {
+            return;
+        }
+
+        actual = resolver.resolve_type(actual);
+        if (actual == nullptr) {
+            return;
+        }
+
+        if (const auto* named = declared->as<NamedType>();
+            named != nullptr && named->generic_arguments.empty() && named->declaration != nullptr) {
+            for (auto index = std::size_t{0}; index < parameters.size(); ++index) {
+                const auto& parameter = parameters[index];
+                if (parameter.is_const() || parameter.declaration != named->declaration) {
+                    continue;
+                }
+
+                if (inferred[index] == nullptr) {
+                    inferred[index] = actual;
+                } else if (!inferred[index]->same(actual)) {
+                    failure = "conflicting inferred types for generic parameter '" + parameter.name +
+                              "': '" + inferred[index]->to_string() + "' and '" +
+                              actual->to_string() + "'";
+                }
+                return;
+            }
+        }
+
+        declared = resolver.resolve_type(declared);
+        if (declared == nullptr) {
+            return;
+        }
+
+        if (const auto* pointer = declared->as<PointerType>(); pointer != nullptr) {
+            if (const auto* actual_pointer = actual->as<PointerType>(); actual_pointer != nullptr) {
+                match(pointer->element, actual_pointer->element);
+            }
+            return;
+        }
+
+        if (const auto* array = declared->as<ArrayType>(); array != nullptr) {
+            if (const auto* actual_array = actual->as<ArrayType>(); actual_array != nullptr) {
+                match(array->element, actual_array->element);
+            }
+            return;
+        }
+
+        if (const auto* function = declared->as<FunctionType>(); function != nullptr) {
+            const auto* actual_function = actual->as<FunctionType>();
+            if (actual_function == nullptr ||
+                function->parameters.size() != actual_function->parameters.size() ||
+                function->variadic != actual_function->variadic) {
+                return;
+            }
+
+            match(function->return_type, actual_function->return_type);
+            for (auto index = std::size_t{0}; index < function->parameters.size(); ++index) {
+                match(function->parameters[index].type, actual_function->parameters[index].type);
+            }
+            return;
+        }
+
+        const auto* nominal = declared->as_nominal();
+        const auto* actual_nominal = actual->as_nominal();
+        if (nominal == nullptr || actual_nominal == nullptr ||
+            nominal->definition != actual_nominal->definition ||
+            nominal->generic_arguments.size() != actual_nominal->generic_arguments.size()) {
+            return;
+        }
+
+        for (auto index = std::size_t{0}; index < nominal->generic_arguments.size(); ++index) {
+            const auto& argument = nominal->generic_arguments[index];
+            const auto& actual_argument = actual_nominal->generic_arguments[index];
+            if (!argument.is_const() && !actual_argument.is_const()) {
+                match(argument.type, actual_argument.type);
+            }
+        }
+    }
+
+    std::vector<GenericArgument*> arguments(Span span, bool emit_errors) {
+        if (!failure.empty()) {
+            if (emit_errors) {
+                context.diagnostics.add_error(span, failure);
+            }
+            return {};
+        }
+
+        std::vector<GenericArgument*> result;
+        result.reserve(parameters.size());
+        for (auto index = std::size_t{0}; index < parameters.size(); ++index) {
+            if (inferred[index] == nullptr) {
+                if (emit_errors) {
+                    context.diagnostics.add_error(
+                        span, "cannot infer generic parameter '" + parameters[index].name +
+                                  "'; specify generic arguments explicitly");
+                }
+                return {};
+            }
+
+            auto* expression = sema.nodes.create<TypeExpression>(span, inferred[index]);
+            result.push_back(sema.nodes.create<GenericArgument>(
+                span, parameters[index].name, expression));
+        }
+        return result;
+    }
+};
+
 export class GenericArgumentResolver {
   private:
     Context& context;

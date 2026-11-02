@@ -1011,7 +1011,7 @@ export class VarDeclaration : public Statement {
     Expression* initializer;
 
     const Type* type;
-    const VariableSymbol* variable_symbol;
+    VariableSymbol* variable_symbol;
 
     VarDeclaration(Span span, Visibility::Type visibility, StorageKind::Type storage_kind,
                    std::vector<Attribute*> attributes, std::string name, TypeExpression* annotation,

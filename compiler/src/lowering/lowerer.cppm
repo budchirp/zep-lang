@@ -165,6 +165,47 @@ export class HIRLowerer : public Visitor<HIRNode*> {
         return lowered != nullptr ? lowered->as<FunctionType>() : nullptr;
     }
 
+    const Type* lower_cleanup_type(const Type* type, Span span) {
+        const auto* lowered = lower_type(type, span);
+        const auto* structure = lowered != nullptr ? lowered->as<StructType>() : nullptr;
+        if (structure == nullptr || structure->generic_arguments.empty()) {
+            return lowered;
+        }
+
+        const auto* destructor = sema.lifetime.find_destructor(structure);
+        const auto* definition = monomorphization_cache.get_function(destructor);
+        if (destructor == nullptr || definition == nullptr) {
+            return lowered;
+        }
+
+        auto scope = resolver.create_substitution_scope();
+        const auto arguments = lower_generic_arguments(structure->generic_arguments, span);
+        const auto& parameters = structure->definition->generic_parameters;
+        const auto count = std::min(parameters.size(), arguments.size());
+        for (auto index = std::size_t{0}; index < count; ++index) {
+            bind_parameter(parameters[index], arguments[index]);
+        }
+
+        resolver.bind_type_parameter(destructor->parent, structure);
+        resolver.bind_type_parameter("Self", structure);
+        const auto* function_type = lower_function_type(destructor->function_type, span);
+        if (function_type == nullptr) {
+            return lowered;
+        }
+
+        auto name = Mangler::function_name(destructor->base_name(), destructor, function_type);
+        if (monomorphization_cache.mark_specialization(definition, arguments, name)) {
+            CleanupFunctionGuard function_guard(cleanup);
+
+            if (auto* specialization = lower_monomorphized_function(*definition, name, arguments);
+                specialization != nullptr) {
+                monomorphization_cache.enqueue_specialization(specialization);
+            }
+        }
+
+        return lowered;
+    }
+
     static std::size_t parameter_offset(const FunctionType* function_type,
                                         std::size_t declared_count) {
         if (function_type == nullptr || function_type->parameters.size() <= declared_count) {
@@ -738,8 +779,26 @@ export class HIRLowerer : public Visitor<HIRNode*> {
         case CompileTimeValue::Kind::Type::Null:
             return program->nodes.create<HIRNullLiteral>(span, type);
 
-        case CompileTimeValue::Kind::Type::Struct:
-            return nullptr;
+        case CompileTimeValue::Kind::Type::Struct: {
+            const auto* structure = type != nullptr ? type->as<StructType>() : nullptr;
+            const auto& values = std::get<std::vector<CompileTimeValue>>(value.payload);
+            if (structure == nullptr || structure->fields.size() != values.size()) {
+                throw LoweringFailure(span, "constant struct requires concrete field types");
+            }
+
+            std::vector<HIRStructLiteralField> fields;
+            fields.reserve(values.size());
+            for (auto index = std::size_t{0}; index < values.size(); ++index) {
+                auto* expression = lower_compile_time_value(span, values[index]);
+                if (expression == nullptr) {
+                    throw LoweringFailure(
+                        span, "constant struct field cannot be represented at runtime");
+                }
+                fields.emplace_back(structure->fields[index].name, expression);
+            }
+            return program->nodes.create<HIRStructLiteralExpression>(
+                span, structure->name, std::move(fields), type);
+        }
         case CompileTimeValue::Kind::Type::Array: {
             const auto& elements = std::get<std::vector<CompileTimeValue>>(value.payload);
             const auto* array = type != nullptr ? type->as<ArrayType>() : nullptr;
@@ -1500,7 +1559,7 @@ export class HIRLowerer : public Visitor<HIRNode*> {
           facades(sema.facades, sema.types, resolver),
           cleanup(*program, sema, resolver,
                   [this](const Type* type, Span span) -> const Type* {
-                      return lower_type(type, span);
+                      return lower_cleanup_type(type, span);
                   }),
           diagnostics(context.diagnostics) {}
 
@@ -2131,8 +2190,31 @@ export class HIRLowerer : public Visitor<HIRNode*> {
         body.reserve(node.statements.size());
         auto terminated = false;
 
-        for (auto* statement : node.statements) {
+        for (auto index = std::size_t{0}; index < node.statements.size(); ++index) {
+            auto* statement = node.statements[index];
             if (auto* lowered = lower_statement(*statement); lowered != nullptr) {
+                if (auto* expression_statement = lowered->as<HIRExpressionStatement>();
+                    index + 1 < node.statements.size() && expression_statement != nullptr &&
+                    expression_statement->expression != nullptr &&
+                    expression_statement->expression->as<HIRCallExpression>() != nullptr &&
+                    sema.lifetime.needs_destruction(expression_statement->expression->type,
+                                                    resolver)) {
+                    auto* expression = expression_statement->expression;
+                    auto name = cleanup.next_return_tmp_name();
+                    auto* temporary = program->nodes.create<HIRVarDeclaration>(
+                        statement->span, Visibility::Type::Private, Linkage::Type::Internal,
+                        StorageKind::Type::Var, name, expression->type, expression, false);
+                    auto* value = program->nodes.create<HIRIdentifierExpression>(
+                        statement->span, name, expression->type);
+                    std::vector<HIRStatement*> statements;
+                    statements.reserve(2);
+                    statements.push_back(temporary);
+                    cleanup.build_drop_statements_for_expression(
+                        statement->span, value, expression->type, statements);
+                    lowered = program->nodes.create<HIRStatementGroup>(
+                        statement->span, std::move(statements));
+                }
+
                 body.push_back(lowered);
 
                 if (terminates(lowered)) {
@@ -2222,8 +2304,16 @@ export class HIRLowerer : public Visitor<HIRNode*> {
     }
 
     HIRNode* visit(VarDeclaration& node) override {
-        auto* initializer =
-            node.initializer != nullptr ? lower_expression(*node.initializer) : nullptr;
+        HIRExpression* initializer = nullptr;
+        if (node.initializer != nullptr) {
+            if (sema.env.current_scope->is_global() &&
+                node.initializer->compile_time_value.has_value()) {
+                initializer = lower_compile_time_value(
+                    node.span, *node.initializer->compile_time_value);
+            } else {
+                initializer = lower_expression(*node.initializer);
+            }
+        }
         const auto* source_type = node.type != nullptr     ? node.type
                                   : initializer != nullptr ? initializer->type
                                                            : nullptr;
