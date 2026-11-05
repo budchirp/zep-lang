@@ -4,7 +4,8 @@ Systems programming language with manual memory management, generics, interfaces
 
 ## Features
 
-- **C++-style RAII** — copy constructors, implicit aggregate cleanup, destructors (`fn ~Type() -> void`), and `defer` run deterministically
+- **RAII** — recursive copies, move constructors, assignment special members, destructors, and deterministic `defer`
+- **References** — `&T`, `&mut T`, and `move T`, with std `Memory::move(value)` for move construction and assignment
 - **Generics** — `fn identity<T>(value: T) -> T`, `struct Container<T>`
 - **Interfaces** — structural contracts with dynamic dispatch
 - **Enums with payloads** — `Option<T>::Some { value: T }`, `Result<T, E>::Ok { value: T }`, or backed variants (`enum Key : i32`)
@@ -14,14 +15,15 @@ Systems programming language with manual memory management, generics, interfaces
 - **Block expressions** — `do { ... }` blocks that evaluate to expressions
 - **Primitive facades** — `32.to_string()`, `"zep".to_string()`, `true.to_string()`
 - **C FFI** — `extern fn`, `extern var` with variadic support
-- **Compile-time built-ins** — `#sizeof(T)`, `#length(array)`, `#asm(...)`
+- **Memory** — heap `new value`, placement `new (storage) value`, `delete ptr`, and explicit `value.~Type()` destruction
+- **Built-ins** — `#sizeof`, `#length`, and named-operand `asm { ... }` blocks
 - **Language Server Protocol** — incremental document sync, import-aware completion, navigation,
   symbols, signatures, diagnostics, hover, and semantic tokens through `zep lsp`
 
 ## Example
 
 ```zep
-import std.io.format.FormatArguments
+import std.io.FormatArguments
 import std.io.print
 
 struct Point {
@@ -60,12 +62,12 @@ public fn main() -> i32 {
     var point = Point(3, 4)
     var mut arguments = FormatArguments()
     arguments.add(point.distance_squared())
-    print("distance squared: {}\n", &arguments)
+    print("distance squared: {}\n", &arguments).unwrap()
 
     var circle = Circle(5.0)
     arguments.clear()
     arguments.add(circle.area())
-    print("area: {}\n", &arguments)
+    print("area: {}\n", &arguments).unwrap()
 
     return 0
 }
@@ -155,3 +157,7 @@ Projects use `zep.json`:
 
 See [DESIGN.md](DESIGN.md) for the full language specification and
 [CONTRIBUTING.md](CONTRIBUTING.md) for build, test, and contribution details.
+
+See [ROADMAP.md](ROADMAP.md) for prioritized language additions and implementation estimates.
+The [assembly example](examples/assembly/src/main.zep) demonstrates named inputs, multiple register
+constraints, and a Linux x86_64 syscall.

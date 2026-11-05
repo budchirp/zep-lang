@@ -13,7 +13,18 @@
 
 import zep.lsp.transport;
 
-TEST(LspIntegration, FullClientServerLifecycle) {
+namespace {
+
+std::string frame_message(const nlohmann::json& payload) {
+    std::istringstream input;
+    std::ostringstream output;
+    Transport transport(input, output);
+    transport.write(payload);
+
+    return output.str();
+}
+
+void run_lsp(const std::string& requests, std::vector<nlohmann::json>& messages) {
     int stdin_pipe[2];
     int stdout_pipe[2];
 
@@ -40,11 +51,37 @@ TEST(LspIntegration, FullClientServerLifecycle) {
     close(stdin_pipe[0]);
     close(stdout_pipe[1]);
 
-    auto frame_message = [](const nlohmann::json& payload) {
-        auto body = payload.dump();
-        return "Content-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body;
-    };
+    auto written = write(stdin_pipe[1], requests.data(), requests.size());
+    EXPECT_EQ(written, static_cast<ssize_t>(requests.size()));
+    close(stdin_pipe[1]);
 
+    std::string response;
+    char buffer[4096];
+    auto count = ssize_t{0};
+
+    while ((count = read(stdout_pipe[0], buffer, sizeof(buffer))) > 0) {
+        response.append(buffer, static_cast<std::size_t>(count));
+    }
+
+    close(stdout_pipe[0]);
+    auto status = 0;
+    waitpid(pid, &status, 0);
+    EXPECT_TRUE(WIFEXITED(status));
+    EXPECT_EQ(WEXITSTATUS(status), 0);
+
+    std::istringstream input(response);
+    std::ostringstream output;
+    Transport transport(input, output);
+    messages.reserve(16);
+
+    while (auto message = transport.read()) {
+        messages.push_back(std::move(*message));
+    }
+}
+
+}
+
+TEST(LspIntegration, FullClientServerLifecycle) {
     std::string request_stream;
 
     nlohmann::json initialize_request;
@@ -146,32 +183,8 @@ TEST(LspIntegration, FullClientServerLifecycle) {
     exit_notification["method"] = "exit";
     request_stream += frame_message(exit_notification);
 
-    auto written = write(stdin_pipe[1], request_stream.data(), request_stream.size());
-    EXPECT_EQ(written, static_cast<ssize_t>(request_stream.size()));
-    close(stdin_pipe[1]);
-
-    std::string response_data;
-    char buffer[4096];
-    ssize_t bytes_read = 0;
-    while ((bytes_read = read(stdout_pipe[0], buffer, sizeof(buffer))) > 0) {
-        response_data.append(buffer, static_cast<std::size_t>(bytes_read));
-    }
-    close(stdout_pipe[0]);
-
-    int status = 0;
-    waitpid(pid, &status, 0);
-
-    EXPECT_TRUE(WIFEXITED(status));
-    EXPECT_EQ(WEXITSTATUS(status), 0);
-
-    std::istringstream response_stream(response_data);
-    std::ostringstream dummy_out;
-    Transport transport(response_stream, dummy_out);
-
     std::vector<nlohmann::json> messages;
-    while (auto msg = transport.read()) {
-        messages.push_back(std::move(*msg));
-    }
+    run_lsp(request_stream, messages);
 
     ASSERT_GE(messages.size(), 13U);
 
@@ -223,37 +236,6 @@ TEST(LspIntegration, FullClientServerLifecycle) {
 }
 
 TEST(LspIntegration, CliZepLspSubcommand) {
-    int stdin_pipe[2];
-    int stdout_pipe[2];
-
-    ASSERT_EQ(pipe(stdin_pipe), 0);
-    ASSERT_EQ(pipe(stdout_pipe), 0);
-
-    auto pid = fork();
-    ASSERT_GE(pid, 0);
-
-    if (pid == 0) {
-        close(stdin_pipe[1]);
-        close(stdout_pipe[0]);
-
-        dup2(stdin_pipe[0], STDIN_FILENO);
-        dup2(stdout_pipe[1], STDOUT_FILENO);
-
-        close(stdin_pipe[0]);
-        close(stdout_pipe[1]);
-
-        execl(ZEP_ZEP_EXECUTABLE, ZEP_ZEP_EXECUTABLE, "lsp", nullptr);
-        _exit(127);
-    }
-
-    close(stdin_pipe[0]);
-    close(stdout_pipe[1]);
-
-    auto frame_message = [](const nlohmann::json& payload) {
-        auto body = payload.dump();
-        return "Content-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body;
-    };
-
     std::string request_stream;
 
     nlohmann::json initialize_request;
@@ -274,32 +256,8 @@ TEST(LspIntegration, CliZepLspSubcommand) {
     exit_notification["method"] = "exit";
     request_stream += frame_message(exit_notification);
 
-    auto written = write(stdin_pipe[1], request_stream.data(), request_stream.size());
-    EXPECT_EQ(written, static_cast<ssize_t>(request_stream.size()));
-    close(stdin_pipe[1]);
-
-    std::string response_data;
-    char buffer[4096];
-    ssize_t bytes_read = 0;
-    while ((bytes_read = read(stdout_pipe[0], buffer, sizeof(buffer))) > 0) {
-        response_data.append(buffer, static_cast<std::size_t>(bytes_read));
-    }
-    close(stdout_pipe[0]);
-
-    int status = 0;
-    waitpid(pid, &status, 0);
-
-    EXPECT_TRUE(WIFEXITED(status));
-    EXPECT_EQ(WEXITSTATUS(status), 0);
-
-    std::istringstream response_stream(response_data);
-    std::ostringstream dummy_out;
-    Transport transport(response_stream, dummy_out);
-
     std::vector<nlohmann::json> messages;
-    while (auto msg = transport.read()) {
-        messages.push_back(std::move(*msg));
-    }
+    run_lsp(request_stream, messages);
 
     ASSERT_GE(messages.size(), 2U);
     EXPECT_EQ(messages[0]["id"], 1);

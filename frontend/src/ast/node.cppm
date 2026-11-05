@@ -12,10 +12,13 @@ module;
 export module zep.frontend.node;
 
 import zep.common.source.span;
-import zep.frontend.sema.type;
+import zep.frontend.sema.types;
 import zep.frontend.kind;
-import zep.frontend.sema.scope;
+import zep.frontend.sema.symbols;
+import zep.frontend.sema.scopes.scope;
 import zep.common.arena;
+import zep.common.tagged;
+import zep.frontend.sema.lifecycle.operation;
 
 export template <typename T>
 class Visitor;
@@ -23,7 +26,7 @@ class Visitor;
 export template <typename T>
 class ExpressionVisitor;
 
-export class Node {
+export class Node : public Tagged {
   public:
     class Kind {
       public:
@@ -57,6 +60,8 @@ export class Node {
             MemberExpression,
             QualifiedAccessExpression,
             AssignExpression,
+            NewExpression,
+            DeleteExpression,
             StructLiteralExpression,
             EnumVariantExpression,
             IfExpression,
@@ -64,6 +69,7 @@ export class Node {
             ClosureExpression,
             BlockExpression,
             BuiltinCall,
+            AssemblyExpression,
 
             BlockStatement,
             ExpressionStatement,
@@ -98,32 +104,15 @@ export class Node {
 
     virtual ~Node() = default;
 
-    template <typename T>
-    T* as() {
-        if (kind == T::static_kind) {
-            return static_cast<T*>(this);
-        }
-
-        return nullptr;
-    }
-
-    template <typename T>
-    const T* as() const {
-        if (kind == T::static_kind) {
-            return static_cast<const T*>(this);
-        }
-
-        return nullptr;
-    }
 };
 
 export using NodeArena = Arena<Node>;
 
-export class CallTarget {
+export class CallTarget : public Tagged {
   public:
     class Kind {
       public:
-        enum class Type : std::uint8_t { Direct, Indirect, Interface, Intrinsic };
+        enum class Type : std::uint8_t { Direct, Indirect, Interface };
     };
 
     const Kind::Type kind;
@@ -131,19 +120,17 @@ export class CallTarget {
     explicit CallTarget(Kind::Type kind) : kind(kind) {}
     virtual ~CallTarget() = default;
 
-    template <typename T>
-    const T* as() const {
-        return kind == T::static_kind ? static_cast<const T*>(this) : nullptr;
-    }
 };
 
 export class DirectCallTarget final : public CallTarget {
   public:
     static constexpr Kind::Type static_kind = Kind::Type::Direct;
     const FunctionSymbol* function_symbol;
+    const FunctionType* signature;
 
-    explicit DirectCallTarget(const FunctionSymbol& function)
-        : CallTarget(static_kind), function_symbol(&function) {}
+    explicit DirectCallTarget(const FunctionSymbol& function, const FunctionType* signature = nullptr)
+        : CallTarget(static_kind), function_symbol(&function),
+          signature(signature != nullptr ? signature : function.signature()) {}
 };
 
 export class IndirectCallTarget final : public CallTarget {
@@ -163,15 +150,6 @@ export class InterfaceCallTarget final : public CallTarget {
 
     InterfaceCallTarget(const FunctionSymbol& method, std::size_t slot)
         : CallTarget(static_kind), method_symbol(&method), slot(slot) {}
-};
-
-export class IntrinsicCallTarget final : public CallTarget {
-  public:
-    static constexpr Kind::Type static_kind = Kind::Type::Intrinsic;
-    Intrinsic::Type intrinsic;
-
-    explicit IntrinsicCallTarget(Intrinsic::Type intrinsic)
-        : CallTarget(static_kind), intrinsic(intrinsic) {}
 };
 
 export class Expression : public Node {
@@ -298,7 +276,7 @@ export class FunctionPrototype : public Node {
 
     class ReceiverKind {
       public:
-        enum class Type : std::uint8_t { None, Borrow, MutBorrow };
+        enum class Type : std::uint8_t { None, Borrow, MutBorrow, Move };
     };
 
     bool is_variadic;
@@ -569,11 +547,12 @@ export class CoerceExpression : public Expression {
     Expression* value;
     Coercion::Type coercion;
     const Type* source_type;
+    std::shared_ptr<const LifecyclePlan> operation;
 
     CoerceExpression(Span span, Expression* value, const Type* target_type, Coercion::Type coercion,
                      const Type* source_type)
         : Expression(static_kind, span), value(value), coercion(coercion),
-          source_type(source_type) {
+          source_type(source_type), operation(nullptr) {
         type = target_type;
     }
 };
@@ -590,12 +569,14 @@ export class CallExpression : public Expression {
     std::vector<Argument*> arguments;
 
     std::unique_ptr<CallTarget> resolved_target;
+    std::shared_ptr<const LifecyclePlan> destruction;
+    const Type* reference_result = nullptr;
 
     CallExpression(Span span, Expression* callee, std::vector<GenericArgument*> generic_arguments,
                    std::vector<Argument*> arguments)
         : Expression(static_kind, span), callee(callee),
           generic_arguments(std::move(generic_arguments)), arguments(std::move(arguments)),
-          resolved_target(nullptr) {}
+          resolved_target(nullptr), destruction() {}
 };
 
 export class IndexExpression : public Expression {
@@ -650,9 +631,34 @@ export class AssignExpression : public Expression {
 
     Expression* target;
     Expression* value;
+    CallExpression* resolved_assignment = nullptr;
 
     AssignExpression(Span span, Expression* target, Expression* value)
         : Expression(static_kind, span), target(target), value(value) {}
+};
+
+export class NewExpression : public Expression {
+  public:
+    static constexpr Kind::Type static_kind = Kind::Type::NewExpression;
+
+    Expression* storage;
+    Expression* value;
+    CallExpression* allocation;
+
+    NewExpression(Span span, Expression* storage, Expression* value)
+        : Expression(static_kind, span), storage(storage), value(value), allocation(nullptr) {}
+};
+
+export class DeleteExpression : public Expression {
+  public:
+    static constexpr Kind::Type static_kind = Kind::Type::DeleteExpression;
+
+    Expression* value;
+    CallExpression* release;
+    std::shared_ptr<const LifecyclePlan> operation;
+
+    DeleteExpression(Span span, Expression* value)
+        : Expression(static_kind, span), value(value), release(nullptr), operation() {}
 };
 
 export class StructLiteralExpression : public Expression {
@@ -772,6 +778,20 @@ export class BlockExpression : public Expression {
     BlockExpression(Span span, BlockStatement* body) : Expression(static_kind, span), body(body) {}
 };
 
+export class AssemblyExpression : public Expression {
+  public:
+    static constexpr Kind::Type static_kind = Kind::Type::AssemblyExpression;
+
+    std::string text;
+    InlineAssembly assembly;
+    std::vector<Expression*> arguments;
+
+    AssemblyExpression(Span span, std::string text, InlineAssembly assembly,
+                       std::vector<Expression*> arguments)
+        : Expression(static_kind, span), text(std::move(text)), assembly(std::move(assembly)),
+          arguments(std::move(arguments)) {}
+};
+
 export class BuiltinCall : public Expression {
 
   public:
@@ -873,6 +893,8 @@ export class FunctionDeclaration : public Statement {
     BlockStatement* body;
 
     const FunctionSymbol* function_symbol;
+    bool is_defaulted = false;
+    bool is_deleted = false;
 
     FunctionDeclaration(Span span, Visibility::Type visibility, std::vector<Attribute*> attributes,
                         bool is_static, bool is_override, bool is_extension, std::string parent,
@@ -881,26 +903,20 @@ export class FunctionDeclaration : public Statement {
           is_static(is_static), is_override(is_override), is_extension(is_extension),
           parent(std::move(parent)), prototype(prototype), body(body), function_symbol(nullptr) {}
 
-    FunctionSymbol::Kind::Type kind() const {
-        return FunctionSymbol::Kind::classify(parent, is_static, prototype->name);
-    }
-
-    bool is_mangled() const {
-        auto* attribute = find_attribute(attributes, "mangle");
-
-        if (attribute == nullptr) {
-            return true;
+    FunctionSymbol::Role role() const {
+        if (parent.empty()) {
+            return FunctionSymbol::Role(CallableKind::Type::Function);
         }
 
-        if (attribute->arguments.empty()) {
-            return true;
+        if (prototype->name == parent) {
+            return FunctionSymbol::Role(ConstructorKind::Type::Value);
         }
 
-        if (auto* literal = attribute->arguments[0]->as<BooleanLiteral>(); literal != nullptr) {
-            return literal->value;
+        if (prototype->name == "~" + parent) {
+            return FunctionSymbol::Role(CallableKind::Type::Destructor);
         }
 
-        return true;
+        return FunctionSymbol::Role(is_static ? MethodKind::Type::Static : MethodKind::Type::Instance);
     }
 
     bool is_member() const { return !parent.empty(); }
@@ -1038,23 +1054,6 @@ export class ExternFunctionDeclaration : public Statement {
         : Statement(static_kind, span), visibility(visibility), attributes(std::move(attributes)),
           prototype(prototype), function_symbol(nullptr) {}
 
-    bool is_mangled() const {
-        auto* attribute = find_attribute(attributes, "mangle");
-
-        if (attribute == nullptr) {
-            return false;
-        }
-
-        if (attribute->arguments.empty()) {
-            return true;
-        }
-
-        if (auto* literal = attribute->arguments[0]->as<BooleanLiteral>(); literal != nullptr) {
-            return literal->value;
-        }
-
-        return true;
-    }
 };
 
 export class ExternVarDeclaration : public Statement {
@@ -1128,12 +1127,15 @@ class ExpressionVisitor {
     virtual T visit(MemberExpression& node) = 0;
     virtual T visit(QualifiedAccessExpression& node) = 0;
     virtual T visit(AssignExpression& node) = 0;
+    virtual T visit(NewExpression& node) = 0;
+    virtual T visit(DeleteExpression& node) = 0;
     virtual T visit(StructLiteralExpression& node) = 0;
     virtual T visit(EnumVariantExpression& node) = 0;
     virtual T visit(WhenExpression& node) = 0;
     virtual T visit(ClosureExpression& node) = 0;
     virtual T visit(BlockExpression& node) = 0;
     virtual T visit(BuiltinCall& node) = 0;
+    virtual T visit(AssemblyExpression& node) = 0;
     virtual T visit(IfExpression& node) = 0;
     virtual T visit(ArrayLiteralExpression& node) = 0;
 
@@ -1205,6 +1207,15 @@ class ExpressionVisitor {
         }
         if (auto* builtin_call = expression.as<BuiltinCall>(); builtin_call != nullptr) {
             return visit(*builtin_call);
+        }
+        if (auto* allocation = expression.as<NewExpression>(); allocation != nullptr) {
+            return visit(*allocation);
+        }
+        if (auto* deletion = expression.as<DeleteExpression>(); deletion != nullptr) {
+            return visit(*deletion);
+        }
+        if (auto* assembly = expression.as<AssemblyExpression>(); assembly != nullptr) {
+            return visit(*assembly);
         }
         if (auto* type_expression = expression.as<TypeExpression>(); type_expression != nullptr) {
             return visit(*type_expression);
@@ -1410,6 +1421,15 @@ class Visitor : public ExpressionVisitor<T> {
         }
         if (auto* builtin_call = node.as<BuiltinCall>(); builtin_call != nullptr) {
             return visit(*builtin_call);
+        }
+        if (auto* allocation = node.as<NewExpression>(); allocation != nullptr) {
+            return visit(*allocation);
+        }
+        if (auto* deletion = node.as<DeleteExpression>(); deletion != nullptr) {
+            return visit(*deletion);
+        }
+        if (auto* assembly = node.as<AssemblyExpression>(); assembly != nullptr) {
+            return visit(*assembly);
         }
 
         if (auto* block = node.as<BlockStatement>(); block != nullptr) {

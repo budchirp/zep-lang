@@ -17,7 +17,7 @@ static void BM_emit_empty_object(benchmark::State& state) {
         LLVMBackend codegen;
         auto output = workspace.file("empty_" + std::to_string(index++) + ".o");
         codegen.generate(static_cast<const HIRProgram&>(program), output,
-                         CodegenOptions(TargetInfo(), OptimizationLevel::Type::O0));
+                         EmitOptions(TargetInfo(), OptimizationLevel::Type::O0));
         benchmark::DoNotOptimize(std::filesystem::file_size(output));
     }
 }

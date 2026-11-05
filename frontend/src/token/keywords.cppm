@@ -21,4 +21,6 @@ export const std::unordered_map<std::string_view, Token::Type> keywords = {
     {"is", Token::Type::Is},         {"extern", Token::Type::Extern},
     {"as", Token::Type::As},         {"type", Token::Type::Type},
     {"static", Token::Type::Static}, {"defer", Token::Type::Defer},
-    {"do", Token::Type::Do},         {"override", Token::Type::Override}};
+    {"do", Token::Type::Do},         {"override", Token::Type::Override},
+    {"asm", Token::Type::Asm},       {"new", Token::Type::New},
+    {"delete", Token::Type::Delete}};

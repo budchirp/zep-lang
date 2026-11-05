@@ -1,35 +1,42 @@
 import std.fs.writer.StandardFile
 import std.io.format.FormatArguments
-import std.io.format.sprint
-import std.io.panic.panic
-import std.text.string.String
+import std.io.format.FormatError
+import std.io.format.format
+import std.io.error.IoError
+import std.core.result.Result
 
-fn formatted(format: cstr, arguments: *FormatArguments) -> String {
-    var result = sprint(format, arguments)
-    if (result.is_error()) {
-        var error = result.unwrap_error().message()
-        panic(error.as_cstr())
+public enum PrintError {
+    Formatting { error: FormatError }
+    Write { error: IoError }
+}
+
+fn write(file: StandardFile, pattern: cstr, arguments: *FormatArguments) -> Result<i64, PrintError> {
+    var formatted = format(pattern, arguments)
+    if (formatted.is_error()) {
+        return Result<i64, PrintError>::Error { error: PrintError::Formatting { error: formatted.unwrap_error() } }
     }
-
-    return result.unwrap()
+    var output = formatted.unwrap()
+    var result = StandardFile::write_bytes(file, output.as_cstr(), output.length() as i64)
+    if (result.is_error()) {
+        return Result<i64, PrintError>::Error { error: PrintError::Write { error: result.unwrap_error() } }
+    }
+    return Result<i64, PrintError>::Ok { value: result.unwrap() }
 }
 
-public fn print(format: cstr, arguments: *FormatArguments) -> void {
-    var output = formatted(format, arguments)
-    StandardFile::write(StandardFile::Output, output.as_cstr())
+public fn print(pattern: cstr, arguments: *FormatArguments) -> Result<i64, PrintError> {
+    return write(StandardFile::Output, pattern, arguments)
 }
 
-public fn print(format: cstr) -> void {
+public fn print(pattern: cstr) -> Result<i64, PrintError> {
     var arguments = FormatArguments()
-    print(format, &arguments)
+    return print(pattern, &arguments)
 }
 
-public fn eprint(format: cstr, arguments: *FormatArguments) -> void {
-    var output = formatted(format, arguments)
-    StandardFile::write(StandardFile::Error, output.as_cstr())
+public fn eprint(pattern: cstr, arguments: *FormatArguments) -> Result<i64, PrintError> {
+    return write(StandardFile::Error, pattern, arguments)
 }
 
-public fn eprint(format: cstr) -> void {
+public fn eprint(pattern: cstr) -> Result<i64, PrintError> {
     var arguments = FormatArguments()
-    eprint(format, &arguments)
+    return eprint(pattern, &arguments)
 }

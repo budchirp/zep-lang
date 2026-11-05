@@ -2,6 +2,7 @@ module;
 
 #include <expected>
 #include <filesystem>
+#include <llvm/IR/Verifier.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Transforms/Utils/ModuleUtils.h>
 #include <string>
@@ -10,36 +11,63 @@ module;
 export module zep.codegen.llvm.backend;
 
 import zep.codegen.api;
-import zep.codegen.llvm.context;
-import zep.codegen.llvm.type;
-import zep.codegen.llvm.scope;
-import zep.codegen.llvm.dispatch;
+import zep.codegen.llvm.target_context;
+import zep.codegen.llvm.types;
+import zep.codegen.llvm.values;
+import zep.codegen.llvm.calls;
 import zep.codegen.llvm.declarations;
-import zep.codegen.llvm.emitter;
+import zep.codegen.llvm.functions;
 import zep.common.target;
-import zep.frontend.sema.scope;
+import zep.frontend.sema.symbols;
+import zep.frontend.sema.types;
 import zep.hir.node;
 import zep.hir.program;
 
-export class LLVMBackend : public CodegenBackend {
+export class LLVMBackend : public Backend {
   public:
     std::expected<void, std::string> generate(const HIRProgram& program,
                                               const std::filesystem::path& output,
-                                              const CodegenOptions& options) override {
+                                              const EmitOptions& options) override {
         try {
-            LLVMEmissionContext context;
+            Target context;
             context.initialize(options.target, options.optimization);
 
-            TypeLowerer type_lowerer(*context.llvm_context);
+            Types type_lowerer(*context.llvm_context);
             type_lowerer.declare(program.referenced_types);
 
-            DispatchBuilder dispatch(*context.module, *context.builder);
+            for (const auto* symbol : program.referenced_types) {
+                const auto* type = symbol != nullptr ? symbol->type : nullptr;
 
-            CodegenScope scope;
-            DeclarationEmitter declarations(*context.module, type_lowerer, scope);
+                if (type == nullptr || (type->as_nominal() == nullptr && !type->is<ArrayType>())) {
+                    continue;
+                }
+
+                const auto layout = TypeLayout().resolve(type);
+
+                if (layout.state != TypeLayout::Result::State::Concrete) {
+                    continue;
+                }
+
+                auto* lowered = type_lowerer.lower(type);
+
+                if (lowered == nullptr || !lowered->isSized()) {
+                    continue;
+                }
+
+                const auto& data_layout = context.module->getDataLayout();
+                if (data_layout.getTypeAllocSize(lowered).getFixedValue() != layout.size ||
+                    data_layout.getABITypeAlign(lowered).value() != layout.alignment) {
+                    return std::unexpected("LLVM layout disagrees with semantic layout for '" + type->to_string() + "'");
+                }
+            }
+
+            Dispatch dispatch(*context.module, *context.builder);
+
+            ValueScope scope;
+            Declarations declarations(*context.module, type_lowerer, scope);
             declarations.emit_declarations(program);
 
-            FunctionEmitter emitter(*context.llvm_context, *context.module, *context.builder,
+            Functions emitter(*context.llvm_context, *context.module, *context.builder,
                                     type_lowerer, scope, dispatch, declarations);
             emitter.emit_definitions(program);
 
@@ -53,6 +81,12 @@ export class LLVMBackend : public CodegenBackend {
                 if (destructor != nullptr) {
                     llvm::appendToGlobalDtors(*context.module, destructor, 65535);
                 }
+            }
+
+            std::string verification_message;
+            llvm::raw_string_ostream verification_stream(verification_message);
+            if (llvm::verifyModule(*context.module, &verification_stream)) {
+                return std::unexpected("LLVM verification failed: " + verification_message);
             }
 
             context.optimize_module(options.optimization);

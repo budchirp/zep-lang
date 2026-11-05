@@ -29,10 +29,8 @@ export void register_tokens(Dispatcher& dispatcher, Session& session, ProtocolCo
                               if (document == nullptr) {
                                   return nlohmann::json{{"data", nlohmann::json::array()}};
                               }
-                              auto start = protocol.position(
-                                  *document, parameters.at("range").at("start"));
-                              auto end = protocol.position(
-                                  *document, parameters.at("range").at("end"));
+                              auto start = document->position(parameters.at("range").at("start"));
+                              auto end = document->position(parameters.at("range").at("end"));
                               return protocol.tokens(
                                   *document, session.analysis(uri).tokens(Span(start, end)));
                           });

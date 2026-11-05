@@ -4,6 +4,68 @@
 
 import zep.frontend.test.harness;
 
+TEST(FrontendLifecycle, RejectsInvalidPlacementAndDestruction) {
+    EXPECT_TRUE(assert_type_check_error("fn clear(value: i32) -> void { value.~i32() }"));
+    EXPECT_TRUE(assert_type_check_error("fn put(ptr: *i32) -> void { new (ptr) 42 }"));
+    EXPECT_TRUE(assert_type_check_error("fn empty() -> void {} fn put(ptr: *mut i32) -> void { new (ptr) empty() }"));
+    EXPECT_TRUE(assert_type_check_error("fn clear(ptr: *mut void) -> void { ptr->~void() }"));
+    EXPECT_TRUE(assert_type_check_error("fn clear(ptr: *mut i32) -> void { ptr->~boolean() }"));
+    EXPECT_TRUE(assert_type_check_error("fn clear(ptr: *mut i32) -> void { ptr->~i32(42) }"));
+    EXPECT_TRUE(assert_type_check_error("fn clear(value: i32) -> void { delete value }"));
+    EXPECT_TRUE(assert_type_check_error("fn clear(value: &i32) -> void { delete value }"));
+    EXPECT_TRUE(assert_type_check_error("fn clear(ptr: *mut void) -> void { delete ptr }"));
+    EXPECT_TRUE(assert_type_check_error("fn allocate() -> void { new 42 }"));
+    EXPECT_TRUE(assert_type_check_error(R"zep(
+fn main() -> i32 {
+    var mut value = 42
+    value.~i32()
+    return value
+}
+)zep"));
+}
+
+TEST(FrontendLifecycle, RejectsDeletedCopiesAndDanglingLocalReferences) {
+    EXPECT_TRUE(assert_type_check_error(R"zep(
+struct Resource {
+    public:
+        var value: i32
+        fn Resource(source: &Resource) -> Resource = delete
+}
+fn main() -> i32 {
+    var source = Resource { value: 1 }
+    var copied = source
+    return 0
+}
+)zep"));
+    EXPECT_TRUE(assert_type_check_error(R"zep(
+fn dangling() -> &i32 {
+    var value = 42
+    return value
+}
+)zep"));
+    EXPECT_TRUE(assert_type_check_error(R"zep(
+struct Record { public: var value: i32 }
+fn dangling() -> &i32 {
+    var value = Record { value: 42 }
+    return value.value
+}
+)zep"));
+    EXPECT_TRUE(assert_type_check_error(R"zep(
+fn read(value: &i32) -> i32 { return value }
+fn main() -> i32 { return read(null) }
+)zep"));
+}
+
+TEST(FrontendAssembly, RejectsInvalidOperandContracts) {
+    for (const auto* source : {
+        R"zep(fn main() -> void { var value = 1 asm { "" out(value, "r", value) } })zep",
+        R"zep(fn main() -> void { asm { "{missing}" } })zep",
+        R"zep(fn main() -> void { asm { "" options("pure") } })zep",
+        R"zep(fn main() -> void { asm { "" options("att", "intel") } })zep"}) {
+        EXPECT_TRUE(assert_type_check_error(source));
+    }
+}
+
 TEST(FrontendTypeCheckerNegative, RejectsReturnTypeMismatch) {
     const std::string source = R"zep(
 fn main() -> i32 {

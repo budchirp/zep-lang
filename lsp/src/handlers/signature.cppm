@@ -13,13 +13,12 @@ export void register_signature(Dispatcher& dispatcher, Session& session,
                                ProtocolCodec& protocol) {
     dispatcher.on_request("textDocument/signatureHelp",
                           [&session, &protocol](const nlohmann::json& parameters) {
-                              auto uri = parameters.at("textDocument").at("uri").get<std::string>();
-                              auto* document = session.document(uri);
-                              if (document == nullptr) {
+                              auto request = protocol.request_position(parameters);
+
+                              if (!request.has_value()) {
                                   return nlohmann::json();
                               }
-                              auto help = session.analysis(uri).signature(
-                                  protocol.position(*document, parameters.at("position")));
+                              auto help = session.analysis(request->uri).signature(request->position);
                               return help.has_value() ? protocol.signature(*help)
                                                       : nlohmann::json();
                           });

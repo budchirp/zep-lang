@@ -12,10 +12,21 @@ module;
 export module zep.common.source.manager;
 
 import zep.common.source;
+import zep.common.paths;
 
 export class SourceManager {
   private:
     std::vector<std::unique_ptr<Source>> sources;
+
+    Source* find(const std::string& name) const {
+        for (const auto& source : sources) {
+            if (source->name == name) {
+                return source.get();
+            }
+        }
+
+        return nullptr;
+    }
 
   public:
     Source& add(std::string name, std::string content) {
@@ -26,24 +37,21 @@ export class SourceManager {
     }
 
     Source& add_override(const std::filesystem::path& path, std::string content) {
-        auto canonical_path = std::filesystem::weakly_canonical(path);
-        auto canonical_string = canonical_path.string();
-        for (const auto& existing : sources) {
-            if (existing->name == canonical_string) {
-                existing->content = std::move(content);
-                return *existing;
-            }
+        auto name = Paths::canonical(path).string();
+
+        if (auto* source = find(name); source != nullptr) {
+            source->content = std::move(content);
+            return *source;
         }
-        return add(std::move(canonical_string), std::move(content));
+
+        return add(std::move(name), std::move(content));
     }
 
     std::optional<Source*> load(const std::filesystem::path& path) {
-        auto canonical_path = std::filesystem::weakly_canonical(path);
-        auto canonical_string = canonical_path.string();
-        for (const auto& existing : sources) {
-            if (existing->name == canonical_string) {
-                return existing.get();
-            }
+        auto name = Paths::canonical(path).string();
+
+        if (auto* source = find(name); source != nullptr) {
+            return source;
         }
 
         std::ifstream file(path);
@@ -54,6 +62,6 @@ export class SourceManager {
         std::ostringstream buffer;
         buffer << file.rdbuf();
 
-        return &add(std::move(canonical_string), buffer.str());
+        return &add(std::move(name), buffer.str());
     }
 };

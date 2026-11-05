@@ -119,11 +119,14 @@ true.to_string()
 |--------|-------------|
 | `*T` | Immutable pointer |
 | `*mut T` | Mutable pointer |
+| `&T` | Borrowed immutable reference |
+| `&mut T` | Borrowed mutable reference |
+| `move T` | Reference accepting a temporary or an explicit move |
 | `T[N]` | Fixed-size array |
 | `T[]` | Unsized array |
 | `(T1, T2) -> R` | Function/closure type |
 | `Name` | Named type reference |
-| `module.Name` | Type imported through a module alias |
+| `module.Name` | Qualified named type reference |
 | `Outer::Inner` | Nested named type reference |
 | `Name<T>` | Generic type instantiation |
 | `Name<Param: T>` | Named generic type instantiation |
@@ -277,7 +280,7 @@ Rules:
 - `fn name(...) mut -> Ret` marks a method with mutable receiver (`*mut Self`). Regular `fn name(...) -> Ret` is immutable borrow (`*Self`).
 - Static methods use `static fn` and are accessed with `Type::name`
 - Constructors are `fn Type(...) -> Type` and may overload
-- A constructor whose only parameter is `source: *Type` is the copy constructor
+- A constructor whose only parameter is `source: &Type` is the copy constructor
 - Destructors are `fn ~Type() -> void`
 - `override fn` is required when a method matches a base method or listed interface requirement
 - `value.name()` resolves an instance method call
@@ -419,28 +422,43 @@ to `f64`.
 ### Imports
 
 ```
-import module.path
-import module.path { symbol, symbol as local_name }
-public import module.path
-public import module.path { symbol, symbol as local_name }
+import module.path.symbol
+import module.path.symbol as local_name
 ```
 
 Resolution:
-- `import a` → `src/a.zep` or `src/a/index.zep`
-- `import a.b` → `src/a/b.zep` or `src/a/b/index.zep`
-- `import std.io` → global libs `~/.local/share/zep/libs/std/0.0.1/src/io/index.zep`
+- `import a.symbol` loads `src/a.zep` or `src/a/index.zep`
+- `import a.b.symbol` loads `src/a/b.zep` or `src/a/b/index.zep`
+- `import std.io.print` loads the installed standard library's `io/index.zep`
 
-Plain imports bind a module alias using the final path segment: `import std.io` makes public
-members available as `io.print(...)`. Explicit imports copy selected public symbols into the
-current module: `import std.io { print, eprint as print_error }`. `public import` re-exports either the
-module alias or the selected imported names.
+Imports name one exported symbol, optionally renamed with `as`. Imported public symbols retain
+their visibility, allowing index modules to re-export canonical names such as `std.text.String`.
+Whole-module aliases, brace-list imports, and `public import` are not implemented.
 
 The standard I/O module exports side-effecting `print` and `eprint` functions. `std.io.panic`
-provides the `panic` function, while `std.io.format` provides `sprint`, `FormatArguments`, and
+provides the `panic` function, while `std.io.format` provides `format`, `FormatArguments`, and
 `FormatError`. Formatting uses sequential `{}` placeholders, `{{` and `}}` for literal braces, and
 a concrete argument container that accepts strings, integers, floating-point values, booleans, and
-characters. `sprint` returns a `Result` for missing or extra arguments and unmatched braces. `print`
-and `eprint` terminate through `panic` on invalid formatting and otherwise return `void`.
+characters. Argument containers own their text values. `format` returns a `Result` for missing or
+extra arguments and unmatched braces. `print` and `eprint` return `Result<i64, PrintError>`, reporting
+the byte count or a formatting/write failure. Panic writes directly to standard error without
+formatting or allocation.
+
+Canonical exports are available from `std.core`, `std.collections`, `std.text`, `std.io`,
+`std.net.socket`, and `std.net.http`. Collections, strings, views, and array facades use `length()`
+with `i64` counts and indices. String capacity counts usable bytes and excludes its zero terminator.
+
+`String`, `Vector<T>`, and `Bytes` own their storage and copy it deeply. `StringView` borrows a
+bounded byte sequence; constructing a `String` from a view preserves embedded zero bytes. `Box<T>`
+and socket handles are move-only. Std's `move(box).into_inner()` extracts the initialized boxed value.
+Vectors destroy removed elements and move initialized elements during growth. `Map<K, V>` stores
+pairs in one vector and uses its supplied equality function for linear lookup; it is not a hash map.
+
+Operational failures use `Result`, absence uses `Option`, and success-only results use `Unit`.
+Allocation failure and explicit failed unwrapping panic. File and standard-output writes handle
+partial writes and interrupted operations. HTTP clients accept an explicit IPv4 connection address
+separately from the Host header. Servers expose `serve_one()` and a looping `serve(on_start)`.
+The HTTP subset and deferred features are described in [ROADMAP.md](ROADMAP.md).
 
 ## Expressions
 
@@ -498,31 +516,11 @@ for (var mut i: i32 = 0; i < 10; i = i + 1) {
     body
 }
 
-for (var item: i32 in items) {
-    body
-}
-
-for (var i: i32 in 0..10) {
-    body
-}
 ```
 
 Loop conditions must be `boolean`. C-style `for` loops require initializer, condition, and step
-clauses; the initializer is either a `var` declaration or an expression. Range-form `for` accepts
-fixed-size arrays `T[N]` or integer range expressions.
-
-The binding in array form is an element copy; `var mut` makes the local binding reassignable but
-does not write back to the array. The binding in range form is mutable by default (the loop counter).
-Loops are statements with `void` type.
-
-### Range Expressions
-
-```
-start..end                // integer range, exclusive end
-```
-
-`start` and `end` must be the same integer type. Ranges are only valid as iterables in
-`for (var i in ...)`.
+clauses; the initializer is either a `var` declaration or an expression. Loops are statements with
+`void` type. Array iteration and integer range syntax are not implemented.
 
 ### Closures
 
@@ -600,13 +598,79 @@ Assignment requires a mutable lvalue: `var mut` variable, `*mut` dereference, or
 ```zep
 #sizeof(T)           // returns the byte size of type T as i64
 #length(array)       // returns the element count of a fixed-size array as i64
-#asm("...")          // emits inline assembly string
 ```
 
 - `#sizeof` evaluates at compile time and produces a constant `i64` value
 - Applicable to all sized types except `void`
 - `#length` evaluates at compile time for fixed-size arrays and produces a constant `i64` value
-- `#asm` takes a string literal and emits inline target assembly
+
+### Explicit Storage Lifetimes
+
+`new (pointer) value` initializes raw storage without destroying its previous contents. It requires
+an aligned, valid mutable pointer to uninitialized storage. The pointer is evaluated once, before
+the value. The expression returns a mutable pointer to the initialized value.
+
+`new value` allocates storage through `Memory::allocate_bytes` and initializes it. `delete pointer`
+destroys the pointee recursively and releases its allocation through `Memory::free`. Deleting null
+does nothing. Heap operations require `import std.memory.Memory`. Array allocation and deletion
+syntax are not supported. Placement storage must come from the same allocator before passing its
+pointer to `delete`.
+
+`new` and `delete` are reserved keywords. The HTTP client request and server route helpers for
+the DELETE method are named `remove`.
+
+`value.~Type()` destroys a mutable place recursively, without freeing its storage. Destroying a named
+local disables its scope-exit cleanup; assignment reconstructs it and enables cleanup again. The
+caller tracks initialization when using raw pointers and must not destroy the same value twice.
+
+The move helper is an ordinary generic static method in std:
+
+```zep
+import std.memory.Memory
+
+var ptr = new Memory::move(value)
+delete ptr
+
+new (storage) Memory::move(other)
+storage->~Type()
+```
+
+`Memory::move` returns a move reference to its argument; it does not itself transfer or destroy a
+resource. Construction and assignment select a move operation from that reference. The source
+remains alive and destructible. Compiler checking and lowering use reference types and lifecycle
+plans rather than recognizing the move helper's name.
+
+### Inline Assembly
+
+Named operands exchange integers and pointers with target assembly:
+
+```zep
+var mut total: i64 = 20
+asm {
+    "addq {rhs}, {sum}"
+
+    in(rhs, "r", 22 as i64)
+    inout(sum, "r", total)
+
+    clobber("flags")
+}
+```
+
+`asm` is a reserved keyword introducing a `void` block expression. One or more quoted instruction
+templates appear first and are joined with newlines. Operand, clobber, and option declarations follow.
+Semicolons between entries are optional. The former `#asm(...)` syntax is rejected with a migration diagnostic.
+
+`in`, `out`, and `inout` declare named operands. Outputs require mutable destinations. `r` requests
+a general register, `i` requests an immediate input, and register names such as `rax` request a
+fixed register. Multiple outputs write to their destinations; the expression returns `void`.
+Inputs and destination addresses are evaluated once. Placeholders use `{name}`; doubled braces
+insert literal braces. Literal dollar signs are escaped for LLVM automatically.
+
+Assembly is side-effecting and clobbers memory by default. `options("nomem")` promises no memory
+access; `options("pure", "nomem")` additionally permits removal of unused computations and requires
+an output. `options("att")` is the default x86 dialect; `options("intel")` selects Intel syntax.
+List modified registers and flags with `clobber`. Named register operands initially target Linux
+x86_64. Branches into language code, unwinding, and unbalanced stack manipulation are unsupported.
 
 ## Generics
 
@@ -643,7 +707,7 @@ partial `_` arguments, and expected-type-driven overload selection are not suppo
 
 ## Function Overloading
 
-Multiple functions with the same name and different parameter types. Duplicate signatures produce a warning.
+Multiple functions with the same name and different parameter types. Duplicate signatures produce an error.
 
 ## Ownership and Cleanup
 
@@ -651,9 +715,26 @@ Multiple functions with the same name and different parameter types. Duplicate s
 
 Values are passed by value. Scalars and pointers copy directly. Aggregate lvalues use their copy
 constructor; aggregate temporaries are constructed directly into the destination. A copy constructor
-is declared as `fn Type(source: *Type) -> Type`. When it is omitted, the compiler performs a
-memberwise copy. Zep has no move constructor or move expression. Pointers (`*T` for immutable,
-`*mut T` for mutable) borrow an existing value and never destroy the pointee.
+is declared as `fn Type(source: &Type) -> Type`. Default copying recursively copies aggregate
+members, array elements, and the active enum payload. Raw pointers copy their address and never
+destroy the pointee. Standard strings, vectors, and byte buffers define deep copies; boxes and
+socket handles reject copies.
+
+References borrow storage, cannot bind null, and do not destroy their referents. `&mut T` permits
+mutation through a borrowed reference. A local reference bound to an owning temporary extends that
+temporary's lifetime to the reference's scope. Obvious returns of references to local values are
+diagnosed; references do not introduce a borrow checker.
+
+Move constructors use `fn Type(source: move Type) -> Type`. Std's `move(value)` explicitly requests a
+move. Moving leaves the source alive and destructible; resource implementations reset their source
+to an empty state. Move-qualified methods use `fn method() move -> ReturnType` and are called on a
+temporary or an explicit move, for example `move(result).unwrap()`.
+
+Assignment special members use `fn operator=(source: &Type) mut -> &mut Type` and
+`fn operator=(source: move Type) mut -> &mut Type`. `= default` requests generated member operations;
+`= delete` makes an operation unavailable. A user-declared destructor or copy operation suppresses
+implicit moves. Members that cannot support an operation make the corresponding generated
+operation unavailable.
 
 ### Destructors
 
@@ -664,12 +745,15 @@ an initialized value. The user destructor body runs first, followed by fields in
 order and then the base object. Arrays are destroyed in reverse element order and enum cleanup
 destroys only the active payload. Module globals are destroyed in reverse initialization order.
 
-An explicit `value.~Type()` is an early drop of a mutable local. The value becomes uninitialized;
-reading or destroying it again is an error until assignment reconstructs it.
+Explicit destructor calls work on locals, members, indexed elements, and pointer pointees. Generic
+code uses `value.~T()`; scalar types accept a matching destructor call as a no-op. Named locals
+become uninitialized; reading or destroying them again is an error until assignment reconstructs
+them. Raw-storage users remain responsible for tracking initialized members and elements.
 
-Implementation limit: cleanup of discarded non-tail owning call statements is supported, but general
-nested-expression temporary cleanup and distinguishing consumed from discarded block tail values
-remain incomplete. Use named owning locals when a temporary's lifetime is significant.
+Borrowed owning temporaries are retained through their full expression and destroyed in reverse
+construction order. Consumed block results survive cleanup of the block's locals; discarded owning
+results receive cleanup. Replacing an owner evaluates its replacement before destroying the old
+value and captures member/index destinations once.
 
 ### `defer` Statement
 
@@ -720,17 +804,17 @@ Projects define a `zep.json` manifest at the project root:
 The compiler is organized into modular subsystems:
 
 ```text
-common/           Shared utilities: arena, logger, diagnostics, source, span
+common/           Shared arenas, diagnostics, source paths, tagged nodes, scoped state, and hashing
 frontend/         Compiler frontend
   ast/            AST node definitions and program root
   lexer/          Tokenizer
   parser/         Recursive descent parser with precedence climbing
   token/          Token types and keyword mappings
   sema/           Semantic analysis (type checker, scopes, resolvers, compile-time evaluator)
-hir/              High-level IR representation, lowering, and monomorphization
+hir/              High-level IR representation
 codegen/          Code generation orchestration and LLVM backend
 workspace/        Manifest reader, project model, package graph, toolchain discovery
-compiler/         Compilation pipeline and module graph
+compiler/         Compilation pipeline, module graph, lowering, and monomorphization
 builder/          Direct compiler, object generation, and linker orchestration
 lsp/              Editor analysis, protocol transport, dispatch, sessions, codecs, and handlers
 cli/              Command-line driver (build, compile, lsp, fetch, install)
@@ -739,8 +823,85 @@ cli/              Command-line driver (build, compile, lsp, fetch, install)
 ### Compiler Pipeline
 
 ```text
-Source → Lexer → Parser → AST → TypeChecker → HIRLowerer → HIR → Codegen → LLVM IR
+Source → Lexer → Parser → AST → SemanticChecker → Lowerer → HIR → Codegen → LLVM IR
 ```
+
+Lifecycle selection belongs to semantic analysis. `Lifecycle` caches immutable plans for copy,
+move, assignment, and destruction, including selected functions, recursive aggregate parts, deleted
+operations, and dependent operations. Body checking owns the destroyed-variable set and merges
+branch and loop states through one operation. `Binding` checks reference binding and records
+construction plans on coercions.
+
+HIR lowering executes those plans through `Construction`. `Cleanup` owns scope actions and the
+shared initialized-slot registration path for locals, parameters, and temporaries. `Temporaries`
+captures temporary storage and preserves expression results before cleanup. Generic operations are
+resolved through the same lifecycle service after specialization.
+
+Semantic symbols live under `sema/symbols`, scope storage and environments under `sema/scopes`,
+types and type resolution under `sema/types`,
+constant values, arithmetic, and evaluation under `sema/constants`, and generic bindings and
+substitutions under `sema/generics`. Symbol subclasses share tagged casting. Function signatures
+come from the symbol's type; symbols do not store a second signature or choose linker names.
+Constant evaluation distinguishes unresolved generic input from an invalid expression.
+
+Facade metadata lives in `types.facades`, lookup and instantiation in `resolution.facades`, and
+conversion policy in `types.compatibility`. Generic backing parameters use declaration identity and
+an index into their definition. Member scopes belong to nominal types rather than type symbols.
+Facade instances use the same cached instantiation path as named generic types and retain their
+concrete generic arguments for backing-type resolution. Primitive receiver binding reuses that
+instance when substituting parent generic parameters.
+
+`CompileTimeValue` stores values and their stable representation. `ConstantMath` owns checked integer
+construction, arithmetic, and casts, with one range policy and explicit literal/arithmetic diagnostics.
+`CompileTimeValue` and `CompileTimeEnvironment` retain their names.
+
+Compiler and codegen module namespaces and CMake target names are unchanged. Their C++ interfaces use
+`Lowerer`, `Specializations`, `Backend`, `EmitOptions`, and `Target`, without aliases for the old names.
+
+Build coordination lives in `zep.build`. Both project builds and single-file compilation use
+`zep.build.objects` for HIR lowering and object emission. `zep.build.linker` owns linker command
+construction and execution. Dependency fetching and installation live in `zep.build.fetch` and
+`zep.build.install`; their consumers import those modules directly.
+
+Lowering's `lifetime.cppm` groups construction, cleanup registration, full-expression temporaries,
+and their shared `TemporaryNames` generator. Names are internal and do not change source-level
+symbol identity. The main lowerer is the module interface, with call and type implementation units.
+
+LLVM's `values.cppm` groups value scopes, places, casts, ABI conversions, and aggregate values.
+Interface dispatch lives beside call emission. Assembly, control flow, declarations, types, target
+setup, and function traversal retain their own modules.
+
+Function symbols record a variant of `CallableKind`, `MethodKind`, and `ConstructorKind` rather
+than one mixed enum or a separate extension flag. Explicit deletion
+is immutable declaration metadata; lifecycle resolution owns inferred unavailability and invalidates
+cached plans when availability changes. Linkage and ABI remain distinct decisions.
+
+Completion uses typed receiver expressions and semantic visibility rules. It distinguishes static
+and instance access, enum variants, type positions, and named arguments, excludes later locals,
+and replaces complete identifiers. Lexer-based recovery handles unfinished calls and member access
+without offering symbols inside comments or strings.
+
+Call argument normalization and inference share the `resolution.arguments` module. Candidate
+matching retains the winning argument order, generic arguments, signature, and substitution
+environment. HIR call lowering has a focused `calls.cpp` implementation unit for direct calls, indirect
+calls, captured closures, and specialization requests. It consumes recorded signatures instead of
+repeating receiver substitutions. Specializations use declaration identity and semantic binding equality,
+with structural type hashes and canonical generated names; lifecycle
+calls use the same specialization cache. The LLVM `calls` module shares argument evaluation, ABI
+conversion, call creation, and return handling across direct, indirect, and interface calls.
+
+The `types.cpp` implementation unit finalizes concrete HIR types and registers their canonical names.
+The public lowering module exports its coordinator without compatibility aliases. Missing semantic
+call targets or construction plans are compiler errors rather than triggers for another resolution pass.
+
+LLVM place emission owns address calculation and entry-block allocation. Value conversions own
+scalar casts and C ABI representation changes. Calls, assembly, aggregate initialization, and control
+flow receive their dependencies explicitly and reuse the HIR visitor for recursive expression emission.
+
+Assembly has dedicated AST and HIR expressions. The semantic assembly module validates operands
+and produces LLVM constraints and translated placeholders. The LLVM assembly module evaluates
+operand expressions and destination addresses once, emits the validated instruction block, and
+stores explicit outputs. Assembly does not use builtin or intrinsic call targets.
 
 ### Language Server Protocol
 

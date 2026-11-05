@@ -2,15 +2,32 @@
 #include <string>
 
 import zep.frontend.test.harness;
-import zep.frontend.sema.type;
-import zep.frontend.sema.type_resolver;
+import zep.frontend.sema.types;
+import zep.frontend.sema.types.resolver;
 import zep.common.source.span;
 import zep.common.source.position;
 import zep.frontend.sema.context;
-import zep.frontend.sema.substitution;
-import zep.frontend.sema.constant.evaluator;
+import zep.frontend.sema.generics.environment;
+import zep.frontend.sema.constants.evaluator;
 import zep.frontend.kind;
 import zep.frontend.node;
+
+TEST(FrontendConstGenerics, DistinguishesInvalidAndDependentEvaluation) {
+    FrontendHarness harness("fn main() -> i32 { return 1 / 0 }\n");
+    ASSERT_TRUE(harness.type_check_succeeded());
+
+    auto* function = harness.program.statements.front()->as<FunctionDeclaration>();
+    ASSERT_NE(function, nullptr);
+
+    auto* statement = function->body->statements.front()->as<ReturnStatement>();
+    ASSERT_NE(statement, nullptr);
+
+    Evaluator evaluator(harness.context.diagnostics, &harness.sema.env, nullptr,
+                        EvaluationPolicy::Type::Dependent);
+
+    EXPECT_EQ(evaluator.evaluate(*statement->value).state, EvaluationResult::State::Invalid);
+    EXPECT_TRUE(harness.context.diagnostics.has_errors());
+}
 
 TEST(FrontendTypeCheckerPositive, AcceptsGenericFunctionsStructsAndNamedGenericArguments) {
     const std::string source = R"zep(

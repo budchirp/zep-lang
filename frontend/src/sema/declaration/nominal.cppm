@@ -12,17 +12,19 @@ module;
 export module zep.frontend.sema.declaration.nominal;
 
 import zep.common.context;
-import zep.frontend.sema.type_resolver;
-import zep.frontend.sema.constant.evaluator;
-import zep.frontend.sema.substitution;
+import zep.frontend.sema.types.resolver;
+import zep.frontend.sema.constants.evaluator;
+import zep.frontend.sema.constants.math;
+import zep.frontend.sema.generics.environment;
 import zep.common.source.span;
 import zep.frontend.node;
 import zep.frontend.sema.context;
 import zep.frontend.kind;
 import zep.frontend.sema.declaration.attribute;
-import zep.frontend.sema.facade;
-import zep.frontend.sema.scope;
-import zep.frontend.sema.type;
+import zep.frontend.sema.resolution.facades;
+import zep.frontend.sema.symbols;
+import zep.frontend.sema.scopes.scope;
+import zep.frontend.sema.types;
 import zep.frontend.sema.declaration.function;
 
 export class NominalDeclarationChecker {
@@ -31,7 +33,7 @@ export class NominalDeclarationChecker {
     SemaContext& sema;
     TypeResolver& resolver;
     DeclarationTypeBuilder& builder;
-    FacadeResolver& facades;
+    Facades& facades;
     FunctionDeclarationChecker& functions;
     Visitor<void>& visitor;
     std::function<void(Expression&, const Type*)> check_expression;
@@ -50,7 +52,6 @@ export class NominalDeclarationChecker {
         }
 
         if (type_scope != nullptr) {
-            symbol->member_scope = type_scope;
             if (auto* nominal =
                     const_cast<NominalType*>(type != nullptr ? type->as_nominal() : nullptr);
                 nominal != nullptr) {
@@ -128,9 +129,8 @@ export class NominalDeclarationChecker {
     void validate_overrides(StructDeclaration& node, StructType& struct_type) {
         for (auto* method : node.methods) {
             if (method->function_symbol == nullptr ||
-                method->function_symbol->function_type == nullptr ||
-                method->function_symbol->callable_kind !=
-                    FunctionSymbol::Kind::Type::InstanceMethod) {
+                method->function_symbol->signature() == nullptr ||
+                !method->function_symbol->instance()) {
                 if (method->is_override) {
                     context.diagnostics.add_error(
                         method->span, "'override' can only be used on instance methods");
@@ -140,9 +140,9 @@ export class NominalDeclarationChecker {
 
             const auto matches_base =
                 resolve_method(struct_type.base_type, method->prototype->name,
-                               method->function_symbol->function_type) != nullptr;
+                               method->function_symbol->signature()) != nullptr;
             const auto matches_interface = method_satisfies_requirement(
-                struct_type, method->function_symbol->function_type, method->prototype->name);
+                struct_type, method->function_symbol->signature(), method->prototype->name);
 
             if (method->is_override && !matches_base && !matches_interface) {
                 context.diagnostics.add_error(method->span, "method '" + method->prototype->name +
@@ -184,12 +184,12 @@ export class NominalDeclarationChecker {
 
         for (auto* declaration : declarations) {
             const auto* symbol = declaration->function_symbol;
-            if (symbol == nullptr || symbol->function_type == nullptr ||
-                symbol->callable_kind != FunctionSymbol::Kind::Type::InstanceMethod) {
+            if (symbol == nullptr || symbol->signature() == nullptr ||
+                !symbol->instance()) {
                 continue;
             }
 
-            methods->emplace_back(declaration->prototype->name, symbol->function_type,
+            methods->emplace_back(declaration->prototype->name, symbol->signature(),
                                   methods->size());
         }
     }
@@ -299,7 +299,7 @@ export class NominalDeclarationChecker {
                                            "' cannot have a value without a backing type");
                 }
 
-                value = CompileTimeValue::checked_integer(
+                value = ConstantMath::integer(
                     context.diagnostics, static_cast<__int128>(index), backing, variant->span);
             } else if (variant->value_expression != nullptr) {
                 if (!check_discriminant_references(*variant->value_expression, declaration,
@@ -317,7 +317,7 @@ export class NominalDeclarationChecker {
                             value->kind == CompileTimeValue::Kind::Type::SignedInteger
                                 ? static_cast<__int128>(std::get<std::int64_t>(value->payload))
                                 : static_cast<__int128>(std::get<std::uint64_t>(value->payload));
-                        value = CompileTimeValue::checked_integer(
+                        value = ConstantMath::integer(
                             context.diagnostics, numeric, backing, variant->value_expression->span);
                     } else {
                         context.diagnostics.add_error(
@@ -329,15 +329,15 @@ export class NominalDeclarationChecker {
                 }
             } else if (backing->is<IntegerType>()) {
                 if (index == 0) {
-                    value = CompileTimeValue::checked_integer(context.diagnostics, 0, backing,
-                                                              variant->span);
+                    value = ConstantMath::integer(context.diagnostics, 0, backing,
+                                                  variant->span);
                 } else if (previous.has_value()) {
                     const auto numeric =
                         previous->kind == CompileTimeValue::Kind::Type::SignedInteger
                             ? static_cast<__int128>(std::get<std::int64_t>(previous->payload))
                             : static_cast<__int128>(std::get<std::uint64_t>(previous->payload));
-                    value = CompileTimeValue::checked_integer(context.diagnostics, numeric + 1,
-                                                              backing, variant->span, true);
+                    value = ConstantMath::integer(context.diagnostics, numeric + 1,
+                                                  backing, variant->span, IntegerUse::Type::Arithmetic);
                 }
             } else {
                 context.diagnostics.add_error(variant->span, "backed enum variant '" +
@@ -421,8 +421,8 @@ export class NominalDeclarationChecker {
         }
 
         for (auto* method : node.methods) {
-            if (method->kind() == FunctionSymbol::Kind::Type::Constructor ||
-                method->kind() == FunctionSymbol::Kind::Type::Destructor) {
+            if (method->role() == FunctionSymbol::Role(ConstructorKind::Type::Value) ||
+                method->role() == FunctionSymbol::Role(CallableKind::Type::Destructor)) {
                 context.diagnostics.add_error(method->span,
                                               "enums do not support constructors or destructors");
             }
@@ -460,7 +460,7 @@ export class NominalDeclarationChecker {
 
   public:
     NominalDeclarationChecker(Context& context, SemaContext& sema, TypeResolver& resolver,
-                              DeclarationTypeBuilder& builder, FacadeResolver& facades,
+                              DeclarationTypeBuilder& builder, Facades& facades,
                               FunctionDeclarationChecker& functions, Visitor<void>& visitor,
                               std::function<void(Expression&, const Type*)> check_expression)
         : context(context), sema(sema), resolver(resolver), builder(builder), facades(facades),
@@ -504,8 +504,8 @@ export class NominalDeclarationChecker {
 
             auto* symbol = sema.env.symbols.create<FunctionSymbol>(
                 method->name, method->span, Visibility::Type::Public, Linkage::Type::Internal,
-                method_type, FunctionSymbol::Kind::Type::InstanceMethod, node.name,
-                std::vector<AttributeInfo>{}, false, Abi::Type::Language);
+                method_type, FunctionSymbol::Role(MethodKind::Type::Instance), node.name,
+                std::vector<AttributeInfo>{}, Abi::Type::Language);
 
             type_scope->define_function(method->name, symbol);
         }
@@ -556,7 +556,7 @@ export class NominalDeclarationChecker {
                 }
             }
 
-            facades.register_struct(*struct_type, node.visibility);
+            facades.add(*struct_type, node.visibility);
         }
 
         declare_methods(node.methods, struct_type != nullptr ? &struct_type->methods : nullptr);

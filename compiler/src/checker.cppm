@@ -12,10 +12,11 @@ import zep.compiler.graph;
 import zep.compiler.unit;
 import zep.frontend.node;
 import zep.frontend.sema.context;
-import zep.frontend.sema.checker;
+import zep.frontend.sema.checking.checker;
 import zep.frontend.kind;
-import zep.frontend.sema.scope;
-import zep.frontend.sema.type;
+import zep.frontend.sema.symbols;
+import zep.frontend.sema.scopes.scope;
+import zep.frontend.sema.types;
 
 export class CompilerChecker {
   private:
@@ -83,7 +84,7 @@ export class CompilerChecker {
                 import_symbol(*module->scope, *edge->imported->scope, *edge, context);
             }
             ScopeGuard active_scope(sema.env.current_scope, module->scope);
-            TypeChecker checker(context, sema);
+            SemanticChecker checker(context, sema);
             checker.check(module->syntax);
             for (const auto& entry : context.diagnostics.entries) {
                 diagnostics.entries.push_back(entry);

@@ -13,8 +13,9 @@ import zep.common.context;
 import zep.common.source.span;
 import zep.frontend.node;
 import zep.frontend.sema.context;
-import zep.frontend.sema.env;
-import zep.frontend.sema.scope;
+import zep.frontend.sema.scopes.environment;
+import zep.frontend.sema.symbols;
+import zep.frontend.sema.scopes.scope;
 import zep.common.target;
 
 export class AttributeResolver {

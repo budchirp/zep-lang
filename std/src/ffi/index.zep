@@ -10,6 +10,12 @@ public extern fn c_strlen(value: cstr) -> i64
 @name("memcpy")
 public extern fn c_memcpy(destination: *mut void, source: *mut void, size: i64) -> *mut void
 
+@name("memmove")
+public extern fn c_memmove(destination: *mut void, source: *void, size: i64) -> *mut void
+
+@name("memcmp")
+public extern fn c_memcmp(left: *void, right: *void, size: i64) -> i32
+
 @name("strcat")
 public extern fn c_strcat(destination: cstr, source: cstr) -> cstr
 
@@ -130,6 +136,12 @@ public extern fn c_fwrite(buffer: *void, size: i64, count: i64, stream: *mut voi
 
 @name("fclose")
 public extern fn c_fclose(stream: *mut void) -> i32
+
+@name("clearerr")
+public extern fn c_clearerr(stream: *mut void) -> void
+
+@name("ferror")
+public extern fn c_ferror(stream: *mut void) -> i32
 
 @name("fseek")
 public extern fn c_fseek(stream: *mut void, offset: i64, whence: i32) -> i32

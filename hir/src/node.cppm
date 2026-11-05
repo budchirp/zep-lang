@@ -3,6 +3,7 @@ module;
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -11,9 +12,10 @@ export module zep.hir.node;
 import zep.common.source.position;
 import zep.common.source.span;
 import zep.frontend.kind;
-import zep.frontend.sema.scope;
-import zep.frontend.sema.type;
+import zep.frontend.sema.symbols;
+import zep.frontend.sema.types;
 import zep.common.arena;
+import zep.common.tagged;
 
 export template <typename T>
 class HIRVisitor;
@@ -42,6 +44,7 @@ export class HIRNodeKind {
         WhenExpression,
         ClosureExpression,
         BlockExpression,
+        AssemblyExpression,
         TypeExpression,
         BlockStatement,
         StatementGroup,
@@ -54,7 +57,7 @@ export class HIRNodeKind {
     };
 };
 
-export class HIRNode {
+export class HIRNode : public Tagged {
   protected:
     explicit HIRNode(HIRNodeKind::Type kind, Span span) : kind(kind), span(span) {}
 
@@ -69,21 +72,6 @@ export class HIRNode {
 
     virtual ~HIRNode() = default;
 
-    template <typename T>
-    T* as() {
-        if (kind == T::static_kind) {
-            return static_cast<T*>(this);
-        }
-        return nullptr;
-    }
-
-    template <typename T>
-    const T* as() const {
-        if (kind == T::static_kind) {
-            return static_cast<const T*>(this);
-        }
-        return nullptr;
-    }
 };
 
 export using HIRNodeArena = Arena<HIRNode>;
@@ -256,11 +244,11 @@ export class HIRCoerceExpression : public HIRExpression {
           source_type(source_type) {}
 };
 
-export class HIRCallTarget {
+export class HIRCallTarget : public Tagged {
   public:
     class Kind {
       public:
-        enum class Type : std::uint8_t { Direct, Indirect, Interface, Intrinsic };
+        enum class Type : std::uint8_t { Direct, Indirect, Interface };
     };
 
     const Kind::Type kind;
@@ -268,10 +256,6 @@ export class HIRCallTarget {
     explicit HIRCallTarget(Kind::Type kind) : kind(kind) {}
     virtual ~HIRCallTarget() = default;
 
-    template <typename T>
-    const T* as() const {
-        return kind == T::static_kind ? static_cast<const T*>(this) : nullptr;
-    }
 };
 
 export class HIRDirectCallTarget final : public HIRCallTarget {
@@ -285,7 +269,7 @@ export class HIRDirectCallTarget final : public HIRCallTarget {
                         const FunctionType* function_type = nullptr)
         : HIRCallTarget(static_kind), function_symbol(&function_symbol),
           emitted_name(std::move(emitted_name)),
-          function_type(function_type != nullptr ? function_type : function_symbol.function_type) {}
+          function_type(function_type != nullptr ? function_type : function_symbol.signature()) {}
 };
 
 export class HIRIndirectCallTarget final : public HIRCallTarget {
@@ -308,15 +292,18 @@ export class HIRInterfaceCallTarget final : public HIRCallTarget {
         : HIRCallTarget(static_kind), method_symbol(&method_symbol), slot(slot) {}
 };
 
-export class HIRIntrinsicCallTarget final : public HIRCallTarget {
+export class HIRAssemblyExpression : public HIRExpression {
   public:
-    static constexpr Kind::Type static_kind = Kind::Type::Intrinsic;
-    Intrinsic::Type intrinsic;
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::AssemblyExpression;
 
-    explicit HIRIntrinsicCallTarget(Intrinsic::Type intrinsic)
-        : HIRCallTarget(static_kind), intrinsic(intrinsic) {}
+    InlineAssembly assembly;
+    std::vector<HIRExpression*> arguments;
+
+    HIRAssemblyExpression(Span span, InlineAssembly assembly, std::vector<HIRExpression*> arguments,
+                          const Type* type)
+        : HIRExpression(static_kind, span, type), assembly(std::move(assembly)),
+          arguments(std::move(arguments)) {}
 };
-
 export class HIRCallExpression : public HIRExpression {
   public:
     static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::CallExpression;
@@ -478,6 +465,7 @@ export class HIRWhenExpression : public HIRExpression {
     HIRExpression* subject;
     std::vector<HIRWhenArm> arms;
     bool is_exhaustive;
+    bool borrow_payloads = false;
 
     HIRWhenExpression(Span span, HIRExpression* subject, std::vector<HIRWhenArm> arms,
                       bool is_exhaustive, const Type* type = nullptr)
@@ -595,6 +583,7 @@ class HIRVisitor {
 
     virtual T visit(HIRBlockStatement& node) = 0;
     virtual T visit(HIRBlockExpression& node) = 0;
+    virtual T visit(HIRAssemblyExpression& node) = 0;
     virtual T visit(HIRNumberLiteral& node) = 0;
     virtual T visit(HIRFloatLiteral& node) = 0;
     virtual T visit(HIRStringLiteral& node) = 0;
@@ -688,6 +677,9 @@ class HIRVisitor {
         }
         if (auto* block = expression.as<HIRBlockExpression>(); block != nullptr) {
             return visit(*block);
+        }
+        if (auto* assembly = expression.as<HIRAssemblyExpression>(); assembly != nullptr) {
+            return visit(*assembly);
         }
         if (auto* type_expression = expression.as<HIRTypeExpression>();
             type_expression != nullptr) {
@@ -792,6 +784,9 @@ class HIRVisitor {
         }
         if (auto* block = node.as<HIRBlockExpression>(); block != nullptr) {
             return visit(*block);
+        }
+        if (auto* assembly = node.as<HIRAssemblyExpression>(); assembly != nullptr) {
+            return visit(*assembly);
         }
 
         if (auto* block = node.as<HIRBlockStatement>(); block != nullptr) {

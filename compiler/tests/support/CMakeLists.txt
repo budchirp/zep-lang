@@ -1,0 +1,1 @@
+zep_add_module(zep_compiler_test_support DEPENDS zep_compiler zep_frontend_test_support)

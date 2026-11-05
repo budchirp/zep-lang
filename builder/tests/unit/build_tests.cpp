@@ -13,7 +13,7 @@ import zep.hir.program;
 import zep.test.support;
 import zep.workspace.toolchain;
 
-class FakeBackend final : public CodegenBackend {
+class FakeBackend final : public Backend {
   public:
     bool fail = false;
     std::vector<std::filesystem::path> outputs;
@@ -21,7 +21,7 @@ class FakeBackend final : public CodegenBackend {
 
     std::expected<void, std::string> generate(const HIRProgram& program,
                                               const std::filesystem::path& output,
-                                              const CodegenOptions& options) override {
+                                              const EmitOptions& options) override {
         static_cast<void>(program);
         outputs.push_back(output);
         targets.push_back(options.target.triple);

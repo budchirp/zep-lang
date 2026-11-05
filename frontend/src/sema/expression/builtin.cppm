@@ -1,16 +1,19 @@
 module;
 
 #include <array>
+#include <algorithm>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <variant>
 
 export module zep.frontend.sema.expression.builtin;
 
 import zep.common.context;
+import zep.frontend.kind;
 import zep.frontend.node;
-import zep.frontend.sema.type;
-import zep.frontend.sema.type_resolver;
+import zep.frontend.sema.types;
+import zep.frontend.sema.types.resolver;
 
 export class BuiltinChecker {
   private:
@@ -78,22 +81,8 @@ export class BuiltinChecker {
         return primitives.entries.at("i64");
     }
 
-    const Type* check_asm(BuiltinCall& node) {
-        if (node.arguments.size() != 1) {
-            context.diagnostics.add_error(node.span, "'#asm' expects one string argument");
-            return nullptr;
-        }
-
-        if (node.arguments[0]->as<StringLiteral>() == nullptr) {
-            context.diagnostics.add_error(node.span, "'#asm' argument must be a string literal");
-            return nullptr;
-        }
-
-        return primitives.entries.at("void");
-    }
-
   public:
-    static constexpr std::array<std::string_view, 3> names = {"sizeof", "length", "asm"};
+    static constexpr std::array<std::string_view, 2> names = {"sizeof", "length"};
 
     BuiltinChecker(Context& context, TypeResolver& resolver, const PrimitiveTypes& primitives)
         : context(context), resolver(resolver), primitives(primitives) {}
@@ -107,9 +96,6 @@ export class BuiltinChecker {
             return check_length(node);
         }
 
-        if (node.name == "asm") {
-            return check_asm(node);
-        }
 
         context.diagnostics.add_error(node.span, "unknown builtin function '#" + node.name + "'");
         return nullptr;

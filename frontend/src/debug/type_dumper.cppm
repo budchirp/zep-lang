@@ -7,7 +7,7 @@ module;
 export module zep.frontend.debug.type_dumper;
 
 import zep.common.logger;
-import zep.frontend.sema.type;
+import zep.frontend.sema.types;
 import zep.frontend.kind;
 
 export class TypeDumper {

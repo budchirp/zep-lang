@@ -9,8 +9,9 @@ import zep.frontend.debug.ast_dumper;
 import zep.frontend.lexer;
 import zep.frontend.node;
 import zep.frontend.sema.context;
-import zep.frontend.sema.scope;
-import zep.frontend.sema.type;
+import zep.frontend.sema.symbols;
+import zep.frontend.sema.scopes.scope;
+import zep.frontend.sema.types;
 import zep.frontend.test.harness;
 import zep.frontend.token;
 import zep.test.support;
@@ -81,6 +82,44 @@ TEST(FrontendParser, ParsesClosureExpressions) {
     EXPECT_EQ(closure->parameters[0]->name, "x");
 }
 
+TEST(FrontendParser, ParsesAssemblyTemplatesAndOperandSpans) {
+    FrontendHarness harness(R"zep(
+fn main() -> void {
+    asm {
+        "movq {source}, {target}";
+        "addq $1, {target}"
+        in(source, "r", 41 as i64);
+        out(target, "r", target)
+        clobber("flags")
+    }
+}
+)zep");
+
+    ASSERT_TRUE(harness.parse_succeeded());
+    auto* function = harness.program.statements.front()->as<FunctionDeclaration>();
+    ASSERT_NE(function, nullptr);
+    auto* statement = function->body->statements.front()->as<ExpressionStatement>();
+    ASSERT_NE(statement, nullptr);
+    auto* assembly = statement->expression->as<AssemblyExpression>();
+    ASSERT_NE(assembly, nullptr);
+    EXPECT_EQ(assembly->text, "movq {source}, {target}\naddq $1, {target}");
+    EXPECT_EQ(assembly->arguments.size(), 2U);
+    ASSERT_EQ(assembly->assembly.operands.size(), 2U);
+    EXPECT_EQ(assembly->assembly.operands[0].name, "source");
+    EXPECT_EQ(assembly->assembly.operands[1].argument, 1U);
+}
+
+TEST(FrontendParser, RejectsRemovedAssemblyBuiltinAndMisplacedTemplates) {
+    FrontendHarness legacy("fn main() -> void { #asm(\"nop\") }");
+    EXPECT_FALSE(legacy.parse_succeeded());
+
+    FrontendHarness missing("fn main() -> void { asm {} }");
+    EXPECT_FALSE(missing.parse_succeeded());
+
+    FrontendHarness misplaced("fn main() -> void { asm { \"nop\" options(\"att\") \"nop\" } }");
+    EXPECT_FALSE(misplaced.parse_succeeded());
+}
+
 TEST(FrontendParser, AstSnapshotRemainsStable) {
     FrontendHarness harness("fn main() -> i32 { return 1 + 2 }\n");
     ASSERT_FALSE(harness.context.diagnostics.has_errors());
@@ -101,9 +140,9 @@ TEST(FrontendScopes, PreservesOverloadOrderVisibilityAndReferencesAcrossInsertio
     auto& root = *harness.sema.env.root_scope;
     const auto& overloads = root.lookup_function_overloads("choose");
     ASSERT_EQ(overloads.size(), 2U);
-    EXPECT_EQ(overloads[0]->function_type->parameters[0].type,
+    EXPECT_EQ(overloads[0]->signature()->parameters[0].type,
               harness.sema.primitives.entries.at("i32"));
-    EXPECT_EQ(overloads[1]->function_type->parameters[0].type,
+    EXPECT_EQ(overloads[1]->signature()->parameters[0].type,
               harness.sema.primitives.entries.at("i64"));
 
     const auto* stored = root.find_local_function_overloads("choose");

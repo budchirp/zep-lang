@@ -24,41 +24,17 @@ import zep.common.target;
 import zep.compiler;
 import zep.compiler.unit;
 import zep.lsp.analysis.snapshot;
+import zep.lsp.analysis.completion;
 import zep.lsp.analysis.types;
 import zep.workspace.manifest;
 import zep.workspace.project;
 import zep.workspace.toolchain;
+import zep.common.paths;
 
 export class Analyzer {
   private:
     Toolchain toolchain;
     std::unordered_map<std::string, std::string> overlays;
-
-    static std::string canonical(const std::filesystem::path& path) {
-        std::error_code error_code;
-        auto result = std::filesystem::weakly_canonical(path, error_code);
-        return error_code ? std::filesystem::absolute(path).lexically_normal().string()
-                          : result.string();
-    }
-
-    static std::size_t offset(std::string_view content, Position position) {
-        std::size_t current_line = 1;
-        std::size_t current_column = 1;
-        for (std::size_t index = 0; index < content.size(); ++index) {
-            if (current_line == position.line && current_column == position.column) {
-                return index;
-            }
-
-            if (content[index] == '\n') {
-                ++current_line;
-                current_column = 1;
-            } else {
-                ++current_column;
-            }
-        }
-
-        return content.size();
-    }
 
   public:
     explicit Analyzer(Toolchain toolchain = Toolchain::discover())
@@ -69,11 +45,11 @@ export class Analyzer {
     }
 
     void overlay(const std::filesystem::path& path, std::string content) {
-        overlays.insert_or_assign(canonical(path), std::move(content));
+        overlays.insert_or_assign(Paths::identity(path).string(), std::move(content));
     }
 
     void remove_overlay(const std::filesystem::path& path) {
-        overlays.erase(canonical(path));
+        overlays.erase(Paths::identity(path).string());
     }
 
     std::vector<DocumentSymbol> workspace_symbols(const std::filesystem::path& path,
@@ -117,27 +93,24 @@ export class Analyzer {
     }
 
     std::vector<Completion> complete(const std::filesystem::path& path, Position position) {
-        auto canonical_path = canonical(path);
+        auto canonical_path = Paths::identity(path).string();
         if (!overlays.contains(canonical_path)) {
             return analyze(path).complete(position);
         }
 
         auto original_content = overlays.at(canonical_path);
-        auto recovered_content = original_content;
-        auto insertion_offset = offset(recovered_content, position);
-        if (insertion_offset > 0 && recovered_content[insertion_offset - 1] == '.') {
-            recovered_content.insert(insertion_offset, "__zep_member_dummy;");
-        }
+        auto recovered_content = Completer::recover(original_content, position);
 
         auto analysis = analyze(path, recovered_content);
         overlays.insert_or_assign(canonical_path, std::move(original_content));
-        return analysis.complete(position);
+
+        return analysis.complete(position, overlays.at(canonical_path));
     }
 
     Analysis analyze(const std::filesystem::path& path,
                      std::optional<std::string_view> content = std::nullopt) {
         try {
-            auto canonical_path = canonical(path);
+            auto canonical_path = Paths::identity(path).string();
             if (content.has_value()) {
                 overlays.insert_or_assign(canonical_path, std::string(*content));
             }
@@ -178,7 +151,7 @@ export class Analyzer {
             file_diagnostics.reserve(diagnostics.entries.size());
             for (const auto& diagnostic : diagnostics.entries) {
                 if (diagnostic.location.source == nullptr ||
-                    canonical(diagnostic.location.source->name) == canonical_path) {
+                    Paths::identity(diagnostic.location.source->name).string() == canonical_path) {
                     file_diagnostics.push_back(diagnostic);
                 }
             }

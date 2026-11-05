@@ -65,11 +65,15 @@ frontend/         Compiler frontend
   parser/         Recursive descent parser with precedence climbing
   token/          Token types and keyword mappings
   sema/           Semantic analysis
-    type/         Type definitions, compatibility, and layout
-    scope/        Scope and symbol management
+    types/        Type definitions, compatibility, layout, and facade metadata
+    symbols/      Base, type, function, variable, and enum-variant definitions
+    scopes/       Scope storage and semantic environments
     resolution/   Callable and member resolution
     expression/   Generic arguments, literals, operators, builtins, and when checking
-    const/        Compile-time evaluation and constant values
+    constants/    Compile-time evaluation and checked arithmetic
+    generics/     Generic bindings and substitution environments
+    lifecycle/    Construction, assignment, and destruction plans
+    checking/     Expression validation and initialization state
     declaration/  Declaration checking
   debug/          AST and type dumpers
   tests/          Lexer, parser, type compatibility, and semantic tests
@@ -78,19 +82,31 @@ hir/              High-level IR node and program definitions
 codegen/          Code generation interfaces and implementations
   api/            Backend interface and generation options
   llvm/           LLVM backend (isolated; LLVM find_package lives here)
-    backend.cppm  LLVMBackend implementation of CodegenBackend
-    context.cppm  LLVM context, target setup, optimization, and object emission
-    type.cppm     Semantic type to LLVM type lowering
+    backend.cppm  LLVMBackend implementation of Backend
+    target_context.cppm  LLVM context, target setup, optimization, and object emission
+    types.cppm    Semantic type to LLVM type lowering
     declarations.cppm  LLVM function and global declarations
-    emitter.cppm  HIR expression and statement emission
-    dispatch.cppm Interface method tables
-    scope.cppm    CodegenScope (LLVM value scope stack)
+    functions.cppm  HIR traversal and function emission
+    values.cppm   Value scopes, places, casts, ABI conversion, and aggregate values
+    calls.cppm    Call emission and interface dispatch
+    assembly.cppm Inline assembly emission
+    control_flow.cppm  Branches, loops, and returns
 workspace/        Manifest, Project model, package graph, and environment discovery
 compiler/         Module graph, parsing, semantic checking, and HIR lowering
   module/         Module metadata, graph loading, and import resolution
   lowering/       AST to HIR lowering, cleanup, specialization, and mangling
+    lowerer.cppm  Primary lowering interface and traversal
+    lifetime.cppm Construction, cleanup, temporary storage, and shared names
+    calls.cpp     Call lowering implementation
+    types.cpp     Type lowering implementation
   tests/          Module resolution, lowering, and specialization tests
 builder/          Direct build, object generation, and linking
+  src/
+    builder.cppm  Project and single-file build coordination
+    objects.cppm  Shared HIR lowering and object emission
+    linker.cppm   Linker command construction and execution
+    fetch.cppm    Git dependency fetching
+    install.cppm  Compiler and standard-library installation
   tests/          Backend and process orchestration tests
 lsp/              Modular Language Server Protocol boundary
   analysis/       Project snapshots, syntax index, completion, and language queries
@@ -125,7 +141,7 @@ CMake binary tree before mutation. Do not rewrite tracked snapshots unless
 
 ### Compiler Pipeline
 
-`Source → Lexer → Parser → AST → TypeChecker → HIRLowerer → HIR → Codegen → LLVM IR`
+`Source → Lexer → Parser → AST → SemanticChecker → Lowerer → HIR → Codegen → LLVM IR`
 
 ## Code Standards
 

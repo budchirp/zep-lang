@@ -15,6 +15,7 @@ export module zep.lsp.document;
 
 import zep.common.source.position;
 import zep.common.source.span;
+import zep.common.paths;
 
 export std::filesystem::path document_path(std::string_view uri) {
     if (uri.starts_with("file://")) {
@@ -50,7 +51,7 @@ export std::filesystem::path document_path(std::string_view uri) {
 
 export std::string document_uri(const std::filesystem::path& path) {
     constexpr std::string_view hexadecimal = "0123456789ABCDEF";
-    auto source = std::filesystem::absolute(path).lexically_normal().string();
+    auto source = Paths::absolute(path).string();
     std::string encoded = "file://";
     encoded.reserve(source.length() + 7);
     for (const auto character : source) {

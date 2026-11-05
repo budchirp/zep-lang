@@ -19,7 +19,7 @@ import zep.frontend.lexer;
 import zep.frontend.parser.precedence;
 import zep.common.context;
 import zep.frontend.sema.context;
-import zep.frontend.sema.type;
+import zep.frontend.sema.types;
 import zep.frontend.kind;
 import zep.frontend.sema.declaration.attribute;
 import zep.frontend.sema.expression.builtin;
@@ -143,6 +143,10 @@ export class Parser {
     BuiltinCall* parse_builtin_call(Span span) {
         advance();
 
+        if (check(Token::Type::Asm)) {
+            error(span, "'#asm(...)' was removed; use 'asm { ... }'");
+        }
+
         auto builtin_name = std::string(expect(Token::Type::Identifier).value);
 
         if (std::ranges::find(BuiltinChecker::names, builtin_name) == BuiltinChecker::names.end()) {
@@ -153,9 +157,9 @@ export class Parser {
 
         TypeExpression* type_argument = nullptr;
         std::vector<Expression*> arguments;
-
-        if (builtin_name == "length" || builtin_name == "asm") {
-            arguments.push_back(parse_expression());
+        if (builtin_name != "sizeof") {
+            arguments = parse_comma_list<Expression>(Token::Type::RightParen, 0,
+                                                     [&]() { return parse_expression(); });
         } else {
             type_argument = parse_type_expression();
         }
@@ -164,6 +168,76 @@ export class Parser {
 
         return sema.nodes.create<BuiltinCall>(span, std::move(builtin_name), type_argument,
                                               std::move(arguments));
+    }
+
+    AssemblyExpression* parse_assembly() {
+        const auto span = current_token.span;
+        advance();
+        expect(Token::Type::LeftBrace);
+
+        auto text = std::string(expect(Token::Type::String).value);
+        static_cast<void>(match(Token::Type::Semicolon));
+
+        while (check(Token::Type::String)) {
+            text += '\n';
+            text += expect(Token::Type::String).value;
+            static_cast<void>(match(Token::Type::Semicolon));
+        }
+
+        InlineAssembly assembly;
+        assembly.operands.reserve(4);
+        assembly.clobbers.reserve(4);
+        assembly.options.reserve(4);
+
+        std::vector<Expression*> arguments;
+        arguments.reserve(4);
+
+        while (!check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
+            const auto clause = current_token;
+
+            if (check(Token::Type::In)) {
+                advance();
+            } else {
+                expect(Token::Type::Identifier);
+            }
+
+            expect(Token::Type::LeftParen);
+
+            if (clause.value == "clobber" || clause.value == "options") {
+                auto& values = clause.value == "clobber" ? assembly.clobbers : assembly.options;
+
+                do {
+                    values.emplace_back(expect(Token::Type::String).value);
+                } while (match(Token::Type::Comma) && !check(Token::Type::RightParen));
+            } else {
+                auto kind = AssemblyOperand::Kind::Type::Input;
+
+                if (clause.value == "out") {
+                    kind = AssemblyOperand::Kind::Type::Output;
+                } else if (clause.value == "inout") {
+                    kind = AssemblyOperand::Kind::Type::InputOutput;
+                } else if (clause.value != "in") {
+                    error(clause.span, "expected in, out, inout, clobber, or options in assembly");
+                }
+
+                auto name = std::string(expect(Token::Type::Identifier).value);
+                expect(Token::Type::Comma);
+                auto constraint = std::string(expect(Token::Type::String).value);
+                expect(Token::Type::Comma);
+
+                assembly.operands.emplace_back(kind, std::move(name), std::move(constraint),
+                                               arguments.size(), clause.span);
+                arguments.push_back(parse_expression());
+            }
+
+            expect(Token::Type::RightParen);
+            static_cast<void>(match(Token::Type::Semicolon));
+        }
+
+        expect(Token::Type::RightBrace);
+
+        return sema.nodes.create<AssemblyExpression>(span, std::move(text), std::move(assembly),
+                                                     std::move(arguments));
     }
 
     Expression* parse_call_suffix_if_any(Expression* callee, bool allow_paren_without_generics) {
@@ -226,7 +300,8 @@ export class Parser {
                  check(Token::Type::RightBracket) || check(Token::Type::RightBrace) ||
                  check(Token::Type::Else) ||
                  (stop_expression_at_greater && check(Token::Type::GreaterThan)))) {
-            if (allow_arrow_access && check(Token::Type::Arrow) && peek(Token::Type::Identifier)) {
+            if (allow_arrow_access && check(Token::Type::Arrow) &&
+                (peek(Token::Type::Identifier) || peek(Token::Type::Tilde))) {
                 left = parse_postfix(left);
                 continue;
             }
@@ -245,6 +320,30 @@ export class Parser {
         auto span = current_token.span;
 
         switch (current_token.type) {
+
+        case Token::Type::Asm:
+            return parse_assembly();
+
+        case Token::Type::New: {
+            advance();
+            Expression* storage = nullptr;
+
+            if (match(Token::Type::LeftParen)) {
+                storage = parse_expression();
+                expect(Token::Type::RightParen);
+            }
+
+            auto* value = parse_expression(Precedence::Type::Unary);
+
+            return sema.nodes.create<NewExpression>(span, storage, value);
+        }
+
+        case Token::Type::Delete: {
+            advance();
+            auto* value = parse_expression(Precedence::Type::Unary);
+
+            return sema.nodes.create<DeleteExpression>(span, value);
+        }
 
         case Token::Type::String: {
             auto value = std::string(current_token.value);
@@ -780,10 +879,15 @@ export class Parser {
             return expression;
         }
 
-        if (check(Token::Type::Asterisk)) {
+        if (check(Token::Type::Asterisk) || check(Token::Type::Ampersand) ||
+            (check(Token::Type::Identifier) && current_token.value == "move")) {
+            const auto reference_kind = check(Token::Type::Ampersand)
+                ? PointerType::ReferenceKind::Type::Borrow
+                : check(Token::Type::Asterisk) ? PointerType::ReferenceKind::Type::None
+                                               : PointerType::ReferenceKind::Type::Move;
             advance();
 
-            auto is_mutable = false;
+            auto is_mutable = reference_kind == PointerType::ReferenceKind::Type::Move;
             if (check(Token::Type::Mut)) {
                 is_mutable = true;
                 advance();
@@ -791,7 +895,7 @@ export class Parser {
 
             auto* element = parse_type_expression();
 
-            const auto* pointer_type = sema.types.create<PointerType>(element->type, is_mutable);
+            const auto* pointer_type = sema.types.create<PointerType>(element->type, is_mutable, reference_kind);
             auto* expression = sema.nodes.create<TypeExpression>(span, pointer_type);
             expression->element = element;
             return expression;
@@ -1064,7 +1168,9 @@ export class Parser {
             member = "~";
         }
 
-        member += std::string(expect_path_identifier().value);
+        const auto name = expect_path_identifier();
+        member += std::string(name.value);
+        span.end = name.span.end;
 
         return sema.nodes.create<MemberExpression>(
             span,
@@ -1186,6 +1292,28 @@ export class Parser {
             std::move(header.generic_parameters), std::move(inheritance), std::move(methods));
     }
 
+    template <typename ParseMember>
+    void parse_members(const std::string& parent, std::vector<FunctionDeclaration*>& methods,
+                       ParseMember parse_member) {
+        auto visibility = Visibility::Type::Private;
+
+        while (!check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
+            auto attributes = parse_attributes();
+
+            if (parse_visibility_section(visibility)) {
+                continue;
+            }
+
+            if (try_parse_member_method(methods, visibility, attributes, parent)) {
+                continue;
+            }
+
+            parse_member(visibility, std::move(attributes));
+        }
+
+        expect(Token::Type::RightBrace);
+    }
+
     StructDeclaration* parse_struct_declaration(Visibility::Type visibility,
                                                 std::vector<Attribute*> attributes = {}) {
         auto header = parse_nominal_header(Token::Type::Struct);
@@ -1198,30 +1326,23 @@ export class Parser {
         auto methods = std::vector<FunctionDeclaration*>{};
         auto structs = std::vector<StructDeclaration*>{};
         auto enums = std::vector<EnumDeclaration*>{};
-        auto member_visibility = Visibility::Type::Private;
+        fields.reserve(4);
+        methods.reserve(4);
+        structs.reserve(4);
+        enums.reserve(4);
 
-        while (!check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
-            auto member_attributes = parse_attributes();
-
-            if (parse_visibility_section(member_visibility)) {
-                continue;
-            }
-
-            if (try_parse_member_method(methods, member_visibility, member_attributes,
-                                        header.name)) {
-                continue;
-            }
-
+        parse_members(header.name, methods, [&](Visibility::Type member_visibility,
+                                                std::vector<Attribute*> member_attributes) -> void {
             if (check(Token::Type::Struct)) {
                 structs.push_back(
                     parse_struct_declaration(member_visibility, std::move(member_attributes)));
-                continue;
+                return;
             }
 
             if (check(Token::Type::Enum)) {
                 enums.push_back(
                     parse_enum_declaration(member_visibility, std::move(member_attributes)));
-                continue;
+                return;
             }
 
             if (!check(Token::Type::Var)) {
@@ -1230,9 +1351,7 @@ export class Parser {
 
             expect(Token::Type::Var);
             fields.push_back(parse_field(member_visibility, std::move(member_attributes)));
-        }
-
-        expect(Token::Type::RightBrace);
+        });
 
         return sema.nodes.create<StructDeclaration>(
             header.span, visibility, std::move(header.name), std::move(attributes),
@@ -1260,24 +1379,16 @@ export class Parser {
 
         auto variants = std::vector<EnumVariant*>{};
         auto methods = std::vector<FunctionDeclaration*>{};
-        auto member_visibility = Visibility::Type::Private;
+        variants.reserve(4);
+        methods.reserve(4);
 
-        while (!check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
-            auto member_attributes = parse_attributes();
-
-            if (parse_visibility_section(member_visibility)) {
-                continue;
-            }
-
-            if (try_parse_member_method(methods, member_visibility, member_attributes,
-                                        header.name)) {
-                continue;
-            }
-
+        parse_members(header.name, methods, [&](Visibility::Type,
+                                                std::vector<Attribute*> member_attributes) -> void {
             auto variant_span = current_token.span;
             auto variant_name = std::string(expect(Token::Type::Identifier).value);
 
             auto fields = std::vector<Field*>{};
+            fields.reserve(4);
 
             if (match(Token::Type::LeftBrace)) {
                 while (!check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
@@ -1301,9 +1412,7 @@ export class Parser {
             variants.push_back(sema.nodes.create<EnumVariant>(
                 variant_span, std::move(member_attributes), std::move(variant_name),
                 std::move(fields), value_expression));
-        }
-
-        expect(Token::Type::RightBrace);
+        });
 
         return sema.nodes.create<EnumDeclaration>(
             header.span, visibility, std::move(header.name), std::move(attributes),
@@ -1332,6 +1441,9 @@ export class Parser {
         }
 
         name += std::string(expect(Token::Type::Identifier).value);
+        if (name == "operator" && match(Token::Type::Assign)) {
+            name = "operator=";
+        }
 
         if (extension_parent != nullptr && name != "~" && match(Token::Type::Dot)) {
             *extension_parent = std::move(name);
@@ -1349,6 +1461,10 @@ export class Parser {
         expect(Token::Type::RightParen);
 
         auto is_mut = match(Token::Type::Mut);
+        const auto is_move = check(Token::Type::Identifier) && current_token.value == "move";
+        if (is_move) {
+            advance();
+        }
 
         expect(Token::Type::Arrow);
         auto* return_type = parse_type_expression();
@@ -1359,6 +1475,8 @@ export class Parser {
 
         if (is_mut) {
             prototype->receiver_kind = FunctionPrototype::ReceiverKind::Type::MutBorrow;
+        } else if (is_move) {
+            prototype->receiver_kind = FunctionPrototype::ReceiverKind::Type::Move;
         }
 
         return prototype;
@@ -1470,14 +1588,23 @@ export class Parser {
         auto saved_checkpoint = lexer.take_checkpoint();
 
         auto depth = 0;
+        auto delimiters = 0;
         auto found_greater = false;
 
         advance();
 
         while (!check(Token::Type::Eof)) {
-            if (check(Token::Type::LessThan)) {
+            if (check(Token::Type::LeftParen) || check(Token::Type::LeftBracket)) {
+                ++delimiters;
+            } else if (check(Token::Type::RightParen) || check(Token::Type::RightBracket)) {
+                if (delimiters == 0) {
+                    break;
+                }
+
+                --delimiters;
+            } else if (delimiters == 0 && check(Token::Type::LessThan)) {
                 depth = depth + 1;
-            } else if (check(Token::Type::GreaterThan)) {
+            } else if (delimiters == 0 && check(Token::Type::GreaterThan)) {
                 if (depth == 0) {
                     found_greater = true;
                     advance();
@@ -1513,7 +1640,30 @@ export class Parser {
 
         auto extension_parent = std::string();
         auto* prototype = parse_function_prototype(parent.empty() ? &extension_parent : nullptr);
-        auto* body = parse_block_statement();
+        auto is_defaulted = false;
+        auto is_deleted = false;
+        BlockStatement* body = nullptr;
+
+        if (match(Token::Type::Assign)) {
+            auto implementation = current_token;
+
+            if (implementation.type == Token::Type::Delete) {
+                advance();
+            } else {
+                implementation = expect(Token::Type::Identifier);
+            }
+
+            is_defaulted = implementation.value == "default";
+            is_deleted = implementation.value == "delete";
+
+            if (!is_defaulted && !is_deleted) {
+                error(implementation.span, "expected default or delete after '='");
+            }
+
+            body = sema.nodes.create<BlockStatement>(implementation.span, std::vector<Statement*>());
+        } else {
+            body = parse_block_statement();
+        }
         auto actual_parent = parent.empty() ? extension_parent : parent;
 
         if (!actual_parent.empty() && !modifiers.is_static) {
@@ -1524,7 +1674,7 @@ export class Parser {
                 (!constructor_match &&
                  prototype->receiver_kind == FunctionPrototype::ReceiverKind::Type::MutBorrow)) {
                 prototype->receiver_kind = FunctionPrototype::ReceiverKind::Type::MutBorrow;
-            } else if (!constructor_match) {
+            } else if (!constructor_match && prototype->receiver_kind != FunctionPrototype::ReceiverKind::Type::Move) {
                 prototype->receiver_kind = FunctionPrototype::ReceiverKind::Type::Borrow;
             }
         } else if (prototype->receiver_kind == FunctionPrototype::ReceiverKind::Type::MutBorrow) {
@@ -1538,6 +1688,8 @@ export class Parser {
             span, visibility, std::move(attributes), modifiers.is_static,
             modifiers.is_override, !extension_parent.empty(), std::move(actual_parent), prototype,
             body);
+        declaration->is_defaulted = is_defaulted;
+        declaration->is_deleted = is_deleted;
 
         if (modifiers.is_static && declaration->parent.empty()) {
             error(declaration->span, "static functions require an extension target");

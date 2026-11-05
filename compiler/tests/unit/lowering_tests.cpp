@@ -1,28 +1,80 @@
 #include <gtest/gtest.h>
 #include <string>
 #include <utility>
+#include <unordered_set>
 
 import zep.frontend.test.harness;
+import zep.frontend.node;
 import zep.compiler.lowering;
 import zep.hir.node;
 import zep.hir.program;
 import zep.frontend.kind;
+import zep.compiler.test.harness;
 
-class HirHarness {
-  public:
-    FrontendHarness frontend;
+TEST(HirBuilder, RejectsCallsWithoutResolvedSemanticTargets) {
+    FrontendHarness harness(R"zep(
+fn answer() -> i32 { return 42 }
+fn main() -> i32 { return answer() }
+)zep");
+    ASSERT_TRUE(harness.type_check_succeeded());
 
-    explicit HirHarness(std::string content) : frontend(std::move(content)) {
-        frontend.type_check();
+    auto* function = harness.program.statements.back()->as<FunctionDeclaration>();
+    ASSERT_NE(function, nullptr);
+
+    auto* statement = function->body->statements.back()->as<ReturnStatement>();
+    ASSERT_NE(statement, nullptr);
+
+    auto* call = statement->value->as<CallExpression>();
+    ASSERT_NE(call, nullptr);
+    call->resolved_target.reset();
+
+    Lowerer lowerer(harness.context, harness.sema);
+
+    EXPECT_EQ(lowerer.lower(harness.program), nullptr);
+    ASSERT_EQ(lowerer.diagnostics.entries.size(), 1U);
+    EXPECT_EQ(lowerer.diagnostics.entries.front().message,
+              "call has no resolved semantic target");
+}
+
+TEST(HirBuilder, EmitsOneBodyForEachSpecializationIdentity) {
+    HirHarness harness(R"zep(
+struct Owner<T> {
+    public:
+        var value: T
+        fn Owner(source: &Owner<T>) -> Owner<T> = default
+        fn read() -> T { return value }
+}
+
+fn main() -> i32 {
+    var original = Owner<i32> { value: 21 }
+    var copied = original
+    var explicit_copy = Owner<i32>(original)
+    return copied.read() + explicit_copy.read()
+}
+)zep");
+    ASSERT_TRUE(harness.succeeded());
+    auto program = harness.lower();
+    ASSERT_NE(program, nullptr);
+    std::unordered_set<std::string> names;
+    names.reserve(program->statements.size());
+    auto constructors = std::size_t{0};
+
+    for (auto* statement : program->statements) {
+        const auto* function = statement->as<HIRFunctionDeclaration>();
+
+        if (function == nullptr || function->body == nullptr) {
+            continue;
+        }
+
+        EXPECT_TRUE(names.insert(function->name).second) << function->name;
+
+        if (function->name.starts_with("Owner::Owner")) {
+            ++constructors;
+        }
     }
 
-    std::shared_ptr<const HIRProgram> lower() {
-        HIRLowerer lowerer(frontend.context, frontend.sema);
-        return lowerer.lower(frontend.program);
-    }
-
-    bool succeeded() const { return !frontend.context.diagnostics.has_errors(); }
-};
+    EXPECT_EQ(constructors, 1U);
+}
 
 TEST(HirBuilder, LowersFunctionsAndReturns) {
     HirHarness harness("fn main() -> i32 { return 42 }\n");
@@ -31,14 +83,7 @@ TEST(HirBuilder, LowersFunctionsAndReturns) {
     auto program = harness.lower();
 
     ASSERT_EQ(program->statements.size(), 1U);
-    auto* function = static_cast<HIRFunctionDeclaration*>(nullptr);
-    for (auto* statement : program->statements) {
-        auto* candidate = statement->as<HIRFunctionDeclaration>();
-        if (candidate != nullptr && candidate->name.starts_with("main")) {
-            function = candidate;
-            break;
-        }
-    }
+    auto* function = HirHarness::function(*program, "main");
     ASSERT_NE(function, nullptr);
     EXPECT_EQ(function->name, "main");
     ASSERT_NE(function->body, nullptr);
@@ -58,14 +103,7 @@ fn main() -> i32 {
     auto program = harness.lower();
     ASSERT_NE(program, nullptr);
 
-    auto* function = static_cast<HIRFunctionDeclaration*>(nullptr);
-    for (auto* statement : program->statements) {
-        auto* candidate = statement->as<HIRFunctionDeclaration>();
-        if (candidate != nullptr && candidate->name.starts_with("main")) {
-            function = candidate;
-            break;
-        }
-    }
+    auto* function = HirHarness::function(*program, "main");
     ASSERT_NE(function, nullptr);
     auto* returned = function->body->statements.back()->as<HIRReturnStatement>();
     ASSERT_NE(returned, nullptr);
@@ -88,14 +126,7 @@ fn main() -> i32 {
     auto program = harness.lower();
     ASSERT_NE(program, nullptr);
 
-    auto* function = static_cast<HIRFunctionDeclaration*>(nullptr);
-    for (auto* statement : program->statements) {
-        auto* candidate = statement->as<HIRFunctionDeclaration>();
-        if (candidate != nullptr && candidate->name.starts_with("main")) {
-            function = candidate;
-            break;
-        }
-    }
+    auto* function = HirHarness::function(*program, "main");
     ASSERT_NE(function, nullptr);
     auto* returned = function->body->statements.back()->as<HIRReturnStatement>();
     ASSERT_NE(returned, nullptr);
@@ -111,7 +142,7 @@ fn size<T>() -> i64 { return #sizeof(T) }
 fn main() -> i64 { return size<i32[]>() }
 )zep");
     ASSERT_TRUE(harness.type_check_succeeded());
-    HIRLowerer lowerer(harness.context, harness.sema);
+    Lowerer lowerer(harness.context, harness.sema);
 
     EXPECT_EQ(lowerer.lower(harness.program), nullptr);
     ASSERT_EQ(lowerer.diagnostics.entries.size(), 1);
@@ -130,7 +161,7 @@ fn main() -> i64 {
 }
 )zep");
     ASSERT_TRUE(harness.type_check_succeeded());
-    HIRLowerer lowerer(harness.context, harness.sema);
+    Lowerer lowerer(harness.context, harness.sema);
     auto program = lowerer.lower(harness.program);
     ASSERT_NE(program, nullptr);
 

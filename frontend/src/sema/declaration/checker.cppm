@@ -11,10 +11,12 @@ import zep.frontend.node;
 import zep.frontend.node.program;
 import zep.frontend.sema.context;
 import zep.frontend.kind;
-import zep.frontend.sema.facade;
-import zep.frontend.sema.scope;
-import zep.frontend.sema.type;
-import zep.frontend.sema.type_resolver;
+import zep.frontend.sema.resolution.facades;
+import zep.frontend.sema.types.compatibility;
+import zep.frontend.sema.symbols;
+import zep.frontend.sema.scopes.scope;
+import zep.frontend.sema.types;
+import zep.frontend.sema.types.resolver;
 export import zep.frontend.sema.declaration.function;
 import zep.frontend.sema.declaration.attribute;
 export import zep.frontend.sema.declaration.nominal;
@@ -28,7 +30,8 @@ export class DeclarationChecker {
     Visitor<void>& visitor;
 
   public:
-    FacadeResolver facades;
+    Facades facades;
+    Compatibility compatibility;
     FunctionDeclarationChecker functions;
     NominalDeclarationChecker nominals;
 
@@ -36,8 +39,8 @@ export class DeclarationChecker {
                        DeclarationTypeBuilder& builder, Visitor<void>& visitor,
                        std::function<void(Expression&, const Type*)> check_expression)
         : context(context), sema(sema), resolver(resolver), builder(builder), visitor(visitor),
-          facades(sema.facades, sema.types, resolver),
-          functions(context, sema, resolver, builder, facades),
+          facades(sema.facades, resolver), compatibility(sema.types, resolver, facades),
+          functions(context, sema, resolver, builder, compatibility),
           nominals(context, sema, resolver, builder, facades, functions, visitor,
                    std::move(check_expression)) {
     }

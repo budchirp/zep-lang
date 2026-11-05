@@ -14,7 +14,7 @@ static void BM_lower_sample(benchmark::State& state) {
     harness.type_check();
 
     for (auto _ : state) {
-        HIRLowerer lowerer(harness.context, harness.sema);
+        Lowerer lowerer(harness.context, harness.sema);
         auto hir_program = lowerer.lower(harness.program);
         benchmark::DoNotOptimize(hir_program.statements.size());
     }

@@ -2,21 +2,24 @@ module;
 
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 export module zep.frontend.sema.declaration.function;
 
 import zep.common.context;
 import zep.frontend.node;
-import zep.frontend.sema.env;
+import zep.frontend.sema.scopes.environment;
 import zep.frontend.node.program;
 import zep.frontend.sema.context;
 import zep.frontend.kind;
 import zep.frontend.sema.declaration.attribute;
-import zep.frontend.sema.facade;
-import zep.frontend.sema.scope;
-import zep.frontend.sema.type;
-import zep.frontend.sema.type_resolver;
+import zep.frontend.sema.types.compatibility;
+import zep.frontend.sema.symbols;
+import zep.frontend.sema.scopes.scope;
+import zep.frontend.sema.types;
+import zep.frontend.sema.types.resolver;
+import zep.frontend.sema.lifecycle;
 
 export class DeclarationTypeBuilder {
   private:
@@ -25,6 +28,47 @@ export class DeclarationTypeBuilder {
     Context& context;
     SemaContext& sema;
     TypeResolver& resolver;
+
+    std::vector<const InterfaceType*> build_interfaces(const std::vector<TypeExpression*>& inheritance,
+                                                       const std::string& owner) {
+        std::vector<const InterfaceType*> interfaces;
+        interfaces.reserve(inheritance.size());
+
+        for (auto* inherited : inheritance) {
+            visitor.visit(*inherited);
+            const auto* resolved = resolver.resolve_type(inherited->type);
+            const auto* interface = resolved != nullptr ? resolved->as<InterfaceType>() : nullptr;
+
+            if (interface != nullptr) {
+                interfaces.push_back(interface);
+            } else {
+                context.diagnostics.add_error(inherited->span,
+                                              owner + " inheritance entry must be an interface");
+            }
+        }
+
+        return interfaces;
+    }
+
+    static std::vector<MethodType> inherit_methods(const std::vector<const InterfaceType*>& interfaces,
+                                                  std::size_t own_count) {
+        auto count = own_count;
+
+        for (const auto* interface : interfaces) {
+            count += interface->methods.size();
+        }
+
+        std::vector<MethodType> methods;
+        methods.reserve(count);
+
+        for (const auto* interface : interfaces) {
+            for (const auto& method : interface->methods) {
+                methods.emplace_back(method.name, method.type, methods.size());
+            }
+        }
+
+        return methods;
+    }
 
   public:
     explicit DeclarationTypeBuilder(Context& context, SemaContext& sema, TypeResolver& resolver,
@@ -98,7 +142,8 @@ export class DeclarationTypeBuilder {
         }
 
         const auto is_mutable =
-            prototype.receiver_kind == FunctionPrototype::ReceiverKind::Type::MutBorrow;
+            prototype.receiver_kind == FunctionPrototype::ReceiverKind::Type::MutBorrow ||
+            prototype.receiver_kind == FunctionPrototype::ReceiverKind::Type::Move;
         const auto* receiver_type = sema.types.create<PointerType>(self_type, is_mutable);
         parameter_types.insert(parameter_types.begin(), ParameterType("self", receiver_type));
     }
@@ -174,35 +219,8 @@ export class DeclarationTypeBuilder {
             sema.types.create<NamedType>("Self", std::vector<GenericArgumentType>());
         resolver.bind_type_parameter("Self", self_type);
 
-        std::vector<const InterfaceType*> interfaces;
-        interfaces.reserve(node.inheritance.size());
-
-        auto inherited_method_count = std::size_t{0};
-        for (auto* inherited : node.inheritance) {
-            visitor.visit(*inherited);
-
-            const auto* resolved = resolver.resolve_type(inherited->type);
-            const auto* interface_type =
-                resolved != nullptr ? resolved->as<InterfaceType>() : nullptr;
-
-            if (interface_type == nullptr) {
-                context.diagnostics.add_error(inherited->span,
-                                              "interface inheritance entry must be an interface");
-                continue;
-            }
-
-            interfaces.push_back(interface_type);
-            inherited_method_count += interface_type->methods.size();
-        }
-
-        std::vector<MethodType> methods;
-        methods.reserve(inherited_method_count + node.methods.size());
-
-        for (const auto* interface_type : interfaces) {
-            for (const auto& method : interface_type->methods) {
-                methods.emplace_back(method.name, method.type, methods.size());
-            }
-        }
+        auto interfaces = build_interfaces(node.inheritance, "interface");
+        auto methods = inherit_methods(interfaces, node.methods.size());
 
         for (std::size_t index = 0; index < node.methods.size(); ++index) {
             auto* method = node.methods[index];
@@ -246,40 +264,14 @@ export class DeclarationTypeBuilder {
         resolver.bind_type_parameter("Self", self_type);
 
         const Type* backing_type = nullptr;
-        std::vector<const InterfaceType*> interfaces;
-        interfaces.reserve(node.inheritance.size());
-        auto inherited_method_count = std::size_t{0};
 
         if (node.backing_type != nullptr) {
             backing_type = resolver.resolve_type(node.backing_type->type);
         }
 
-        for (auto* inherited : node.inheritance) {
-            visitor.visit(*inherited);
-            const auto* resolved = resolver.resolve_type(inherited->type);
-
-            if (const auto* interface_type =
-                    resolved != nullptr ? resolved->as<InterfaceType>() : nullptr;
-                interface_type != nullptr) {
-                interfaces.push_back(interface_type);
-                inherited_method_count += interface_type->methods.size();
-                continue;
-            }
-
-            context.diagnostics.add_error(inherited->span,
-                                          "enum inheritance entry must be an interface");
-        }
-
+        auto interfaces = build_interfaces(node.inheritance, "enum");
         auto variant_types = build_enum_variants(node);
-
-        std::vector<MethodType> methods;
-        methods.reserve(inherited_method_count + node.methods.size());
-
-        for (const auto* interface_type : interfaces) {
-            for (const auto& method : interface_type->methods) {
-                methods.emplace_back(method.name, method.type, methods.size());
-            }
-        }
+        auto methods = inherit_methods(interfaces, node.methods.size());
 
         for (std::size_t index = 0; index < node.methods.size(); ++index) {
             auto* method = node.methods[index];
@@ -325,7 +317,7 @@ export class FunctionDeclarationChecker {
     SemaContext& sema;
     TypeResolver& resolver;
     DeclarationTypeBuilder& builder;
-    FacadeResolver& facades;
+    Compatibility& compatibility;
 
     const FunctionType* resolve_with_self_type(const FunctionType* type, const Type* self_type) {
         auto scope = resolver.create_substitution_scope();
@@ -343,7 +335,7 @@ export class FunctionDeclarationChecker {
     }
 
     bool matches_extension_owner(const Type* receiver_type, const Type* owner_type) {
-        if (facades.accepts(receiver_type, owner_type)) {
+        if (compatibility.accepts(receiver_type, owner_type)) {
             return true;
         }
 
@@ -355,10 +347,15 @@ export class FunctionDeclarationChecker {
                receiver_nominal->same_nominal(*owner_nominal);
     }
 
-    FunctionSymbol::Kind::Type classify_function(FunctionDeclaration& node,
+    FunctionSymbol::Role classify_function(FunctionDeclaration& node,
                                                   const FunctionType& type) {
-        const auto kind = node.kind();
-        if (kind != FunctionSymbol::Kind::Type::Constructor ||
+        if (node.is_extension) {
+            return FunctionSymbol::Role(node.is_static ? MethodKind::Type::StaticExtension
+                                                       : MethodKind::Type::InstanceExtension);
+        }
+
+        const auto kind = node.role();
+        if (kind != FunctionSymbol::Role(ConstructorKind::Type::Value) ||
             node.prototype->parameters.size() != 1 || type.parameters.size() != 1) {
             return kind;
         }
@@ -371,16 +368,25 @@ export class FunctionDeclarationChecker {
             pointer != nullptr ? resolver.resolve_type(pointer->element) : nullptr;
         const auto* source = resolved_source != nullptr ? resolved_source->as_nominal() : nullptr;
 
-        return pointer != nullptr && !pointer->is_mutable && owner_nominal != nullptr &&
-                       source != nullptr && owner_nominal->same_nominal(*source)
-                   ? FunctionSymbol::Kind::Type::CopyConstructor
-                   : kind;
+        if (pointer != nullptr && owner_nominal != nullptr && source != nullptr &&
+            owner_nominal->same_nominal(*source)) {
+            if (pointer->reference_kind == PointerType::ReferenceKind::Type::Move) {
+                return FunctionSymbol::Role(ConstructorKind::Type::Move);
+            }
+
+            if (pointer->reference_kind == PointerType::ReferenceKind::Type::Borrow &&
+                !pointer->is_mutable) {
+                return FunctionSymbol::Role(ConstructorKind::Type::Copy);
+            }
+        }
+        return kind;
     }
 
   public:
     FunctionDeclarationChecker(Context& context, SemaContext& sema, TypeResolver& resolver,
-                               DeclarationTypeBuilder& builder, FacadeResolver& facades)
-        : context(context), sema(sema), resolver(resolver), builder(builder), facades(facades) {}
+                               DeclarationTypeBuilder& builder, Compatibility& compatibility)
+        : context(context), sema(sema), resolver(resolver), builder(builder),
+          compatibility(compatibility) {}
 
     bool method_signature_matches(const FunctionType* expected, const FunctionType* actual,
                                   const Type* self_type) {
@@ -439,7 +445,7 @@ export class FunctionDeclarationChecker {
     }
 
     bool validate_function_declaration(FunctionDeclaration& node, const FunctionSymbol* symbol) {
-        if (symbol == nullptr || symbol->function_type == nullptr) {
+        if (symbol == nullptr || symbol->signature() == nullptr) {
             return false;
         }
 
@@ -449,12 +455,12 @@ export class FunctionDeclarationChecker {
         const auto* owner_struct_type =
             owner_type != nullptr ? owner_type->as<StructType>() : nullptr;
 
-        const auto* return_type = resolver.resolve_type(symbol->function_type->return_type);
+        const auto* return_type = resolver.resolve_type(symbol->signature()->return_type);
 
         if (node.is_extension) {
-            const auto expected_kind = node.is_static ? FunctionSymbol::Kind::Type::StaticMethod
-                                                      : FunctionSymbol::Kind::Type::InstanceMethod;
-            if (node.is_override || node.kind() != expected_kind) {
+            const auto expected_kind = FunctionSymbol::Role(node.is_static ? MethodKind::Type::Static
+                                                                           : MethodKind::Type::Instance);
+            if (node.is_override || node.role() != expected_kind) {
                 context.diagnostics.add_error(node.span, "invalid extension method declaration");
                 return false;
             }
@@ -473,11 +479,7 @@ export class FunctionDeclarationChecker {
             return false;
         }
 
-        switch (symbol->callable_kind) {
-        case FunctionSymbol::Kind::Type::Function:
-            return true;
-
-        case FunctionSymbol::Kind::Type::InstanceMethod: {
+        if (symbol->instance()) {
             if (node.prototype->receiver_kind == FunctionPrototype::ReceiverKind::Type::None) {
                 context.diagnostics.add_error(node.span, "instance method '" +
                                                              node.prototype->name +
@@ -487,7 +489,7 @@ export class FunctionDeclarationChecker {
 
             if (node.is_extension && owner_type != nullptr) {
                 const auto* self_type =
-                    resolver.resolve_type(symbol->function_type->parameters.front().type);
+                    resolver.resolve_type(symbol->signature()->parameters.front().type);
                 const auto* receiver_type = self_type;
 
                 if (const auto* pointer_type =
@@ -506,18 +508,18 @@ export class FunctionDeclarationChecker {
             return true;
         }
 
-        case FunctionSymbol::Kind::Type::StaticMethod: {
+        if (symbol->static_method() || symbol->has_role(CallableKind::Type::Function)) {
             return true;
         }
 
-        case FunctionSymbol::Kind::Type::Constructor: {
+        if (symbol->has_role(ConstructorKind::Type::Value)) {
             if (node.is_static) {
                 context.diagnostics.add_error(node.span, "constructor cannot be declared static");
                 return false;
             }
 
             if (owner_struct_type == nullptr || return_type == nullptr ||
-                !facades.accepts(return_type, owner_struct_type)) {
+                !compatibility.accepts(return_type, owner_struct_type)) {
                 context.diagnostics.add_error(node.span, "constructor '" + node.prototype->name +
                                                              "' must return '" + node.parent + "'");
                 return false;
@@ -526,9 +528,9 @@ export class FunctionDeclarationChecker {
             return true;
         }
 
-        case FunctionSymbol::Kind::Type::CopyConstructor: {
+        if (symbol->has_role(ConstructorKind::Type::Copy)) {
             if (node.is_static || owner_struct_type == nullptr || return_type == nullptr ||
-                !facades.accepts(return_type, owner_struct_type)) {
+                !compatibility.accepts(return_type, owner_struct_type)) {
                 context.diagnostics.add_error(node.span, "invalid copy constructor for '" +
                                                              node.parent + "'");
                 return false;
@@ -537,7 +539,12 @@ export class FunctionDeclarationChecker {
             return true;
         }
 
-        case FunctionSymbol::Kind::Type::Destructor: {
+        if (symbol->has_role(ConstructorKind::Type::Move)) {
+            return !node.is_static && owner_struct_type != nullptr && return_type != nullptr &&
+                   compatibility.accepts(return_type, owner_struct_type);
+        }
+
+        if (symbol->has_role(CallableKind::Type::Destructor)) {
             if (node.is_static) {
                 context.diagnostics.add_error(node.span, "destructor cannot be declared static");
                 return false;
@@ -556,7 +563,7 @@ export class FunctionDeclarationChecker {
             }
 
             const auto* self_type =
-                resolver.resolve_type(symbol->function_type->parameters.front().type);
+                resolver.resolve_type(symbol->signature()->parameters.front().type);
             const auto* pointer_type =
                 self_type != nullptr ? self_type->as<PointerType>() : nullptr;
             const auto* element_type =
@@ -570,7 +577,7 @@ export class FunctionDeclarationChecker {
             }
 
             const auto* owner = sema.env.current_scope->lookup_type(node.parent);
-            auto* member_scope = owner != nullptr ? owner->member_scope : nullptr;
+            auto* member_scope = Scope::members(owner != nullptr ? owner->type : nullptr);
             if (member_scope != nullptr) {
                 const auto* overloads =
                     member_scope->find_local_function_overloads(node.prototype->name);
@@ -582,7 +589,6 @@ export class FunctionDeclarationChecker {
             }
 
             return true;
-        }
         }
 
         return true;
@@ -621,8 +627,9 @@ export class FunctionDeclarationChecker {
         auto* target_scope = sema.env.current_scope;
         if (node.is_member()) {
             const auto* owner = sema.env.current_scope->lookup_type(node.parent);
-            if (owner != nullptr && owner->member_scope != nullptr) {
-                target_scope = owner->member_scope;
+            if (auto* members = Scope::members(owner != nullptr ? owner->type : nullptr);
+                members != nullptr) {
+                target_scope = members;
             }
         }
 
@@ -643,11 +650,17 @@ export class FunctionDeclarationChecker {
             }
         }
 
-        const auto callable_kind = classify_function(node, *type);
+        const auto role = classify_function(node, *type);
+        if (node.is_defaulted && (role == FunctionSymbol::Role(ConstructorKind::Type::Copy) ||
+                                 role == FunctionSymbol::Role(ConstructorKind::Type::Move))) {
+            attribute_infos.emplace_back(".defaulted_constructor", std::vector<std::string>());
+        }
+        if (node.prototype->receiver_kind == FunctionPrototype::ReceiverKind::Type::Move) {
+            attribute_infos.emplace_back(".move_receiver", std::vector<std::string>());
+        }
         auto* symbol = sema.env.symbols.create<FunctionSymbol>(
             node.prototype->name, node.span, node.visibility, Linkage::Type::Internal, type,
-            callable_kind, node.parent, std::move(attribute_infos), node.is_extension,
-            Abi::Type::Language);
+            role, node.parent, std::move(attribute_infos), Abi::Type::Language, node.is_deleted);
 
         target_scope->define_function(node.prototype->name, symbol);
 
@@ -656,11 +669,13 @@ export class FunctionDeclarationChecker {
         if (!node.parent.empty()) {
             const auto* owner = sema.env.current_scope->lookup_type(node.parent);
             const auto* nominal = owner != nullptr ? owner->type->as_nominal() : nullptr;
-            if (nominal != nullptr && callable_kind == FunctionSymbol::Kind::Type::CopyConstructor) {
-                sema.lifetime.register_copy_constructor(nominal, symbol);
+            if (nominal != nullptr && role == FunctionSymbol::Role(ConstructorKind::Type::Copy)) {
+                sema.lifecycle.register_function(nominal, Operation::Type::Copy, symbol);
+            } else if (nominal != nullptr && role == FunctionSymbol::Role(ConstructorKind::Type::Move)) {
+                sema.lifecycle.register_function(nominal, Operation::Type::Move, symbol);
             } else if (nominal != nullptr &&
-                       callable_kind == FunctionSymbol::Kind::Type::Destructor) {
-                sema.lifetime.register_destructor(nominal, symbol);
+                       role == FunctionSymbol::Role(CallableKind::Type::Destructor)) {
+                sema.lifecycle.register_function(nominal, Operation::Type::Destroy, symbol);
             }
         }
 
@@ -691,7 +706,7 @@ export class FunctionDeclarationChecker {
 
         auto* symbol = sema.env.symbols.create<FunctionSymbol>(
             node.prototype->name, node.span, node.visibility, Linkage::Type::External, type,
-            FunctionSymbol::Kind::Type::Function, std::string{}, std::move(attribute_infos), false,
+            FunctionSymbol::Role(CallableKind::Type::Function), std::string{}, std::move(attribute_infos),
             Abi::Type::C);
         sema.env.current_scope->define_function(node.prototype->name, symbol);
         node.function_symbol = symbol;

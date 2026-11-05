@@ -5,9 +5,16 @@ public struct Box<T> {
         var ptr: *mut T
 
     public:
+        fn Box(source: &Box<T>) -> Box<T> = delete
+
+        fn Box(source: move Box<T>) -> Box<T> {
+            var storage = source.ptr
+            source.ptr = null
+            return Box<T> { ptr: storage }
+        }
+
         fn Box(value: T) -> Box<T> {
-            var ptr: *mut T = Memory::allocate<T>()
-            ptr[0] = value
+            var ptr = new Memory::move(value)
 
             return Box<T> { ptr: ptr }
         }
@@ -21,22 +28,22 @@ public struct Box<T> {
         }
 
         fn replace(value: T) mut -> T {
-            var previous = ptr[0]
-            ptr[0] = value
+            var previous = Memory::move(ptr[0])
+            ptr[0] = Memory::move(value)
 
-            return previous
+            return Memory::move(previous)
         }
 
-        fn into_inner() mut -> T {
-            var value = ptr[0]
-            Memory::free(ptr as *mut void)
+        fn into_inner() move -> T {
+            var value = Memory::move(ptr[0])
+            delete ptr
             ptr = null
-            return value
+            return Memory::move(value)
         }
 
         fn ~Box() -> void {
             if (ptr != null) {
-                Memory::free(ptr as *mut void)
+                delete ptr
                 ptr = null
             }
         }

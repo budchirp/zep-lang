@@ -4,10 +4,10 @@ import std.collections.vector.Vector
 import std.text.string.String
 
 public enum FormatError {
-    MissingArgument { placeholder_index: i32 }
-    ExtraArgument { argument_index: i32 }
-    UnmatchedOpeningBrace { character_index: i32 }
-    UnmatchedClosingBrace { character_index: i32 }
+    MissingArgument { placeholder_index: i64 }
+    ExtraArgument { argument_index: i64 }
+    UnmatchedOpeningBrace { character_index: i64 }
+    UnmatchedClosingBrace { character_index: i64 }
 
     public:
         fn message() -> String {
@@ -35,7 +35,7 @@ public enum FormatError {
 }
 
 enum FormatArgument {
-    Text { value: cstr }
+    Text { value: String }
     SignedInteger { value: i64 }
     UnsignedInteger { value: u64 }
     FloatingPoint { value: f64 }
@@ -45,7 +45,7 @@ enum FormatArgument {
     public:
         fn render() -> String {
             return when (*self) {
-                FormatArgument::Text { value } -> String(value),
+                FormatArgument::Text { value } -> value,
                 FormatArgument::SignedInteger { value } -> String::from(value),
                 FormatArgument::UnsignedInteger { value } -> String::from(value),
                 FormatArgument::FloatingPoint { value } -> String::from(value),
@@ -65,11 +65,12 @@ public struct FormatArguments {
         }
 
         fn add(value: cstr) mut -> void {
-            values.push(FormatArgument::Text { value: value })
+            values.push(FormatArgument::Text { value: String(value) })
         }
 
         fn add(value: *String) mut -> void {
-            self->add(value->as_cstr())
+            var view = value->as_view()
+            values.push(FormatArgument::Text { value: String(&view) })
         }
 
         fn add(value: i8) mut -> void { self->add(value as i64) }
@@ -102,7 +103,7 @@ public struct FormatArguments {
             values.push(FormatArgument::Character { value: value })
         }
 
-        fn render(index: i32) -> Option<String> {
+        fn render(index: i64) -> Option<String> {
             var argument = values.get(index)
             if (argument.is_none()) {
                 return Option<String>::None
@@ -111,8 +112,8 @@ public struct FormatArguments {
             return Option<String>::Some { value: argument.unwrap()->render() }
         }
 
-        fn size() -> i32 {
-            return values.size()
+        fn length() -> i64 {
+            return values.length()
         }
 
         fn is_empty() -> boolean {
@@ -126,20 +127,20 @@ public struct FormatArguments {
         fn ~FormatArguments() -> void {}
 }
 
-public fn sprint(format: cstr, arguments: *FormatArguments) -> Result<String, FormatError> {
+public fn format(pattern: cstr, arguments: *FormatArguments) -> Result<String, FormatError> {
     var mut output = String()
-    var mut character_index: i32 = 0
-    var mut argument_index: i32 = 0
+    var mut character_index: i64 = 0
+    var mut argument_index: i64 = 0
 
-    while (format[character_index] != (0 as char)) {
-        var character = format[character_index]
+    while (pattern[character_index] != (0 as char)) {
+        var character = pattern[character_index]
 
         if (character == '{') {
-            if (format[character_index + 1] == '{') {
+            if (pattern[character_index + 1] == '{') {
                 output.push('{')
                 character_index = character_index + 2
             } else {
-                if (format[character_index + 1] != '}') {
+                if (pattern[character_index + 1] != '}') {
                     return Result<String, FormatError>::Error {
                         error: FormatError::UnmatchedOpeningBrace {
                             character_index: character_index
@@ -162,7 +163,7 @@ public fn sprint(format: cstr, arguments: *FormatArguments) -> Result<String, Fo
                 character_index = character_index + 2
             }
         } else if (character == '}') {
-            if (format[character_index + 1] != '}') {
+            if (pattern[character_index + 1] != '}') {
                 return Result<String, FormatError>::Error {
                     error: FormatError::UnmatchedClosingBrace {
                         character_index: character_index
@@ -178,7 +179,7 @@ public fn sprint(format: cstr, arguments: *FormatArguments) -> Result<String, Fo
         }
     }
 
-    if (argument_index < arguments->size()) {
+    if (argument_index < arguments->length()) {
         return Result<String, FormatError>::Error {
             error: FormatError::ExtraArgument { argument_index: argument_index }
         }
@@ -187,7 +188,7 @@ public fn sprint(format: cstr, arguments: *FormatArguments) -> Result<String, Fo
     return Result<String, FormatError>::Ok { value: output }
 }
 
-public fn sprint(format: cstr) -> Result<String, FormatError> {
+public fn format(pattern: cstr) -> Result<String, FormatError> {
     var arguments = FormatArguments()
-    return sprint(format, &arguments)
+    return format(pattern, &arguments)
 }

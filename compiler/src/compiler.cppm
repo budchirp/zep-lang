@@ -23,14 +23,14 @@ import zep.workspace.package;
 
 export class Compiler {
   private:
-    SemaContext sema;
     ModuleGraph graph;
 
   public:
+    SemaContext sema;
     std::vector<Module*>& modules;
 
     explicit Compiler(TargetInfo target = TargetInfo())
-        : sema(target), graph(sema), modules(graph.modules) {}
+        : graph(sema), sema(target), modules(graph.modules) {}
 
     Module* analyze(Package& package, ModulePath entry, Diagnostics& diagnostics,
                     std::filesystem::path source_path = {}) {
@@ -51,7 +51,7 @@ export class Compiler {
             programs.push_back(&item->syntax);
         }
         Context context(*module.source);
-        HIRLowerer lowerer(context, sema);
+        Lowerer lowerer(context, sema);
         auto program = lowerer.lower_module(module.syntax, module.scope, programs);
         if (lowerer.diagnostics.has_errors()) {
             for (const auto& entry : lowerer.diagnostics.entries) {

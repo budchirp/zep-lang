@@ -27,13 +27,13 @@ export class DebugOutput {
     enum class Type : std::uint8_t { None, IR };
 };
 
-export class CodegenOptions {
+export class EmitOptions {
   public:
     TargetInfo target;
     OptimizationLevel::Type optimization;
     DebugOutput::Type debug_output;
 
-    explicit CodegenOptions(TargetInfo target = TargetInfo(),
+    explicit EmitOptions(TargetInfo target = TargetInfo(),
                             OptimizationLevel::Type optimization = OptimizationLevel::Type::O0,
                             DebugOutput::Type debug_output = DebugOutput::Type::None)
         : target(std::move(target)), optimization(optimization), debug_output(debug_output) {}

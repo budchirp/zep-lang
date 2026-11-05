@@ -9,25 +9,23 @@ module;
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Type.h>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 export module zep.codegen.llvm.declarations;
 
-import zep.frontend.sema.type;
-import zep.frontend.sema.scope;
+import zep.frontend.sema.types;
+import zep.frontend.sema.symbols;
 import zep.frontend.kind;
-import zep.codegen.llvm.type;
-import zep.codegen.llvm.scope;
+import zep.codegen.llvm.types;
+import zep.codegen.llvm.values;
 import zep.hir.node;
 import zep.hir.program;
 
-export class DeclarationEmitter {
+export class Declarations {
   private:
     llvm::Module& module;
-    TypeLowerer& type_lowerer;
-    CodegenScope& scope;
-    std::unordered_map<const FunctionSymbol*, llvm::Function*> function_values;
+    Types& type_lowerer;
+    ValueScope& scope;
 
     static llvm::GlobalValue::LinkageTypes llvm_linkage(Linkage::Type linkage) {
         switch (linkage) {
@@ -43,8 +41,8 @@ export class DeclarationEmitter {
     }
 
   public:
-    explicit DeclarationEmitter(llvm::Module& module, TypeLowerer& type_lowerer,
-                                CodegenScope& scope)
+    explicit Declarations(llvm::Module& module, Types& type_lowerer,
+                          ValueScope& scope)
         : module(module), type_lowerer(type_lowerer), scope(scope) {}
 
     llvm::Function* declare_function(const std::string& name, const FunctionType* function_type,
@@ -76,40 +74,29 @@ export class DeclarationEmitter {
 
     llvm::Function* declare_function(const HIRFunctionDeclaration& node) {
         const auto* function_type = node.type->as<FunctionType>();
-        auto* function =
-            declare_function(node.name, function_type, llvm_linkage(node.linkage), node.abi);
-        if (node.function_symbol != nullptr && function != nullptr) {
-            function_values[node.function_symbol] = function;
-        }
-        return function;
+        return declare_function(node.name, function_type, llvm_linkage(node.linkage), node.abi);
     }
 
-    llvm::Function* find_function(const FunctionSymbol* symbol, const std::string& name) {
-        if (symbol != nullptr) {
-            if (auto iterator = function_values.find(symbol); iterator != function_values.end()) {
-                return iterator->second;
-            }
-        }
-
+    llvm::Function* find_function(const std::string& name) {
         return llvm::dyn_cast_or_null<llvm::Function>(module.getNamedValue(name));
     }
 
-    llvm::Constant* emit_constant(HIRExpression& expr, llvm::Type* expected_type) {
-        if (auto* number = expr.as<HIRNumberLiteral>(); number != nullptr) {
+    llvm::Constant* emit_constant(HIRExpression& expression, llvm::Type* expected_type) {
+        if (auto* number = expression.as<HIRNumberLiteral>(); number != nullptr) {
             return llvm::ConstantInt::get(
                 expected_type, static_cast<std::uint64_t>(std::stoull(number->value, nullptr, 0)));
         }
 
-        if (auto* character = expr.as<HIRCharLiteral>(); character != nullptr) {
+        if (auto* character = expression.as<HIRCharLiteral>(); character != nullptr) {
             return llvm::ConstantInt::get(expected_type, character->value);
         }
 
-        if (auto* string = expr.as<HIRStringLiteral>(); string != nullptr) {
+        if (auto* string = expression.as<HIRStringLiteral>(); string != nullptr) {
             llvm::IRBuilder<> builder(module.getContext());
             return builder.CreateGlobalString(string->value, "", 0, &module);
         }
 
-        if (auto* strings = expr.as<HIRStringArrayExpression>(); strings != nullptr) {
+        if (auto* strings = expression.as<HIRStringArrayExpression>(); strings != nullptr) {
             auto* array_type = llvm::dyn_cast<llvm::ArrayType>(expected_type);
             if (array_type == nullptr) {
                 return nullptr;
@@ -124,15 +111,15 @@ export class DeclarationEmitter {
             return llvm::ConstantArray::get(array_type, elements);
         }
 
-        if (auto* null_literal = expr.as<HIRNullLiteral>(); null_literal != nullptr) {
+        if (auto* null_literal = expression.as<HIRNullLiteral>(); null_literal != nullptr) {
             return llvm::Constant::getNullValue(expected_type);
         }
 
-        if (auto* boolean_literal = expr.as<HIRBooleanLiteral>(); boolean_literal != nullptr) {
+        if (auto* boolean_literal = expression.as<HIRBooleanLiteral>(); boolean_literal != nullptr) {
             return llvm::ConstantInt::get(expected_type, boolean_literal->value ? 1 : 0);
         }
 
-        if (auto* struct_literal = expr.as<HIRStructLiteralExpression>();
+        if (auto* struct_literal = expression.as<HIRStructLiteralExpression>();
             struct_literal != nullptr) {
             auto* struct_type = llvm::dyn_cast<llvm::StructType>(expected_type);
             if (struct_type == nullptr) {
@@ -156,7 +143,7 @@ export class DeclarationEmitter {
             return llvm::ConstantStruct::get(struct_type, field_constants);
         }
 
-        if (auto* array_literal = expr.as<HIRArrayLiteralExpression>(); array_literal != nullptr) {
+        if (auto* array_literal = expression.as<HIRArrayLiteralExpression>(); array_literal != nullptr) {
             auto* array_type = llvm::dyn_cast<llvm::ArrayType>(expected_type);
             if (array_type == nullptr) {
                 return nullptr;
@@ -221,7 +208,6 @@ export class DeclarationEmitter {
     }
 
     void emit_declarations(const HIRProgram& program) {
-        function_values.clear();
 
         for (auto* statement : program.statements) {
             if (auto* function = statement->as<HIRFunctionDeclaration>(); function != nullptr) {

@@ -96,7 +96,7 @@ examples/pong/    Main multi-file Pong example project
 The compiler pipeline is:
 
 ```text
-Source -> Lexer -> Parser -> AST -> TypeChecker -> HIRLowerer -> HIR -> Codegen -> LLVM IR
+Source -> Lexer -> Parser -> AST -> SemanticChecker -> Lowerer -> HIR -> Codegen -> LLVM IR
 ```
 
 ## Test Layout

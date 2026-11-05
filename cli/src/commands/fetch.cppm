@@ -7,7 +7,7 @@ export module zep.cli.commands.fetch;
 
 import argman;
 import zep.common.system.process;
-import zep.build;
+import zep.build.fetch;
 
 export class FetchCommand : public argman::Command {
   private:

@@ -8,7 +8,7 @@ module;
 export module zep.cli.commands.install;
 
 import argman;
-import zep.build;
+import zep.build.install;
 import zep.common.logger;
 
 export class InstallCommand : public argman::Command {

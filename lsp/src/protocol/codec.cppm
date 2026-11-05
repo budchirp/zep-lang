@@ -2,6 +2,7 @@ module;
 
 #include <cstdint>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -14,6 +15,16 @@ import zep.common.source.span;
 import zep.lsp.analysis.types;
 import zep.lsp.document;
 import zep.lsp.session;
+
+export class PositionRequest {
+  public:
+    std::string uri;
+    Document& document;
+    Position position;
+
+    PositionRequest(std::string uri, Document& document, Position position)
+        : uri(std::move(uri)), document(document), position(position) {}
+};
 
 export class ProtocolCodec {
   private:
@@ -82,8 +93,15 @@ export class ProtocolCodec {
   public:
     explicit ProtocolCodec(Session& session) : session(session) {}
 
-    Position position(const Document& document, const nlohmann::json& value) const {
-        return document.position(value);
+    std::optional<PositionRequest> request_position(const nlohmann::json& parameters) const {
+        auto uri = parameters.at("textDocument").at("uri").get<std::string>();
+        auto* document = session.document(uri);
+
+        if (document == nullptr) {
+            return std::nullopt;
+        }
+
+        return PositionRequest(uri, *document, document->position(parameters.at("position")));
     }
 
     nlohmann::json range(const Document& document, Span span) const {

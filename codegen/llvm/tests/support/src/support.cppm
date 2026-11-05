@@ -11,12 +11,12 @@ import zep.common.target;
 import zep.hir.program;
 import zep.test.support;
 
-export void assert_emits_object(CodegenBackend& codegen, HIRProgram& program,
+export void assert_emits_object(Backend& codegen, HIRProgram& program,
                                 TestWorkspace& workspace, const std::filesystem::path& filename,
                                 OptimizationLevel::Type optimization_level) {
     auto output = workspace.file(filename);
     auto result =
-        codegen.generate(program, output, CodegenOptions(TargetInfo(), optimization_level));
+        codegen.generate(program, output, EmitOptions(TargetInfo(), optimization_level));
 
     EXPECT_TRUE(result.has_value());
     EXPECT_TRUE(std::filesystem::exists(output));

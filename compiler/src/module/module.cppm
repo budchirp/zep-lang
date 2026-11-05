@@ -11,7 +11,8 @@ import zep.frontend.node.program;
 import zep.common.source;
 import zep.workspace.module_path;
 import zep.workspace.package;
-import zep.frontend.sema.scope;
+import zep.frontend.sema.symbols;
+import zep.frontend.sema.scopes.scope;
 
 export class Module;
 

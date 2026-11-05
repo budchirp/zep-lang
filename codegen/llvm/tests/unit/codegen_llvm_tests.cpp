@@ -7,8 +7,8 @@
 #include <string>
 
 import zep.codegen.llvm.backend;
-import zep.codegen.llvm.context;
-import zep.codegen.llvm.type;
+import zep.codegen.llvm.target_context;
+import zep.codegen.llvm.types;
 import zep.codegen.api;
 import zep.codegen.test.support;
 import zep.common.target;
@@ -17,23 +17,8 @@ import zep.test.support;
 import zep.frontend.test.harness;
 import zep.compiler.lowering;
 import zep.frontend.node;
-import zep.frontend.sema.type;
-
-class HirHarness {
-  public:
-    FrontendHarness frontend;
-
-    explicit HirHarness(std::string content) : frontend(std::move(content)) {
-        frontend.type_check();
-    }
-
-    std::shared_ptr<const HIRProgram> lower() {
-        HIRLowerer lowerer(frontend.context, frontend.sema);
-        return lowerer.lower(frontend.program);
-    }
-
-    bool succeeded() const { return !frontend.context.diagnostics.has_errors(); }
-};
+import zep.frontend.sema.types;
+import zep.compiler.test.harness;
 
 TEST(CodegenLlvm, LowersEvaluatedFloatPayloadWithoutReinterpretingBitsAsDigits) {
     TestWorkspace workspace("llvm_const_float");
@@ -51,15 +36,48 @@ TEST(CodegenLlvm, LowersEvaluatedFloatPayloadWithoutReinterpretingBitsAsDigits) 
     auto ir = capture_stderr([&] {
         auto result = backend.generate(
             *program, workspace.file("float.o"),
-            CodegenOptions(TargetInfo(), OptimizationLevel::Type::O0, DebugOutput::Type::IR));
+            EmitOptions(TargetInfo(), OptimizationLevel::Type::O0, DebugOutput::Type::IR));
         EXPECT_TRUE(result.has_value());
     });
 
     EXPECT_NE(ir.find("ret double -1.250000e+00"), std::string::npos) << ir;
 }
 
+TEST(CodegenLlvm, EmitsReleaseAfterDeletingThePointee) {
+    TestWorkspace workspace("llvm_delete_release");
+    HirHarness harness(R"zep(
+struct Memory {
+    public:
+        static fn free(ptr: *mut void) -> void {}
+}
+struct Record {
+    public:
+        var value: i32
+        fn ~Record() -> void {}
+}
+public fn release(ptr: *mut Record) -> void { delete ptr }
+)zep");
+    ASSERT_TRUE(harness.succeeded());
+    const auto program = harness.lower();
+    ASSERT_NE(program, nullptr);
+    LLVMBackend backend;
+
+    const auto ir = capture_stderr([&] {
+        const auto result = backend.generate(*program, workspace.file("delete.o"),
+            EmitOptions(TargetInfo(), OptimizationLevel::Type::O0, DebugOutput::Type::IR));
+        EXPECT_TRUE(result.has_value());
+    });
+
+    const auto destructor = ir.find("call void @\"Record::~Record");
+    const auto release = ir.find("call void @\"Memory::free");
+
+    ASSERT_NE(destructor, std::string::npos) << ir;
+    ASSERT_NE(release, std::string::npos) << ir;
+    EXPECT_LT(destructor, release);
+}
+
 TEST(CodegenLlvm, InitializesTargetContext) {
-    LLVMEmissionContext context;
+    Target context;
     TargetInfo target(TargetInfo::host_triple());
 
     context.initialize(target, OptimizationLevel::Type::O2);
@@ -85,7 +103,7 @@ TEST(CodegenLlvm, IrSnapshotForEmptyProgramIsStable) {
     auto ir = capture_stderr([&] {
         auto result = codegen.generate(
             static_cast<const HIRProgram&>(program), workspace.file("empty.o"),
-            CodegenOptions(TargetInfo(), OptimizationLevel::Type::O0, DebugOutput::Type::IR));
+            EmitOptions(TargetInfo(), OptimizationLevel::Type::O0, DebugOutput::Type::IR));
         EXPECT_TRUE(result.has_value());
     });
 
@@ -107,8 +125,8 @@ TEST(CodegenLlvm, BackendDoesNotLeakBetweenPrograms) {
     HIRProgram second;
     LLVMBackend backend;
 
-    auto first_result = backend.generate(first, workspace.file("first.o"), CodegenOptions());
-    auto second_result = backend.generate(second, workspace.file("second.o"), CodegenOptions());
+    auto first_result = backend.generate(first, workspace.file("first.o"), EmitOptions());
+    auto second_result = backend.generate(second, workspace.file("second.o"), EmitOptions());
 
     ASSERT_TRUE(first_result.has_value());
     ASSERT_TRUE(second_result.has_value());
@@ -130,7 +148,7 @@ TEST(CodegenLlvm, EmitsExternVarWithName) {
     auto ir = capture_stderr([&] {
         auto result = codegen.generate(
             *program, workspace.file("extern_var.o"),
-            CodegenOptions(TargetInfo(), OptimizationLevel::Type::O0, DebugOutput::Type::IR));
+            EmitOptions(TargetInfo(), OptimizationLevel::Type::O0, DebugOutput::Type::IR));
         EXPECT_TRUE(result.has_value());
     });
 
@@ -154,7 +172,7 @@ fn main() -> i32 {
     ASSERT_NE(program, nullptr);
     LLVMBackend backend;
 
-    auto result = backend.generate(*program, workspace.file("control_flow.o"), CodegenOptions());
+    auto result = backend.generate(*program, workspace.file("control_flow.o"), EmitOptions());
 
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(std::filesystem::exists(workspace.file("control_flow.o")));

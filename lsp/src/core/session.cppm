@@ -20,6 +20,7 @@ import zep.lsp.analysis.types;
 import zep.common.source.position;
 import zep.lsp.document;
 import zep.lsp.transport;
+import zep.common.paths;
 
 export class Session {
   private:
@@ -127,9 +128,9 @@ export class Session {
     }
 
     std::string content(const std::filesystem::path& path) const {
-        auto normalized_path = std::filesystem::absolute(path).lexically_normal();
+        auto normalized_path = Paths::absolute(path);
         for (const auto& [_, document] : documents) {
-            if (std::filesystem::absolute(document.path).lexically_normal() == normalized_path) {
+            if (Paths::absolute(document.path) == normalized_path) {
                 return document.text;
             }
 

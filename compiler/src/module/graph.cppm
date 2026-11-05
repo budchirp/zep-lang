@@ -21,11 +21,13 @@ import zep.frontend.lexer;
 import zep.frontend.node;
 import zep.frontend.parser;
 import zep.frontend.sema.context;
-import zep.frontend.sema.scope;
+import zep.frontend.sema.symbols;
+import zep.frontend.sema.scopes.scope;
 import zep.workspace.module_path;
 import zep.workspace.package;
 import zep.compiler.unit;
 import zep.compiler.resolver;
+import zep.common.paths;
 
 export class ModuleGraph {
   private:
@@ -60,7 +62,7 @@ export class ModuleGraph {
         }
 
         std::error_code error_code;
-        auto canonical_path = std::filesystem::weakly_canonical(source_path, error_code);
+        auto canonical_path = Paths::canonical(source_path, error_code);
         if (error_code) {
             auto& source = source_manager.add(source_path.string(), "");
             diagnostics.add_error(source, Span::from_position(Position()),

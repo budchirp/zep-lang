@@ -4,8 +4,8 @@
 
 import zep.frontend.test.harness;
 import zep.frontend.node;
-import zep.frontend.sema.type;
-import zep.frontend.sema.type_resolver;
+import zep.frontend.sema.types;
+import zep.frontend.sema.types.resolver;
 import zep.frontend.sema.expression.generic;
 import zep.common.source.span;
 

@@ -19,6 +19,7 @@ import zep.common.source.span;
 import zep.lsp.analysis.types;
 import zep.workspace.package;
 import zep.workspace.project;
+import zep.common.paths;
 
 class CatalogExport {
   public:
@@ -109,7 +110,7 @@ export class ModuleCatalog {
 
     void add_package(const Package& package, bool root_package, std::set<std::string>& visited) {
         std::error_code error_code;
-        auto package_path = std::filesystem::weakly_canonical(package.root, error_code).string();
+        auto package_path = Paths::canonical(package.root, error_code).string();
         if (!visited.insert(package_path).second ||
             !std::filesystem::is_directory(package.source_directory)) {
             return;

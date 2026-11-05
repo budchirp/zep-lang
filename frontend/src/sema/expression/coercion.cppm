@@ -4,9 +4,9 @@ export module zep.frontend.sema.expression.coercion;
 
 import zep.frontend.node;
 import zep.frontend.sema.context;
-import zep.frontend.sema.type;
+import zep.frontend.sema.types;
 import zep.frontend.kind;
-import zep.frontend.sema.type_resolver;
+import zep.frontend.sema.types.resolver;
 
 export class TypeCoercion {
   public:
@@ -49,6 +49,16 @@ export class TypeCoercion {
                              const Type* target) {
         if (value == nullptr || value->type == nullptr || target == nullptr) {
             return value;
+        }
+
+        const auto* resolved = resolver.resolve_type(target);
+        if (const auto* reference = resolved != nullptr ? resolved->as<PointerType>() : nullptr;
+            reference != nullptr && reference->reference_kind != PointerType::ReferenceKind::Type::None &&
+            !Type::same(value->type, resolved)) {
+            auto* address = sema.nodes.create<UnaryExpression>(
+                value->span, reference->is_mutable ? UnaryOperator::Type::AddressOfMut : UnaryOperator::Type::AddressOf, value);
+            address->type = resolved;
+            return address;
         }
 
         const auto coercion = classify(resolver, target, value->type);

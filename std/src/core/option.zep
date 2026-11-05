@@ -1,4 +1,5 @@
 import std.io.panic.panic
+import std.memory.Memory
 
 public enum Option<T> {
     None
@@ -25,6 +26,13 @@ public enum Option<T> {
                 else -> {
                     panic("called Option.unwrap on a None value")
                 },
+            }
+        }
+
+        fn unwrap() move -> T {
+            return when (*self) {
+                Option::Some { value } -> Memory::move(value),
+                else -> panic("called Option.unwrap on a None value"),
             }
         }
 

@@ -5,7 +5,7 @@
 import zep.common.source.position;
 import zep.common.source.span;
 import zep.frontend.kind;
-import zep.frontend.sema.type;
+import zep.frontend.sema.types;
 import zep.hir.node;
 import zep.hir.program;
 

@@ -10,11 +10,12 @@ export module zep.frontend.sema.expression.when;
 import zep.common.context;
 import zep.frontend.node;
 import zep.frontend.sema.context;
-import zep.frontend.sema.env;
+import zep.frontend.sema.scopes.environment;
 import zep.frontend.kind;
-import zep.frontend.sema.scope;
-import zep.frontend.sema.type;
-import zep.frontend.sema.type_resolver;
+import zep.frontend.sema.symbols;
+import zep.frontend.sema.scopes.scope;
+import zep.frontend.sema.types;
+import zep.frontend.sema.types.resolver;
 
 export class WhenChecker {
   private:
@@ -22,6 +23,7 @@ export class WhenChecker {
     SemaContext& sema;
     TypeResolver& type_resolver;
     Visitor<void>& visitor;
+    bool mutable_bindings;
 
     static bool is_comparable(const Type* type) {
         return type != nullptr &&
@@ -206,7 +208,7 @@ export class WhenChecker {
                 field->binding_name,
                 sema.env.symbols.create<VariableSymbol>(field->binding_name, field->span,
                                                         Visibility::Type::Private,
-                                                        StorageKind::Type::Var, field_type));
+                                                        mutable_bindings ? StorageKind::Type::VarMut : StorageKind::Type::Var, field_type));
         }
 
         for (const auto& field : variant.fields) {
@@ -220,8 +222,8 @@ export class WhenChecker {
 
   public:
     explicit WhenChecker(Context& context, SemaContext& sema, TypeResolver& type_resolver,
-                         Visitor<void>& visitor)
-        : context(context), sema(sema), type_resolver(type_resolver), visitor(visitor) {}
+                         Visitor<void>& visitor, bool mutable_bindings = false)
+        : context(context), sema(sema), type_resolver(type_resolver), visitor(visitor), mutable_bindings(mutable_bindings) {}
 
     void resolve(WhenExpression& node) {
         const Type* subject_type = nullptr;
@@ -335,6 +337,14 @@ export class WhenChecker {
                 }
 
                 visitor.visit_statement(*arm->body);
+                auto* tail = arm->body->as<ExpressionStatement>();
+                if (auto* block = arm->body->as<BlockStatement>(); block != nullptr && !block->statements.empty()) {
+                    tail = block->statements.back()->as<ExpressionStatement>();
+                }
+                if (tail != nullptr) {
+                    tail->expression = sema.binding.construct(tail->expression, tail->expression->type,
+                        type_resolver, context.diagnostics);
+                }
             }
 
             const auto* body_type = arm->body->type;

@@ -5,9 +5,11 @@ import zep.common.source.span;
 import zep.frontend.node;
 import zep.frontend.sema.context;
 import zep.frontend.kind;
-import zep.frontend.sema.type;
+import zep.frontend.sema.types;
 import zep.compiler.lowering.mangler;
 import zep.compiler.lowering.specialization;
+import zep.frontend.test.harness;
+import zep.frontend.node.program;
 
 class MonomorphizerTest : public testing::Test {
   protected:
@@ -43,7 +45,19 @@ TEST_F(MonomorphizerTest, EncodesExactTypedFloatPayloads) {
 
     EXPECT_NE(Mangler::encode(&positive), Mangler::encode(&negative));
     EXPECT_NE(Mangler::encode(&positive), Mangler::encode(&single));
-    EXPECT_EQ(Mangler::encode(&negative), "N5Valuecf64_f9223372036854775808");
+    EXPECT_EQ(Mangler::encode(&negative), "N5ValueG1_25_cf64_f9223372036854775808E");
+}
+
+TEST_F(MonomorphizerTest, DistinguishesNestedGenericArgumentBoundaries) {
+    NamedType first("A", {});
+    NamedType second("B", {});
+    NamedType third("C", {});
+    NamedType nested_first("A", {GenericArgumentType("", &second)});
+    NamedType nested_second("B", {GenericArgumentType("", &third)});
+    NamedType left("Pair", {GenericArgumentType("", &nested_first), GenericArgumentType("", &third)});
+    NamedType right("Pair", {GenericArgumentType("", &first), GenericArgumentType("", &nested_second)});
+
+    EXPECT_NE(Mangler::encode(&left), Mangler::encode(&right));
 }
 
 TEST_F(MonomorphizerTest, EncodesBooleanType) {
@@ -89,7 +103,7 @@ TEST_F(MonomorphizerTest, MangleParametersReturnsNameForEmptyList) {
 }
 
 TEST_F(MonomorphizerTest, CacheDetectsFirstSpecializationAsNew) {
-    MonomorphizationCache cache;
+    Specializations cache;
     std::vector<GenericBinding> types = {TypeBinding(i32_type())};
 
     auto result = cache.get_or_create(i32_type(), "identity", types);
@@ -99,7 +113,7 @@ TEST_F(MonomorphizerTest, CacheDetectsFirstSpecializationAsNew) {
 }
 
 TEST_F(MonomorphizerTest, CacheDetectsDuplicateSpecialization) {
-    MonomorphizationCache cache;
+    Specializations cache;
     std::vector<GenericBinding> types = {TypeBinding(i32_type())};
 
     cache.get_or_create(i32_type(), "identity", types);
@@ -109,27 +123,32 @@ TEST_F(MonomorphizerTest, CacheDetectsDuplicateSpecialization) {
 }
 
 TEST_F(MonomorphizerTest, CacheRegistersAndRetrievesGenericFunctions) {
-    MonomorphizationCache cache;
-    alignas(alignof(std::max_align_t)) static char dummy[1024];
-    auto* decl = reinterpret_cast<const FunctionDeclaration*>(&dummy);
+    Specializations cache;
+    FrontendHarness source("fn generic<T>(value: T) -> T { return value }");
+    ASSERT_TRUE(source.type_check_succeeded());
+    auto* declaration = source.program.statements.front()->as<FunctionDeclaration>();
+    ASSERT_NE(declaration, nullptr);
 
-    cache.register_function("generic", decl);
+    cache.register_function("generic", declaration);
 
-    EXPECT_TRUE(cache.is_generic_function("generic"));
-    EXPECT_EQ(cache.get_function("generic"), decl);
-    EXPECT_FALSE(cache.is_generic_struct("generic"));
+    EXPECT_EQ(cache.get_function("generic"), declaration);
+    EXPECT_EQ(cache.get_struct("generic"), nullptr);
 }
 
-TEST_F(MonomorphizerTest, MarkSpecializationReturnsFalseOnDuplicate) {
-    MonomorphizationCache cache;
+TEST_F(MonomorphizerTest, CacheReusesTheFirstNameForOneIdentity) {
+    Specializations cache;
     NumberLiteral declaration(Span(), "1");
 
-    EXPECT_TRUE(cache.mark_specialization(&declaration, {}, "spec1"));
-    EXPECT_FALSE(cache.mark_specialization(&declaration, {}, "spec1"));
+    auto first = cache.get_or_create(&declaration, "spec1", {});
+    auto second = cache.get_or_create(&declaration, "spec2", {});
+
+    EXPECT_FALSE(first.is_generated);
+    EXPECT_TRUE(second.is_generated);
+    EXPECT_EQ(first.name, second.name);
 }
 
 TEST_F(MonomorphizerTest, ConstBindingsDistinguishPayloadsAndTypes) {
-    MonomorphizationCache cache;
+    Specializations cache;
     const auto first =
         CompileTimeValue(CompileTimeValue::Kind::Type::SignedInteger, i32_type(), std::int64_t{2});
     const auto second =
@@ -189,7 +208,7 @@ TEST_F(MonomorphizerTest, ConstBindingsEncodeCompleteAggregatePayloads) {
 }
 
 TEST_F(MonomorphizerTest, CacheUsesDefiningIdentityInsteadOfLinkerName) {
-    MonomorphizationCache cache;
+    Specializations cache;
     const std::vector<GenericBinding> arguments = {TypeBinding(i32_type())};
     EXPECT_FALSE(cache.get_or_create(i32_type(), "same", arguments).is_generated);
     EXPECT_FALSE(cache.get_or_create(u32_type(), "same", arguments).is_generated);
@@ -197,7 +216,7 @@ TEST_F(MonomorphizerTest, CacheUsesDefiningIdentityInsteadOfLinkerName) {
 }
 
 TEST_F(MonomorphizerTest, EqualBindingsShareKeysAcrossTypeAllocations) {
-    MonomorphizationCache cache;
+    Specializations cache;
     IntegerType first(false, 32);
     IntegerType second(false, 32);
     const GenericBinding left = TypeBinding(&first);
@@ -207,4 +226,32 @@ TEST_F(MonomorphizerTest, EqualBindingsShareKeysAcrossTypeAllocations) {
     EXPECT_EQ(hash(left), hash(right));
     EXPECT_FALSE(cache.get_or_create(i32_type(), "identity", {left}).is_generated);
     EXPECT_TRUE(cache.get_or_create(i32_type(), "identity", {right}).is_generated);
+}
+
+TEST_F(MonomorphizerTest, RenamedNominalsPreserveBindingIdentityAndHash) {
+    StructType original("Owner", {}, {});
+    StructType lowered("Owner$lowered", {}, {}, {}, nullptr, {}, {}, &original);
+    PointerType source(&original, true);
+    PointerType target(&lowered, true);
+    Specializations cache;
+
+    EXPECT_TRUE(source.same(&target));
+    EXPECT_EQ(source.hash(), target.hash());
+    EXPECT_FALSE(cache.get_or_create(i32_type(), "identity", {TypeBinding(&source)}).is_generated);
+    EXPECT_TRUE(cache.get_or_create(i32_type(), "identity", {TypeBinding(&target)}).is_generated);
+}
+
+TEST_F(MonomorphizerTest, FunctionBindingsUseSignaturesInsteadOfDisplayNames) {
+    FunctionType first("first", i32_type(), {ParameterType("source", i32_type())}, {}, false);
+    FunctionType second("second", i32_type(), {ParameterType("value", i32_type())}, {}, false);
+    FunctionType different("first", boolean_type(), {ParameterType("source", boolean_type())}, {}, false);
+    Specializations cache;
+
+    EXPECT_TRUE(first.same(&second));
+    EXPECT_EQ(first.hash(), second.hash());
+    EXPECT_EQ(Mangler::encode(&first), Mangler::encode(&second));
+    EXPECT_NE(Mangler::encode(&first), Mangler::encode(&different));
+    EXPECT_FALSE(cache.get_or_create(i32_type(), "identity", {TypeBinding(&first)}).is_generated);
+    EXPECT_TRUE(cache.get_or_create(i32_type(), "identity", {TypeBinding(&second)}).is_generated);
+    EXPECT_FALSE(cache.get_or_create(i32_type(), "identity", {TypeBinding(&different)}).is_generated);
 }

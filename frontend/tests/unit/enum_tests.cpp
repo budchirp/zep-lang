@@ -3,7 +3,7 @@
 
 import zep.frontend.test.harness;
 import zep.frontend.node;
-import zep.frontend.sema.type;
+import zep.frontend.sema.types;
 
 TEST(FrontendTypeCheckerPositive, AcceptsEnumPayloadConstructionBackedValuesAndWhenDestructuring) {
     const std::string source = R"zep(

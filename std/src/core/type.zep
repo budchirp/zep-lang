@@ -1,7 +1,6 @@
 import std.core.marker.Primitive
 import std.ffi.c_strlen
-import std.ffi.c_strcmp
-import std.ffi.c_strncmp
+import std.core.bytes.ByteText
 
 public type i8 = i8
 public type i16 = i16
@@ -79,7 +78,8 @@ public struct Char : Primitive<char> {
         }
 
         static fn is_whitespace(value: char) -> boolean {
-            return value == ' ' || value == '\t' || value == '\n' || value == '\r'
+            return value == ' ' || value == '\t' || value == '\n' || value == '\r' ||
+                   value == (11 as char) || value == (12 as char)
         }
 
         static fn is_hex_digit(value: char) -> boolean {
@@ -111,8 +111,8 @@ public struct CStr : Primitive<cstr> {
     public:
         var value: cstr
 
-        fn length() -> i32 {
-            return c_strlen(value) as i32
+        fn length() -> i64 {
+            return c_strlen(value)
         }
 
         fn is_empty() -> boolean {
@@ -120,41 +120,17 @@ public struct CStr : Primitive<cstr> {
         }
 
         fn equals(other: cstr) -> boolean {
-            return c_strcmp(value, other) == 0
+            var length = self->length()
+            return ByteText::equal(value, length, other, c_strlen(other))
         }
 
         fn starts_with(prefix: cstr) -> boolean {
-            return c_strncmp(value, prefix, c_strlen(prefix)) == 0
+            var prefix_length = c_strlen(prefix)
+            return ByteText::prefix(value, self->length(), prefix, prefix_length)
         }
 
         fn contains(needle: cstr) -> boolean {
-            var needle_length = c_strlen(needle) as i32
-            if (needle_length == 0) {
-                return true
-            }
-
-            var value_length = self->length()
-            if (needle_length > value_length) {
-                return false
-            }
-
-            var limit = value_length - needle_length
-
-            for (var mut index: i32 = 0; index <= limit; index = index + 1) {
-                var mut matched = true
-
-                for (var mut offset: i32 = 0; offset < needle_length; offset = offset + 1) {
-                    if (value[index + offset] != needle[offset]) {
-                        matched = false
-                    }
-                }
-
-                if (matched) {
-                    return true
-                }
-            }
-
-            return false
+            return ByteText::find(value, self->length(), needle, c_strlen(needle), 0) >= 0
         }
 }
 
@@ -167,24 +143,24 @@ public struct Array<T, const N: i32> {
             return Array<T, N> { data: data }
         }
 
-        fn get(index: i32) -> *T {
-            if (index < 0 || index >= N) {
+        fn get(index: i64) -> *T {
+            if (index < 0 || index >= N as i64) {
                 return null
             }
 
             return &(((&data) as *T)[index])
         }
 
-        fn get_mut(index: i32) mut -> *mut T {
-            if (index < 0 || index >= N) {
+        fn get_mut(index: i64) mut -> *mut T {
+            if (index < 0 || index >= N as i64) {
                 return null
             }
 
             return &mut (((&mut data) as *mut T)[index])
         }
 
-        fn size() -> i32 {
-            return N
+        fn length() -> i64 {
+            return N as i64
         }
 
         fn is_empty() -> boolean {

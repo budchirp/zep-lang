@@ -1,5 +1,6 @@
 import std.ffi.c_fgets
 import std.ffi.c_getenv
+import std.ffi.c_ferror
 import std.ffi.c_pclose
 import std.ffi.c_popen
 import std.ffi.c_system
@@ -31,6 +32,12 @@ public struct ProcessOutput {
 }
 
 public struct Process {
+    private:
+        static fn exit_code(status: i32) -> i32 {
+            var signal = status % 128
+            return if (signal != 0) { 128 + signal } else { (status / 256) % 256 }
+        }
+
     public:
         static fn run(command: cstr) -> Result<i32, ProcessError> {
             var status = c_system(command)
@@ -42,7 +49,7 @@ public struct Process {
                 return Result<i32, ProcessError>::Error { error: ProcessError::CommandFailed }
             }
 
-            return Result<i32, ProcessError>::Ok { value: status }
+            return Result<i32, ProcessError>::Ok { value: Process::exit_code(status) }
         }
 
         static fn capture(command: cstr) -> Result<ProcessOutput, ProcessError> {
@@ -60,13 +67,14 @@ public struct Process {
                 line = c_fgets(&mut buffer as *mut void, 256, stream)
             }
 
+            var read_failed = c_ferror(stream) != 0
             var status = c_pclose(stream)
-            if (status < 0) {
+            if (status < 0 || read_failed) {
                 return Result<ProcessOutput, ProcessError>::Error { error: ProcessError::CommandFailed }
             }
 
             return Result<ProcessOutput, ProcessError>::Ok {
-                value: ProcessOutput { status: status, output: output }
+                value: ProcessOutput { status: Process::exit_code(status), output: output }
             }
         }
 }

@@ -13,20 +13,21 @@ export module zep.compiler.lowering.specialization;
 
 import zep.compiler.lowering.mangler;
 import zep.frontend.node;
-import zep.frontend.sema.scope;
-import zep.frontend.sema.type;
+import zep.frontend.sema.symbols;
+import zep.frontend.sema.types;
 import zep.hir.node;
+import zep.common.hash;
 
-export class MonoCacheResult {
+export class SpecializationResult {
   public:
     std::string name;
     bool is_generated;
 
-    MonoCacheResult(std::string name, bool is_generated)
+    SpecializationResult(std::string name, bool is_generated)
         : name(std::move(name)), is_generated(is_generated) {}
 };
 
-export class MonomorphizationCache {
+export class Specializations {
   private:
     class SpecializationKey {
       public:
@@ -45,8 +46,7 @@ export class MonomorphizationCache {
         std::size_t operator()(const SpecializationKey& key) const {
             auto result = std::hash<decltype(key.definition)>()(key.definition);
             for (const auto& argument : key.arguments) {
-                result ^=
-                    GenericBindingHash{}(argument) + 0x9e3779b9 + (result << 6) + (result >> 2);
+                result = Hash::combine(result, GenericBindingHash{}(argument));
             }
             return result;
         }
@@ -56,15 +56,15 @@ export class MonomorphizationCache {
     std::unordered_map<std::string, const StructDeclaration*> structs;
     std::unordered_map<std::string, const FunctionDeclaration*> functions;
     std::unordered_map<const FunctionSymbol*, const FunctionDeclaration*> function_definitions;
-    std::vector<HIRFunctionDeclaration*> pending_specializations;
+    std::vector<HIRFunctionDeclaration*> pending;
 
   public:
-    MonomorphizationCache() = default;
+    Specializations() = default;
 
-    MonomorphizationCache(const MonomorphizationCache&) = delete;
-    MonomorphizationCache& operator=(const MonomorphizationCache&) = delete;
-    MonomorphizationCache(MonomorphizationCache&&) = delete;
-    MonomorphizationCache& operator=(MonomorphizationCache&&) = delete;
+    Specializations(const Specializations&) = delete;
+    Specializations& operator=(const Specializations&) = delete;
+    Specializations(Specializations&&) = delete;
+    Specializations& operator=(Specializations&&) = delete;
 
     void register_function(const std::string& name, const FunctionDeclaration* statement,
                            const FunctionSymbol* symbol = nullptr) {
@@ -77,10 +77,6 @@ export class MonomorphizationCache {
     void register_struct(const std::string& name, const StructDeclaration* statement) {
         structs[name] = statement;
     }
-
-    bool is_generic_function(const std::string& name) const { return functions.contains(name); }
-
-    bool is_generic_struct(const std::string& name) const { return structs.contains(name); }
 
     const FunctionDeclaration* get_function(const std::string& name) const {
         const auto iterator = functions.find(name);
@@ -97,33 +93,53 @@ export class MonomorphizationCache {
         return iterator != structs.end() ? iterator->second : nullptr;
     }
 
-    void enqueue_specialization(HIRFunctionDeclaration* function) {
-        pending_specializations.push_back(function);
+    void enqueue(HIRFunctionDeclaration* function) {
+        pending.push_back(function);
     }
 
-    void drain_pending_specializations_into(std::vector<HIRFunctionDeclaration*>& destination) {
-        for (auto* item : pending_specializations) {
-            destination.push_back(item);
-        }
-
-        pending_specializations.clear();
+    void drain(std::vector<HIRFunctionDeclaration*>& destination) {
+        destination.insert(destination.end(), pending.begin(), pending.end());
+        pending.clear();
     }
 
-    MonoCacheResult get_or_create(std::variant<const Node*, const Type*> definition,
+    SpecializationResult get_or_create(std::variant<const Node*, const Type*> definition,
                                   const std::string& name,
                                   const std::vector<GenericBinding>& arguments) {
         SpecializationKey key(definition, arguments);
         if (const auto iterator = specializations.find(key); iterator != specializations.end()) {
-            return MonoCacheResult(iterator->second, true);
+            return SpecializationResult(iterator->second, true);
         }
 
-        auto full = Mangler::mangle(name, arguments);
+        auto base = name;
+
+        if (const auto* node = std::get_if<const Node*>(&definition); node != nullptr) {
+            if (const auto* function = (*node)->as<FunctionDeclaration>(); function != nullptr &&
+                function->function_symbol != nullptr) {
+                const auto* symbol = function->function_symbol;
+                base = Mangler::function_name(symbol->base_name(), symbol, symbol->signature());
+            }
+        }
+
+        auto full = Mangler::mangle(base, arguments);
         specializations.emplace(std::move(key), full);
-        return MonoCacheResult(std::move(full), false);
+        return SpecializationResult(std::move(full), false);
     }
 
-    bool mark_specialization(const Node* definition, const std::vector<GenericBinding>& arguments,
-                             const std::string& name) {
-        return specializations.emplace(SpecializationKey(definition, arguments), name).second;
+    SpecializationResult lifecycle(const FunctionSymbol& function, const NominalType& owner,
+                               const FunctionType* signature) {
+        const auto* declaration = get_function(&function);
+
+        if (owner.generic_arguments.empty() || declaration == nullptr) {
+            return SpecializationResult(Mangler::function_name(function.base_name(), &function, signature), true);
+        }
+
+        std::vector<GenericBinding> arguments;
+        arguments.reserve(owner.generic_arguments.size());
+
+        for (const auto& argument : owner.generic_arguments) {
+            arguments.push_back(argument.binding());
+        }
+
+        return get_or_create(declaration, function.base_name(), arguments);
     }
 };

@@ -14,9 +14,9 @@ import zep.common.context;
 import zep.common.source.span;
 import zep.frontend.node;
 import zep.frontend.sema.context;
-import zep.frontend.sema.type;
-import zep.frontend.sema.type_resolver;
-import zep.frontend.sema.constant.evaluator;
+import zep.frontend.sema.types;
+import zep.frontend.sema.types.resolver;
+import zep.frontend.sema.constants.evaluator;
 
 export class GenericInference {
   private:
@@ -68,6 +68,13 @@ export class GenericInference {
         }
 
         if (const auto* pointer = declared->as<PointerType>(); pointer != nullptr) {
+            if (pointer->reference_kind != PointerType::ReferenceKind::Type::None) {
+                const auto* source = actual->as<PointerType>();
+                const auto* value = source != nullptr && source->reference_kind != PointerType::ReferenceKind::Type::None
+                    ? source->element : actual;
+                match(pointer->element, value);
+                return;
+            }
             if (const auto* actual_pointer = actual->as<PointerType>(); actual_pointer != nullptr) {
                 match(pointer->element, actual_pointer->element);
             }

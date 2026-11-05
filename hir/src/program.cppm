@@ -5,7 +5,7 @@ module;
 export module zep.hir.program;
 
 import zep.hir.node;
-import zep.frontend.sema.scope;
+import zep.frontend.sema.symbols;
 
 export class HIRProgram {
   public:

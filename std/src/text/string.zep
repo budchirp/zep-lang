@@ -2,148 +2,34 @@ import std.collections.vector.Vector
 import std.core.option.Option
 import std.core.result.Result
 import std.ffi.c_memcpy
+import std.ffi.c_memmove
+import std.ffi.zep_errno
 import std.ffi.c_snprintf
-import std.ffi.c_strcmp
 import std.ffi.c_strlen
-import std.ffi.c_strncmp
 import std.ffi.c_strtod
 import std.ffi.c_strtoll
 import std.ffi.c_strtoull
 import std.memory.Memory
+import std.io.panic.panic
+import std.text.view.StringView
+import std.core.bytes.ByteText
 
 public enum ParseError {
     InvalidSyntax
     OutOfRange
 }
 
-public struct StringView {
-    private:
-        var ptr: cstr
-        var length: i32
-
-    public:
-        fn StringView(ptr: cstr, length: i32) -> StringView {
-            var mut safe_length = length
-            if (safe_length < 0) {
-                safe_length = 0
-            }
-            return StringView { ptr: ptr, length: safe_length }
-        }
-
-        static fn from_cstr(ptr: cstr) -> StringView {
-            if ((ptr as *mut void) == null) {
-                return StringView { ptr: "", length: 0 }
-            }
-
-            return StringView { ptr: ptr, length: c_strlen(ptr) as i32 }
-        }
-
-        fn length() -> i32 {
-            return length
-        }
-
-        fn is_empty() -> boolean {
-            return length == 0
-        }
-
-        fn as_ptr() -> *char {
-            return ptr as *char
-        }
-
-        fn get(index: i32) -> Option<char> {
-            if (index < 0 || index >= length) {
-                return Option<char>::None
-            }
-
-            return Option<char>::Some { value: ptr[index] }
-        }
-
-        fn equals(other: cstr) -> boolean {
-            if ((other as *mut void) == null) {
-                return false
-            }
-
-            var other_length = c_strlen(other) as i32
-            return other_length == length && c_strncmp(ptr, other, length as i64) == 0
-        }
-
-        fn equals(other: *StringView) -> boolean {
-            return other->length() == length &&
-                   c_strncmp(ptr, other->as_ptr() as cstr, length as i64) == 0
-        }
-
-        fn starts_with(prefix: cstr) -> boolean {
-            if ((prefix as *mut void) == null) {
-                return false
-            }
-
-            var prefix_length = c_strlen(prefix) as i32
-            return prefix_length <= length &&
-                   c_strncmp(ptr, prefix, prefix_length as i64) == 0
-        }
-
-        fn ends_with(suffix: cstr) -> boolean {
-            if ((suffix as *mut void) == null) {
-                return false
-            }
-
-            var suffix_length = c_strlen(suffix) as i32
-            if (suffix_length > length) {
-                return false
-            }
-
-            return c_strncmp((&ptr[length - suffix_length]) as cstr, suffix,
-                             suffix_length as i64) == 0
-        }
-
-        fn index_of(needle: cstr, from_index: i32) -> Option<i32> {
-            if ((needle as *mut void) == null) {
-                return Option<i32>::None
-            }
-
-            var needle_length = c_strlen(needle) as i32
-            var mut start_index = from_index
-            if (start_index < 0) {
-                start_index = 0
-            }
-
-            if (needle_length == 0 && start_index <= length) {
-                return Option<i32>::Some { value: start_index }
-            }
-
-            var final_index = length - needle_length
-            if (needle_length > length || start_index > final_index) {
-                return Option<i32>::None
-            }
-
-            for (var mut index = start_index; index <= final_index; index = index + 1) {
-                if (c_strncmp((&ptr[index]) as cstr, needle, needle_length as i64) == 0) {
-                    return Option<i32>::Some { value: index }
-                }
-            }
-
-            return Option<i32>::None
-        }
-
-        fn substring(start_index: i32, end_index: i32) -> Option<StringView> {
-            if (start_index < 0 || end_index < start_index || end_index > length) {
-                return Option<StringView>::None
-            }
-
-            return Option<StringView>::Some {
-                value: StringView((&ptr[start_index]) as cstr, end_index - start_index)
-            }
-        }
-}
-
 public struct String {
     private:
         var ptr: *mut char
-        var length: i32
-        var capacity: i32
+        var length: i64
+        var capacity: i64
 
-        fn ensure_capacity(required_capacity: i32) mut -> void {
-            if (required_capacity <= capacity) {
+        fn ensure_capacity(required_capacity: i64) mut -> void {
+            if (required_capacity < 0 || required_capacity == (9223372036854775807 as i64)) {
+                panic("string capacity overflow")
+            }
+            if (required_capacity <= capacity && ptr != null) {
                 return
             }
 
@@ -152,21 +38,47 @@ public struct String {
                 next_capacity = 1
             }
             while (next_capacity < required_capacity) {
-                next_capacity = next_capacity * 2
+                if (next_capacity > (9223372036854775807 as i64) / 2) {
+                    next_capacity = required_capacity
+                } else {
+                    next_capacity = next_capacity * 2
+                }
             }
 
             self->reserve(next_capacity)
         }
 
-        static fn parse_end_is_valid(source: cstr, end: cstr) -> boolean {
-            return (end as *mut void) != null && end != source && end[0] == (0 as char)
+        fn transform(mapping: (char) -> char) -> String {
+            var mut result = String()
+            result.reserve(length)
+
+            for (var mut index: i64 = 0; index < length; index = index + 1) {
+                result.push(mapping(ptr[index]))
+            }
+
+            return Memory::move(result)
+        }
+
+        fn number_result<T>(value: T, end: cstr) -> Result<T, ParseError> {
+            if (*zep_errno() == 34) {
+                return Result<T, ParseError>::Error { error: ParseError::OutOfRange }
+            }
+
+            var source = self->as_cstr()
+
+            if ((end as *void) == null || end == source ||
+                (end as u64) - (source as u64) != length as u64) {
+                return Result<T, ParseError>::Error { error: ParseError::InvalidSyntax }
+            }
+
+            return Result<T, ParseError>::Ok { value: value }
         }
 
     public:
         fn String() -> String {
             var mut storage = Memory::allocate_bytes(1) as *mut char
             storage[0] = 0 as char
-            return String { ptr: storage, length: 0, capacity: 1 }
+            return String { ptr: storage, length: 0, capacity: 0 }
         }
 
         fn String(value: cstr) -> String {
@@ -174,25 +86,36 @@ public struct String {
                 return String()
             }
 
-            var length = c_strlen(value) as i32
-            var capacity = length + 1
-            var storage = Memory::allocate_bytes(capacity as i64) as *mut char
-            c_memcpy(storage as *mut void, value as *mut void, capacity as i64)
+            var length = c_strlen(value)
+            var capacity = length
+            var storage = Memory::allocate_bytes(capacity + 1) as *mut char
+            c_memcpy(storage as *mut void, value as *mut void, length + 1)
             return String { ptr: storage, length: length, capacity: capacity }
         }
 
-        fn String(source: *String) -> String {
-            return String(source->as_cstr())
+        fn String(source: &String) -> String {
+            var view = source.as_view()
+            return String(&view)
+        }
+
+        fn String(source: move String) -> String {
+            var storage = source.ptr
+            var length = source.length
+            var capacity = source.capacity
+            source.ptr = null
+            source.length = 0
+            source.capacity = 0
+            return String { ptr: storage, length: length, capacity: capacity }
         }
 
         fn String(value: *StringView) -> String {
             var mut result = String()
-            result.reserve(value->length() + 1)
-            for (var mut index: i32 = 0; index < value->length(); index = index + 1) {
+            result.reserve(value->length())
+            for (var mut index: i64 = 0; index < value->length(); index = index + 1) {
                 result.push(value->get(index).unwrap())
             }
 
-            return result
+            return Memory::move(result)
         }
 
         static fn from(value: f32) -> String {
@@ -246,44 +169,53 @@ public struct String {
             return String(value)
         }
 
-        fn reserve(minimum_capacity: i32) mut -> void {
+        fn reserve(minimum_capacity: i64) mut -> void {
+            if (minimum_capacity < 0 || minimum_capacity == (9223372036854775807 as i64)) {
+                panic("invalid string capacity")
+            }
             if (minimum_capacity <= capacity) {
                 return
             }
 
-            var next_ptr = Memory::allocate_bytes(minimum_capacity as i64) as *mut char
-            c_memcpy(next_ptr as *mut void, ptr as *mut void, (length + 1) as i64)
+            var next_ptr = Memory::allocate_bytes(minimum_capacity + 1) as *mut char
+            if (ptr != null) {
+                c_memcpy(next_ptr as *mut void, ptr as *mut void, length + 1)
+            }
+            if (ptr == null) {
+                next_ptr[0] = 0 as char
+            }
             Memory::free(ptr as *mut void)
             ptr = next_ptr
             capacity = minimum_capacity
         }
 
         fn append(value: cstr) mut -> void {
-            if ((value as *mut void) == null) {
-                return
-            }
-
-            var value_length = c_strlen(value) as i32
-            self->ensure_capacity(length + value_length + 1)
-            c_memcpy((&ptr[length]) as *mut void, value as *mut void, value_length as i64)
-            length = length + value_length
-            ptr[length] = 0 as char
+            var view = StringView::from_cstr(value)
+            self->append(&view)
         }
 
         fn append(value: *String) mut -> void {
-            self->append(value->as_cstr())
+            var view = value->as_view()
+            self->append(&view)
         }
 
         fn append(value: *StringView) mut -> void {
-            self->ensure_capacity(length + value->length() + 1)
-            c_memcpy((&ptr[length]) as *mut void, value->as_ptr() as *mut void,
-                     value->length() as i64)
-            length = length + value->length()
+            var source_ptr = value->as_ptr()
+            var source_length = value->length()
+            var offset = (source_ptr as u64) - (ptr as u64)
+            var aliases_storage = (source_ptr as u64) >= (ptr as u64) && offset <= (length as u64)
+            self->ensure_capacity(length + source_length)
+            var mut source = source_ptr
+            if (aliases_storage) {
+                source = &ptr[offset as i64]
+            }
+            c_memmove((&ptr[length]) as *mut void, source, source_length as i64)
+            length = length + source_length
             ptr[length] = 0 as char
         }
 
         fn push(value: char) mut -> void {
-            self->ensure_capacity(length + 2)
+            self->ensure_capacity(length + 1)
             ptr[length] = value
             length = length + 1
             ptr[length] = 0 as char
@@ -291,15 +223,21 @@ public struct String {
 
         fn clear() mut -> void {
             length = 0
-            ptr[0] = 0 as char
+            if (ptr != null) {
+                ptr[0] = 0 as char
+            }
         }
 
         fn equals(value: cstr) -> boolean {
-            return (value as *mut void) != null && c_strcmp(ptr as cstr, value) == 0
+            var view = self->as_view()
+            return view.equals(value)
         }
 
         fn equals(value: *String) -> boolean {
-            return self->equals(value->as_cstr())
+            var left = self->as_view()
+            var right = value->as_view()
+
+            return left.equals(&right)
         }
 
         fn starts_with(value: cstr) -> boolean {
@@ -312,18 +250,18 @@ public struct String {
             return view.ends_with(value)
         }
 
-        fn index_of(needle: cstr, from_index: i32) -> Option<i32> {
+        fn index_of(needle: cstr, from_index: i64) -> Option<i64> {
             var view = self->as_view()
             return view.index_of(needle, from_index)
         }
 
-        fn substring(start_index: i32, end_index: i32) -> Option<String> {
+        fn substring(start_index: i64, end_index: i64) -> Option<String> {
             if (start_index < 0 || end_index < start_index || end_index > length) {
                 return Option<String>::None
             }
 
             var mut result = String()
-            result.reserve(end_index - start_index + 1)
+            result.reserve(end_index - start_index)
             for (var mut index = start_index; index < end_index; index = index + 1) {
                 result.push(ptr[index])
             }
@@ -333,9 +271,9 @@ public struct String {
 
         fn split(separator: char) -> Vector<String> {
             var mut result = Vector<String>()
-            var mut start_index: i32 = 0
+            var mut start_index: i64 = 0
 
-            for (var mut index: i32 = 0; index <= length; index = index + 1) {
+            for (var mut index: i64 = 0; index <= length; index = index + 1) {
                 if (index == length || ptr[index] == separator) {
                     result.push(self->substring(start_index, index).unwrap())
                     start_index = index + 1
@@ -346,18 +284,14 @@ public struct String {
         }
 
         fn trim() -> String {
-            var mut start_index: i32 = 0
+            var mut start_index: i64 = 0
             var mut end_index = length
 
-            while (start_index < end_index &&
-                   (ptr[start_index] == ' ' || ptr[start_index] == '\t' ||
-                    ptr[start_index] == '\n' || ptr[start_index] == '\r')) {
+            while (start_index < end_index && Char::is_whitespace(ptr[start_index])) {
                 start_index = start_index + 1
             }
 
-            while (end_index > start_index &&
-                   (ptr[end_index - 1] == ' ' || ptr[end_index - 1] == '\t' ||
-                    ptr[end_index - 1] == '\n' || ptr[end_index - 1] == '\r')) {
+            while (end_index > start_index && Char::is_whitespace(ptr[end_index - 1])) {
                 end_index = end_index - 1
             }
 
@@ -365,49 +299,34 @@ public struct String {
         }
 
         fn to_lowercase() -> String {
-            var mut result = String()
-            result.reserve(length + 1)
-
-            for (var mut index: i32 = 0; index < length; index = index + 1) {
-                var mut character = ptr[index]
-                if ((character as i32) >= ('A' as i32) &&
-                    (character as i32) <= ('Z' as i32)) {
-                    character = ((character as i32) + 32) as char
-                }
-                result.push(character)
-            }
-
-            return result
+            return self->transform(Char::to_lowercase)
         }
 
         fn to_uppercase() -> String {
-            var mut result = String()
-            result.reserve(length + 1)
-
-            for (var mut index: i32 = 0; index < length; index = index + 1) {
-                var mut character = ptr[index]
-                if ((character as i32) >= ('a' as i32) &&
-                    (character as i32) <= ('z' as i32)) {
-                    character = ((character as i32) - 32) as char
-                }
-                result.push(character)
-            }
-
-            return result
+            return self->transform(Char::to_uppercase)
         }
 
         fn replace(needle: cstr, replacement: cstr) -> String {
-            if ((needle as *mut void) == null || c_strlen(needle) == (0 as i64)) {
-                return String(self->as_cstr())
+            var search = StringView::from_cstr(needle)
+            var value = StringView::from_cstr(replacement)
+
+            return self->replace(&search, &value)
+        }
+
+        fn replace(needle: *StringView, replacement: *StringView) -> String {
+            var needle_length = needle->length()
+
+            if (needle_length == 0) {
+                var view = self->as_view()
+                return String(&view)
             }
 
             var mut result = String()
-            var needle_length = c_strlen(needle) as i32
-            var mut index: i32 = 0
+            var mut index: i64 = 0
 
             while (index < length) {
-                if (index + needle_length <= length &&
-                    c_strncmp((&ptr[index]) as cstr, needle, needle_length as i64) == 0) {
+                if (ByteText::prefix((&ptr[index]) as cstr, length - index,
+                                     needle->as_ptr() as cstr, needle_length)) {
                     result.append(replacement)
                     index = index + needle_length
                 } else {
@@ -419,26 +338,28 @@ public struct String {
             return result
         }
 
-        fn repeat(count: i32) -> String {
+        fn repeat(count: i64) -> String {
             var mut result = String()
             if (count <= 0) {
                 return result
             }
 
-            result.reserve((length * count) + 1)
-            for (var mut index: i32 = 0; index < count; index = index + 1) {
-                result.append(ptr as cstr)
+            result.reserve(Memory::allocation_size(count, length))
+            for (var mut index: i64 = 0; index < count; index = index + 1) {
+                result.append(self)
             }
 
             return result
         }
 
         fn parse_i32() -> Result<i32, ParseError> {
-            var mut end: cstr = null
-            var value = c_strtoll(ptr as cstr, &mut end, 10)
-            if (!String::parse_end_is_valid(ptr as cstr, end)) {
-                return Result<i32, ParseError>::Error { error: ParseError::InvalidSyntax }
+            var parsed = self->parse_i64()
+
+            if (parsed.is_error()) {
+                return Result<i32, ParseError>::Error { error: parsed.unwrap_error() }
             }
+
+            var value = parsed.unwrap()
             var minimum: i64 = (-2147483647 as i64) - (1 as i64)
             var maximum: i64 = 2147483647 as i64
             if (value < minimum || value > maximum) {
@@ -449,32 +370,36 @@ public struct String {
 
         fn parse_i64() -> Result<i64, ParseError> {
             var mut end: cstr = null
-            var value = c_strtoll(ptr as cstr, &mut end, 10)
-            if (!String::parse_end_is_valid(ptr as cstr, end)) {
-                return Result<i64, ParseError>::Error { error: ParseError::InvalidSyntax }
-            }
-            return Result<i64, ParseError>::Ok { value: value }
+            var source = self->as_cstr();
+            *zep_errno() = 0
+            var value = c_strtoll(source, &mut end, 10)
+
+            return self->number_result(value, end)
         }
 
         fn parse_u64() -> Result<u64, ParseError> {
-            if (length > 0 && ptr[0] == '-') {
+            var mut start: i64 = 0
+            while (start < length && Char::is_whitespace(ptr[start])) {
+                start = start + 1
+            }
+            if (start < length && ptr[start] == '-') {
                 return Result<u64, ParseError>::Error { error: ParseError::OutOfRange }
             }
             var mut end: cstr = null
-            var value = c_strtoull(ptr as cstr, &mut end, 10)
-            if (!String::parse_end_is_valid(ptr as cstr, end)) {
-                return Result<u64, ParseError>::Error { error: ParseError::InvalidSyntax }
-            }
-            return Result<u64, ParseError>::Ok { value: value }
+            var source = self->as_cstr();
+            *zep_errno() = 0
+            var value = c_strtoull(source, &mut end, 10)
+
+            return self->number_result(value, end)
         }
 
         fn parse_f64() -> Result<f64, ParseError> {
             var mut end: cstr = null
-            var value = c_strtod(ptr as cstr, &mut end)
-            if (!String::parse_end_is_valid(ptr as cstr, end)) {
-                return Result<f64, ParseError>::Error { error: ParseError::InvalidSyntax }
-            }
-            return Result<f64, ParseError>::Ok { value: value }
+            var source = self->as_cstr();
+            *zep_errno() = 0
+            var value = c_strtod(source, &mut end)
+
+            return self->number_result(value, end)
         }
 
         fn parse_boolean() -> Result<boolean, ParseError> {
@@ -491,7 +416,7 @@ public struct String {
             return length == 0
         }
 
-        fn get(index: i32) -> Option<char> {
+        fn get(index: i64) -> Option<char> {
             if (index < 0 || index >= length) {
                 return Option<char>::None
             }
@@ -499,18 +424,21 @@ public struct String {
         }
 
         fn as_cstr() -> cstr {
+            if (ptr == null) {
+                return ""
+            }
             return ptr as cstr
         }
 
         fn as_view() -> StringView {
-            return StringView(ptr as cstr, length)
+            return StringView(self->as_cstr(), length)
         }
 
-        fn length() -> i32 {
+        fn length() -> i64 {
             return length
         }
 
-        fn capacity() -> i32 {
+        fn capacity() -> i64 {
             return capacity
         }
 

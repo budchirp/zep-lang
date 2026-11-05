@@ -1,7 +1,10 @@
 import std.core.result.Result
+import std.memory.Memory
 import std.text.string.String
+import std.text.view.StringView
 import std.net.socket.stream.TcpStream
 import std.net.socket.address.Ipv4Address
+import std.net.http.framing.MessageFraming
 
 public enum HttpError {
     InvalidUrl
@@ -27,14 +30,14 @@ public struct HttpResponse {
 
 public struct HttpClient {
     public:
-        static fn request(method: cstr, host: cstr, port: u16, path: cstr,
+        static fn request(address: Ipv4Address, method: cstr, host: cstr, port: u16, path: cstr,
                          body: cstr, content_type: cstr) -> Result<HttpResponse, HttpError> {
-            var connect_result = TcpStream::connect(Ipv4Address::localhost(), port)
+            var connect_result = TcpStream::connect(address, port)
             if (connect_result.is_error()) {
                 return Result<HttpResponse, HttpError>::Error { error: HttpError::ConnectFailed }
             }
 
-            var mut stream = connect_result.unwrap()
+            var mut stream = Memory::move(connect_result).unwrap()
 
             var mut request = String(method)
             request.append(" ")
@@ -72,46 +75,56 @@ public struct HttpClient {
                     return Result<HttpResponse, HttpError>::Error { error: HttpError::RecvFailed }
                 }
 
-                var read_length = read_result.unwrap() as i32
+                var read_length = read_result.unwrap()
                 if (read_length == 0) {
                     reading = false
-                } else {
+                }
+                if (read_length > 0) {
+                    if (response.length() + read_length > 8454144) {
+                        return Result<HttpResponse, HttpError>::Error { error: HttpError::ParseFailed }
+                    }
                     buffer[read_length] = 0 as u8
-                    response.append((&mut buffer) as cstr)
+                    var view = StringView((&mut buffer) as cstr, read_length)
+                    response.append(&view)
                 }
             }
             stream.close()
 
             var response_length = response.length()
-            if (response_length < 12) {
+            if (response_length < 13 ||
+                (!response.starts_with("HTTP/1.1 ") && !response.starts_with("HTTP/1.0 "))) {
                 return Result<HttpResponse, HttpError>::Error { error: HttpError::ParseFailed }
             }
 
             var bytes = response.as_cstr()
+            var view = response.as_view()
+            var framing = MessageFraming::body_length(&view)
+            if (framing.is_error()) {
+                return Result<HttpResponse, HttpError>::Error { error: HttpError::ParseFailed }
+            }
 
-            var mut status_start: i32 = 9
+            var mut status_start: i64 = 9
             var mut status = 0
-            while (status_start < response_length &&
+            while (status_start < 12 &&
                    (bytes[status_start] as i32) >= ('0' as i32) &&
                    (bytes[status_start] as i32) <= ('9' as i32)) {
                 var digit = bytes[status_start] as i32
                 status = (status * 10) + (digit - ('0' as i32))
                 status_start = status_start + 1
             }
+            if (status_start != 12 || bytes[12] != ' ' || status < 100) {
+                return Result<HttpResponse, HttpError>::Error { error: HttpError::ParseFailed }
+            }
 
-            var mut body_start = response_length
-            for (var mut index: i32 = 0; index < response_length - 3; index = index + 1) {
-                if (bytes[index] == '\r' &&
-                    bytes[index + 1] == '\n' &&
-                    bytes[index + 2] == '\r' &&
-                    bytes[index + 3] == '\n') {
-                    body_start = index + 4
-                }
+            var body_start = MessageFraming::header_end(&view).unwrap()
+            var declared_length = framing.unwrap()
+            if (declared_length.is_some() && body_start + declared_length.unwrap() != response_length) {
+                return Result<HttpResponse, HttpError>::Error { error: HttpError::ParseFailed }
             }
 
             var mut response_body = String()
             if (body_start < response_length) {
-                for (var mut index: i32 = body_start; index < response_length; index = index + 1) {
+                for (var mut index: i64 = body_start; index < response_length; index = index + 1) {
                     response_body.push(bytes[index])
                 }
             }
@@ -119,21 +132,21 @@ public struct HttpClient {
             return Result<HttpResponse, HttpError>::Ok { value: HttpResponse(status, response_body) }
         }
 
-        static fn get(host: cstr, port: u16, path: cstr) -> Result<HttpResponse, HttpError> {
-            return HttpClient::request("GET", host, port, path, "", "")
+        static fn get(address: Ipv4Address, host: cstr, port: u16, path: cstr) -> Result<HttpResponse, HttpError> {
+            return HttpClient::request(address, "GET", host, port, path, "", "")
         }
 
-        static fn post(host: cstr, port: u16, path: cstr,
+        static fn post(address: Ipv4Address, host: cstr, port: u16, path: cstr,
                        body: cstr, content_type: cstr) -> Result<HttpResponse, HttpError> {
-            return HttpClient::request("POST", host, port, path, body, content_type)
+            return HttpClient::request(address, "POST", host, port, path, body, content_type)
         }
 
-        static fn put(host: cstr, port: u16, path: cstr,
+        static fn put(address: Ipv4Address, host: cstr, port: u16, path: cstr,
                       body: cstr, content_type: cstr) -> Result<HttpResponse, HttpError> {
-            return HttpClient::request("PUT", host, port, path, body, content_type)
+            return HttpClient::request(address, "PUT", host, port, path, body, content_type)
         }
 
-        static fn delete(host: cstr, port: u16, path: cstr) -> Result<HttpResponse, HttpError> {
-            return HttpClient::request("DELETE", host, port, path, "", "")
+        static fn remove(address: Ipv4Address, host: cstr, port: u16, path: cstr) -> Result<HttpResponse, HttpError> {
+            return HttpClient::request(address, "DELETE", host, port, path, "", "")
         }
 }

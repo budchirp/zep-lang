@@ -13,10 +13,25 @@ export module zep.compiler.lowering.mangler;
 
 import zep.frontend.kind;
 import zep.frontend.sema.declaration.attribute;
-import zep.frontend.sema.scope;
-import zep.frontend.sema.type;
+import zep.frontend.sema.symbols;
+import zep.frontend.sema.types;
 export class Mangler {
   private:
+    static std::string encode_arguments(std::string result, const std::vector<GenericArgumentType>& arguments) {
+        if (arguments.empty()) {
+            return result;
+        }
+
+        result += "G" + std::to_string(arguments.size()) + "_";
+
+        for (const auto& argument : arguments) {
+            const auto encoded = encode(argument.binding());
+            result += std::to_string(encoded.size()) + "_" + encoded;
+        }
+
+        return result + "E";
+    }
+
   public:
     static std::string encode(const Type* type) {
         if (type == nullptr) {
@@ -36,6 +51,9 @@ export class Mangler {
         case Type::Kind::Type::Pointer: {
             const auto* pointer = type->as<PointerType>();
             std::string result = pointer->is_mutable ? "p" : "P";
+            if (pointer->reference_kind != PointerType::ReferenceKind::Type::None) {
+                result = pointer->reference_kind == PointerType::ReferenceKind::Type::Move ? "M" : pointer->is_mutable ? "r" : "R";
+            }
             return result + encode(pointer->element);
         }
         case Type::Kind::Type::Array: {
@@ -48,15 +66,8 @@ export class Mangler {
         }
         case Type::Kind::Type::Named: {
             const auto* named = type->as<NamedType>();
-            std::string result = "N" + std::to_string(named->name.size()) + named->name;
-            for (const auto& arg : named->generic_arguments) {
-                if (arg.is_const()) {
-                    result += encode(arg.binding());
-                } else {
-                    result += encode(arg.type);
-                }
-            }
-            return result;
+            return encode_arguments("N" + std::to_string(named->name.size()) + named->name,
+                                    named->generic_arguments);
         }
         case Type::Kind::Type::Struct:
         case Type::Kind::Type::Enum:
@@ -65,14 +76,20 @@ export class Mangler {
             if (nominal == nullptr) {
                 return type->label;
             }
-            std::string result = "S" + std::to_string(nominal->name.size()) + nominal->name;
-            for (const auto& arg : nominal->generic_arguments) {
-                if (arg.is_const()) {
-                    result += encode(arg.binding());
-                } else {
-                    result += encode(arg.type);
-                }
+            const auto& name = nominal->definition != nullptr ? nominal->definition->name : nominal->name;
+            return encode_arguments("S" + std::to_string(name.size()) + name, nominal->generic_arguments);
+        }
+        case Type::Kind::Type::Function: {
+            const auto* function = type->as<FunctionType>();
+            const auto result_type = encode(function->return_type);
+            auto result = "F" + std::to_string(function->parameters.size()) + "_" +
+                (function->variadic ? "V" : "N") + std::to_string(result_type.size()) + "_" + result_type;
+
+            for (const auto& parameter : function->parameters) {
+                const auto encoded = encode(parameter.type);
+                result += std::to_string(encoded.size()) + "_" + encoded;
             }
+
             return result;
         }
         default:
@@ -132,7 +149,17 @@ export class Mangler {
     }
 
     static bool is_mangled(const FunctionSymbol* symbol) {
-        return symbol != nullptr && symbol->is_mangled();
+        if (symbol == nullptr) {
+            return false;
+        }
+
+        const auto* attribute = symbol->find_attribute("mangle");
+
+        if (attribute == nullptr) {
+            return symbol->linkage != Linkage::Type::External;
+        }
+
+        return attribute->arguments.empty() || attribute->arguments.front() != "false";
     }
 
     template <typename SymbolType>
@@ -142,25 +169,6 @@ export class Mangler {
         }
 
         return AttributeResolver::get_linker_name(original_name, symbol->attributes);
-    }
-
-    static bool should_mangle(const std::string& original_name, bool mangled,
-                              bool has_custom_name) {
-        return original_name != "main" && mangled && !has_custom_name;
-    }
-
-    static std::string resolve_function_name(const std::string& original_name,
-                                             const FunctionSymbol* symbol,
-                                             const std::vector<ParameterType>& parameters) {
-        auto name = linker_name(original_name, symbol);
-        auto has_custom_name = name != original_name;
-        auto mangled = is_mangled(symbol);
-
-        if (should_mangle(original_name, mangled, has_custom_name)) {
-            name = Mangler::mangle_parameters(name, parameters);
-        }
-
-        return name;
     }
 
     static Linkage::Type function_linkage(const std::string& original_name,
@@ -176,31 +184,11 @@ export class Mangler {
 
     static std::string function_name(const std::string& original_name, const FunctionSymbol* symbol,
                                      const FunctionType* function_type) {
-        if (function_type == nullptr) {
-            return linker_name(original_name, symbol);
-        }
-
-        return resolve_function_name(original_name, symbol, function_type->parameters);
-    }
-
-    static std::string identifier_name(const std::string& original_name,
-                                       const FunctionType* function_type,
-                                       const FunctionSymbol* symbol,
-                                       const std::vector<FunctionSymbol*>& overloads) {
         auto name = linker_name(original_name, symbol);
-        auto has_custom_name = name != original_name;
 
-        auto mangled = false;
-        if (overloads.size() > 1) {
-            mangled = true;
-        } else if (symbol != nullptr) {
-            mangled = symbol->is_mangled();
-        } else if (overloads.size() == 1) {
-            mangled = overloads[0]->is_mangled();
-        }
-
-        if (function_type != nullptr && should_mangle(original_name, mangled, has_custom_name)) {
-            name = Mangler::mangle_parameters(name, function_type->parameters);
+        if (function_type != nullptr && original_name != "main" &&
+            is_mangled(symbol) && name == original_name) {
+            name = mangle_parameters(name, function_type->parameters);
         }
 
         return name;

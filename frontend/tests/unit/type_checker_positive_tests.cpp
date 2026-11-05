@@ -1,7 +1,149 @@
 #include <gtest/gtest.h>
+#include <variant>
 #include <string>
 
 import zep.frontend.test.harness;
+import zep.frontend.node;
+import zep.frontend.sema.symbols;
+
+TEST(FrontendLifecycle, ClassifiesReferenceCopiesWithoutRawPointerCompatibility) {
+    FrontendHarness harness(R"zep(
+struct Raw {
+    public:
+        var value: i32
+
+        fn Raw(source: *Raw) -> Raw {
+            return Raw { value: (*source).value }
+        }
+}
+
+struct Owner {
+    public:
+        var value: i32
+
+        fn Owner(source: &Owner) -> Owner = default
+}
+)zep");
+
+    ASSERT_TRUE(harness.type_check_succeeded());
+
+    const auto* raw = harness.program.statements[0]->as<StructDeclaration>();
+    const auto* owner = harness.program.statements[1]->as<StructDeclaration>();
+
+    ASSERT_NE(raw, nullptr);
+    ASSERT_NE(owner, nullptr);
+    ASSERT_EQ(raw->methods.size(), 1U);
+    ASSERT_EQ(owner->methods.size(), 1U);
+
+    EXPECT_EQ(raw->methods.front()->function_symbol->role,
+              FunctionSymbol::Role(ConstructorKind::Type::Value));
+    EXPECT_EQ(owner->methods.front()->function_symbol->role,
+              FunctionSymbol::Role(ConstructorKind::Type::Copy));
+}
+
+TEST(FrontendLifecycle, RechecksNestedGenericReferenceCallsWithoutChangingTheirTypes) {
+    EXPECT_TRUE(assert_type_check_ok(R"zep(
+fn forward<T>(value: &T) -> move T { return &value as move T }
+fn put<T>(ptr: *mut T, value: move T) -> void { new (ptr) value }
+fn build<T>(ptr: *mut T, value: T) -> void { put(ptr, forward(value)) }
+struct Resource {
+    public:
+        var value: i32
+        fn Resource(source: &Resource) -> Resource = delete
+        fn Resource(source: move Resource) -> Resource = default
+}
+fn main() -> i32 {
+    var value = Resource { value: 42 }
+    var moved = forward(value)
+    return moved.value
+}
+)zep"));
+}
+
+TEST(FrontendLifecycle, ConstructsAndDestroysValuesWithoutBuiltinCalls) {
+    EXPECT_TRUE(assert_type_check_ok(R"zep(
+struct Record { public: var value: i32 }
+fn initialize(ptr: *mut Record, value: &Record) -> void {
+    new (ptr) value
+}
+fn clear(ptr: *mut Record) -> void {
+    ptr->~Record()
+}
+fn main() -> i32 {
+    var mut value = Record { value: 42 }
+    value.~Record()
+    value = Record { value: 7 }
+    return value.value
+}
+)zep"));
+}
+
+TEST(FrontendLifecycle, ResolvesHeapOperationsThroughMemory) {
+    EXPECT_TRUE(assert_type_check_ok(R"zep(
+struct Memory {
+    public:
+        static fn allocate_bytes(size: i64) -> *mut void { return null }
+        static fn free(ptr: *mut void) -> void {}
+}
+struct Record { public: var value: i32 }
+fn check() -> void {
+    var record = new Record { value: 42 }
+    delete record
+    var number = new 42
+    delete number
+    var missing: *mut Record = null
+    delete missing
+    delete null
+}
+)zep"));
+}
+
+TEST(FrontendLifecycle, AcceptsReferencesMovesAndDefaultedSpecialMembers) {
+    auto source = R"zep(
+struct Record {
+    public:
+        var value: i32
+        fn Record(source: &Record) -> Record = default
+        fn Record(source: move Record) -> Record = default
+        fn operator=(source: &Record) mut -> &mut Record = default
+        fn operator=(source: move Record) mut -> &mut Record = default
+}
+fn read(value: &Record) -> i32 { return value.value }
+fn forward<T>(value: &T) -> move T { return &value as move T }
+fn main() -> i32 {
+    var mut first = Record { value: 42 }
+    var copied = first
+    var moved = forward(first)
+    var reference: &Record = copied
+    first = moved
+    return read(reference)
+}
+)zep";
+    EXPECT_TRUE(assert_type_check_ok(source));
+}
+
+TEST(FrontendAssembly, AcceptsNamedOperands) {
+    EXPECT_TRUE(assert_type_check_ok(R"zep(
+fn main() -> i32 {
+    var mut value: i64 = 1
+    asm {
+        "addq {input}, {output}"
+        in(input, "r", 2 as i64)
+        inout(output, "r", value)
+        clobber("flags")
+    }
+    return value as i32
+}
+)zep"));
+}
+
+TEST(FrontendTypeCheckerPositive, KeepsGenericLookaheadInsideExpressionDelimiters) {
+    EXPECT_TRUE(assert_type_check_ok(R"zep(
+fn valid(count: i64, width: i64) -> boolean {
+    return (count < 0 || width < 0 || (width > 0 && count > 100 / width))
+}
+)zep"));
+}
 
 TEST(FrontendTypeCheckerPositive, AcceptsNumericLiteralsCastsAndReturnCompatibility) {
     const std::string source = R"zep(
@@ -135,6 +277,24 @@ fn main() -> i32 {
 )zep";
 
     EXPECT_TRUE(assert_type_check_ok(source));
+}
+
+TEST(FrontendTypeCheckerPositive, AcceptsInheritedMutableMethodCalls) {
+    EXPECT_TRUE(assert_type_check_ok(R"zep(
+struct Handle {
+    public:
+        var value: i32
+        fn close() mut -> void { value = -1 }
+}
+
+struct Stream : Handle {}
+
+fn main() -> i32 {
+    var mut stream = Stream { value: 42 }
+    stream.close()
+    return stream.value
+}
+)zep"));
 }
 
 TEST(FrontendTypeCheckerPositive, AcceptsInterfaceInheritance) {
@@ -278,8 +438,8 @@ struct Owner {
     public:
         var value: i32
 
-        fn Owner(source: *Owner) -> Owner {
-            return Owner { value: source->value }
+        fn Owner(source: &Owner) -> Owner {
+            return Owner { value: source.value }
         }
 
         fn ~Owner() -> void {}

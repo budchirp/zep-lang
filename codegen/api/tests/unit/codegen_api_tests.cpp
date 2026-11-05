@@ -6,13 +6,13 @@
 import zep.codegen.api;
 import zep.codegen.options;
 
-class FakeBackend : public CodegenBackend {
+class FakeBackend : public Backend {
   public:
     std::filesystem::path selected_output;
 
     std::expected<void, std::string> generate(const HIRProgram&,
                                               const std::filesystem::path& output,
-                                              const CodegenOptions&) override {
+                                              const EmitOptions&) override {
         selected_output = output;
         return {};
     }
@@ -21,7 +21,7 @@ class FakeBackend : public CodegenBackend {
 TEST(CodegenApi, PassesOutputPathToBackend) {
     HIRProgram program;
     FakeBackend backend;
-    auto result = backend.generate(program, "out", CodegenOptions());
+    auto result = backend.generate(program, "out", EmitOptions());
 
     EXPECT_TRUE(result.has_value());
     EXPECT_EQ(backend.selected_output, "out");

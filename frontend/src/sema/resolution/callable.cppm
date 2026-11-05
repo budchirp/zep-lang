@@ -14,18 +14,23 @@ export module zep.frontend.sema.resolution.callable;
 
 import zep.common.context;
 import zep.common.source.span;
+import zep.common.state;
 import zep.frontend.node;
 import zep.frontend.sema.context;
-import zep.frontend.sema.env;
-import zep.frontend.sema.constant.evaluator;
+import zep.frontend.sema.scopes.environment;
+import zep.frontend.sema.constants.evaluator;
 import zep.frontend.kind;
-import zep.frontend.sema.lifetime;
-import zep.frontend.sema.facade;
+import zep.frontend.sema.expression.values;
+import zep.frontend.sema.resolution.facades;
+import zep.frontend.sema.types.compatibility;
 import zep.frontend.sema.expression.generic;
-import zep.frontend.sema.scope;
-import zep.frontend.sema.type;
+import zep.frontend.sema.symbols;
+import zep.frontend.sema.scopes.scope;
+import zep.frontend.sema.types;
 import zep.frontend.sema.expression.coercion;
-import zep.frontend.sema.type_resolver;
+import zep.frontend.sema.types.resolver;
+import zep.frontend.sema.resolution.arguments;
+import zep.frontend.sema.generics.environment;
 
 export class ResolvedCallable {
   public:
@@ -44,7 +49,7 @@ export class MemberResolver {
     Context& context;
     SemaContext& sema;
     TypeResolver& resolver;
-    const FacadeResolver& facades;
+    const Facades& facades;
     const NominalType* enclosing_type;
 
     void resolve_scope_member(MemberExpression& node) {
@@ -53,7 +58,7 @@ export class MemberResolver {
         if (const auto* type_symbol = scope->find_exported_type(node.member);
             type_symbol != nullptr) {
             node.type = type_symbol->type;
-            node.scope = type_symbol->member_scope;
+            node.scope = Scope::members(type_symbol->type);
             return;
         }
 
@@ -68,7 +73,7 @@ export class MemberResolver {
     }
 
     void resolve_facade_member(MemberExpression& node, const Type* value_type) {
-        auto* facade_scope = facades.resolve_scope(value_type);
+        auto* facade_scope = facades.scope(value_type);
         if (facade_scope == nullptr) {
             context.diagnostics.add_error(node.span,
                                           "cannot access member of non-struct/enum type '" +
@@ -77,7 +82,7 @@ export class MemberResolver {
         }
 
         if (node.member == "value") {
-            node.type = facades.resolve_value(value_type);
+            node.type = facades.value(value_type);
             return;
         }
 
@@ -161,13 +166,19 @@ export class MemberResolver {
 
   public:
     explicit MemberResolver(Context& context, SemaContext& sema, TypeResolver& resolver,
-                            const FacadeResolver& facades, const NominalType* enclosing_type)
+                            const Facades& facades, const NominalType* enclosing_type)
         : context(context), sema(sema), resolver(resolver), facades(facades),
           enclosing_type(enclosing_type) {}
 
     void apply_parent_substitutions(const std::string& parent, const Type* actual_parent_type) {
         if (parent.empty() || actual_parent_type == nullptr) {
             return;
+        }
+
+        if (actual_parent_type->as_nominal() == nullptr) {
+            if (const auto* wrapper = facades.wrapper(actual_parent_type); wrapper != nullptr) {
+                actual_parent_type = wrapper;
+            }
         }
 
         const auto* declared_nominal = actual_parent_type->as_nominal();
@@ -216,7 +227,7 @@ export class MemberResolver {
         apply_parent_substitutions(node.parent, parent_type);
 
         node.function_symbol = candidates.front();
-        node.type = resolver.resolve_type(node.function_symbol->function_type);
+        node.type = resolver.resolve_type(node.function_symbol->type);
     }
 
     bool resolve_static_method(QualifiedAccessExpression& node, const Type* parent_type,
@@ -321,28 +332,7 @@ export class MemberResolver {
             return nullptr;
         }
 
-        if (nominal->member_scope != nullptr) {
-            return static_cast<Scope*>(nominal->member_scope);
-        }
-
-        if (nominal->definition != nullptr && nominal->definition != nominal &&
-            nominal->definition->member_scope != nullptr) {
-            return static_cast<Scope*>(nominal->definition->member_scope);
-        }
-
-        if (const auto* symbol = sema.env.current_scope->lookup_type(nominal->name);
-            symbol != nullptr && symbol->member_scope != nullptr) {
-            return symbol->member_scope;
-        }
-
-        if (sema.env.root_scope != nullptr) {
-            if (const auto* root_symbol = sema.env.root_scope->lookup_type(nominal->name);
-                root_symbol != nullptr && root_symbol->member_scope != nullptr) {
-                return root_symbol->member_scope;
-            }
-        }
-
-        return nullptr;
+        return Scope::members(nominal);
     }
 
     const Type* resolve_nominal_type(const std::string& parent,
@@ -428,8 +418,27 @@ export class MemberResolver {
             effective_receiver != nullptr ? effective_receiver->as_nominal() : nullptr;
         if (nominal != nullptr) {
             auto* scope = resolve_nominal_scope(effective_receiver);
-            const auto* overloads =
+            auto* overloads =
                 scope != nullptr ? scope->find_local_function_overloads(node.member) : nullptr;
+
+            while (overloads == nullptr) {
+                const auto* structure = nominal->as<StructType>();
+
+                if (structure == nullptr || structure->base_type == nullptr) {
+                    break;
+                }
+
+                const auto* base = resolver.resolve_type(structure->base_type);
+                nominal = base != nullptr ? base->as_nominal() : nullptr;
+
+                if (nominal == nullptr) {
+                    break;
+                }
+
+                scope = resolve_nominal_scope(nominal);
+                overloads = scope != nullptr ? scope->find_local_function_overloads(node.member) : nullptr;
+            }
+
             if (overloads == nullptr) {
                 return callables;
             }
@@ -437,23 +446,19 @@ export class MemberResolver {
             callables.reserve(overloads->size());
             for (auto* symbol : *overloads) {
                 if (symbol == nullptr ||
-                    (!symbol->is_extension &&
+                    (!symbol->extension() &&
                      !is_visible(symbol->visibility, enclosing_type, nominal))) {
                     continue;
                 }
 
-                const auto kind = symbol->callable_kind;
                 if (receiver_is_type) {
-                    if (kind == FunctionSymbol::Kind::Type::StaticMethod ||
-                        kind == FunctionSymbol::Kind::Type::Constructor ||
-                        kind == FunctionSymbol::Kind::Type::CopyConstructor) {
+                    if (symbol->static_method() || symbol->constructor()) {
                         callables.emplace_back(symbol, nullptr, nominal->name);
                     }
                     continue;
                 }
 
-                if (kind == FunctionSymbol::Kind::Type::InstanceMethod ||
-                    kind == FunctionSymbol::Kind::Type::Destructor) {
+                if (symbol->instance()) {
                     callables.emplace_back(symbol, receiver, nominal->name);
                 }
             }
@@ -461,14 +466,14 @@ export class MemberResolver {
             return callables;
         }
 
-        auto* scope = facades.resolve_scope(receiver_type);
+        auto* scope = facades.scope(receiver_type);
         const auto* overloads =
             scope != nullptr ? scope->find_local_function_overloads(node.member) : nullptr;
         if (overloads == nullptr) {
             return callables;
         }
 
-        const auto* facade = facades.resolve_facade(receiver_type);
+        const auto* facade = facades.wrapper(receiver_type);
         callables.reserve(overloads->size());
         for (auto* symbol : *overloads) {
             if (symbol != nullptr && symbol->visibility == Visibility::Type::Public) {
@@ -498,7 +503,7 @@ export class MemberResolver {
         callables.reserve(overloads->size());
         for (auto* symbol : *overloads) {
             if (symbol != nullptr &&
-                (symbol->is_extension ||
+                (symbol->extension() ||
                  is_visible(symbol->visibility, enclosing_type,
                             parent_type->as_nominal()))) {
                 callables.emplace_back(symbol, nullptr, node.parent);
@@ -569,36 +574,36 @@ export class MemberResolver {
 
 export class CallResolver {
   private:
+    class Match {
+      public:
+        ResolvedCallable candidate;
+        int score;
+        std::vector<Argument*> arguments;
+        std::vector<GenericArgument*> generics;
+        const FunctionType* signature;
+        CompileTimeEnvironment bindings;
+
+        Match(ResolvedCallable candidate, int score, std::vector<Argument*> arguments,
+              std::vector<GenericArgument*> generics, const FunctionType* signature,
+              CompileTimeEnvironment bindings)
+            : candidate(std::move(candidate)), score(score), arguments(std::move(arguments)),
+              generics(std::move(generics)), signature(signature), bindings(std::move(bindings)) {}
+    };
+
     Context& context;
     SemaContext& sema;
     TypeResolver& resolver;
-    FacadeResolver facades;
+    Facades facades;
+    Compatibility compatibility;
     MemberResolver member_resolver;
     Visitor<void>& visitor;
     const NominalType* enclosing_type;
     const Type*& target_type;
 
-    std::vector<GenericArgument*>
-    infer_from_arguments(const std::vector<GenericParameterType>& parameters,
-                         std::span<const ParameterType> declared_parameters,
-                         const std::vector<Argument*>& arguments, Span span,
-                         bool emit_errors = false) {
-        GenericInference inference(context, sema, resolver, parameters);
-
-        const auto count = std::min(declared_parameters.size(), arguments.size());
-        for (std::size_t i = 0; i < count; ++i) {
-            if (arguments[i]->value != nullptr && arguments[i]->value->type != nullptr) {
-                inference.match(declared_parameters[i].type, arguments[i]->value->type);
-            }
-        }
-
-        return inference.arguments(span, emit_errors);
-    }
-
     std::vector<GenericParameterType>
     get_call_generic_parameters(const ResolvedCallable& candidate) const {
         const auto* function_type =
-            candidate.symbol != nullptr ? candidate.symbol->function_type : nullptr;
+            candidate.symbol != nullptr ? candidate.symbol->signature() : nullptr;
         if (function_type == nullptr) {
             return {};
         }
@@ -645,7 +650,7 @@ export class CallResolver {
         candidates.reserve(overloads.size());
 
         for (auto* symbol : overloads) {
-            if (symbol != nullptr && symbol->function_type != nullptr) {
+            if (symbol != nullptr && symbol->signature() != nullptr) {
                 candidates.emplace_back(symbol);
             }
         }
@@ -656,14 +661,13 @@ export class CallResolver {
                 const auto* overloads = type_scope->find_local_function_overloads(name);
                 if (overloads != nullptr) {
                     for (auto* symbol : *overloads) {
-                        if (symbol == nullptr || symbol->function_type == nullptr ||
+                        if (symbol == nullptr || symbol->signature() == nullptr ||
                             !MemberResolver::is_visible(symbol->visibility, enclosing_type,
                                                         enclosing_type)) {
                             continue;
                         }
 
-                        if (symbol->callable_kind ==
-                            FunctionSymbol::Kind::Type::InstanceMethod) {
+                        if (symbol->instance()) {
                             if (sema.env.current_scope->lookup_var("self") != nullptr) {
                                 auto* self_ident =
                                     sema.nodes.create<IdentifierExpression>(span, "self");
@@ -688,7 +692,7 @@ export class CallResolver {
                     const auto* overloads = type_scope->find_local_function_overloads(name);
                     if (overloads != nullptr) {
                         for (auto* symbol : *overloads) {
-                            if (symbol != nullptr && symbol->function_type != nullptr &&
+                            if (symbol != nullptr && symbol->signature() != nullptr &&
                                 MemberResolver::is_visible(
                                     symbol->visibility, enclosing_type,
                                     type_symbol->type->as_nominal())) {
@@ -701,106 +705,6 @@ export class CallResolver {
         }
 
         return candidates;
-    }
-
-    std::optional<std::vector<Argument*>>
-    normalize_arguments(const std::vector<Argument*>& arguments,
-                        std::span<const ParameterType> parameters, Span span, bool is_variadic,
-                        bool emit_errors) {
-        if (arguments.size() < parameters.size() && !is_variadic) {
-            if (emit_errors) {
-                context.diagnostics.add_error(
-                    span, "too few arguments: expected " + std::to_string(parameters.size()) +
-                              ", got " + std::to_string(arguments.size()));
-            }
-            return std::nullopt;
-        }
-
-        if (arguments.size() > parameters.size() && !is_variadic) {
-            if (emit_errors) {
-                context.diagnostics.add_error(
-                    span, "too many arguments: expected " + std::to_string(parameters.size()) +
-                              ", got " + std::to_string(arguments.size()));
-            }
-            return std::nullopt;
-        }
-
-        std::vector<Argument*> normalized(parameters.size(), nullptr);
-        std::unordered_set<std::string> used_names;
-        used_names.reserve(arguments.size());
-
-        bool seen_named = false;
-        bool valid = true;
-        std::size_t positional_index = 0;
-
-        for (auto* argument : arguments) {
-            if (argument->name.empty()) {
-                if (seen_named) {
-                    if (emit_errors) {
-                        context.diagnostics.add_error(
-                            argument->span, "positional argument cannot follow named argument");
-                    }
-                    valid = false;
-                    continue;
-                }
-
-                if (positional_index < parameters.size()) {
-                    normalized[positional_index] = argument;
-                    used_names.insert(parameters[positional_index].name);
-                    ++positional_index;
-                } else if (is_variadic) {
-                    normalized.push_back(argument);
-                }
-                continue;
-            }
-
-            seen_named = true;
-
-            std::size_t parameter_index = 0;
-            for (; parameter_index < parameters.size(); ++parameter_index) {
-                if (parameters[parameter_index].name == argument->name) {
-                    break;
-                }
-            }
-
-            if (parameter_index == parameters.size()) {
-                if (emit_errors) {
-                    context.diagnostics.add_error(argument->span,
-                                                  "unknown parameter '" + argument->name + "'");
-                }
-                valid = false;
-                continue;
-            }
-
-            if (!used_names.insert(argument->name).second) {
-                if (emit_errors) {
-                    context.diagnostics.add_error(argument->span,
-                                                  "duplicate argument '" + argument->name + "'");
-                }
-                valid = false;
-                continue;
-            }
-
-            normalized[parameter_index] = argument;
-        }
-
-        for (std::size_t i = 0; i < parameters.size(); ++i) {
-            if (normalized[i] != nullptr) {
-                continue;
-            }
-
-            if (emit_errors) {
-                context.diagnostics.add_error(span,
-                                              "missing argument '" + parameters[i].name + "'");
-            }
-            valid = false;
-        }
-
-        if (!valid) {
-            return std::nullopt;
-        }
-
-        return normalized;
     }
 
     void apply_candidate_parent_bindings(const ResolvedCallable& candidate) {
@@ -823,24 +727,24 @@ export class CallResolver {
         }
     }
 
-    int score_candidate(const ResolvedCallable& candidate, const std::vector<Argument*>& arguments,
+    std::optional<Match> match_candidate(const ResolvedCallable& candidate, const std::vector<Argument*>& arguments,
                         std::vector<GenericArgument*>& generic_arguments, Span span) {
-        if (candidate.symbol == nullptr || candidate.symbol->function_type == nullptr) {
-            return -1;
+        if (candidate.symbol == nullptr || candidate.symbol->signature() == nullptr) {
+            return std::nullopt;
         }
 
-        const auto* func_type = candidate.symbol->function_type;
-        std::span<const ParameterType> effective_parameters(func_type->parameters);
+        const auto* function_type = candidate.symbol->signature();
+        std::span<const ParameterType> effective_parameters(function_type->parameters);
 
         if (candidate.receiver != nullptr && !effective_parameters.empty() &&
             effective_parameters.front().name == "self") {
             effective_parameters = effective_parameters.subspan(1);
         }
 
-        auto normalized_args =
-            normalize_arguments(arguments, effective_parameters, span, func_type->variadic, false);
-        if (!normalized_args.has_value()) {
-            return -1;
+        auto normalized =
+            Arguments::normalize(context, arguments, effective_parameters, span, function_type->variadic, false);
+        if (!normalized.has_value()) {
+            return std::nullopt;
         }
 
         auto scope = resolver.create_substitution_scope();
@@ -848,71 +752,80 @@ export class CallResolver {
         apply_candidate_parent_bindings(candidate);
 
         auto call_generic_parameters = get_call_generic_parameters(candidate);
+        auto call_generics = generic_arguments;
 
         if (!call_generic_parameters.empty()) {
-            auto call_generics = generic_arguments;
             if (call_generics.empty()) {
-                call_generics = infer_from_arguments(call_generic_parameters, effective_parameters,
-                                                     *normalized_args, span);
+                call_generics = Arguments::infer(context, sema, resolver, call_generic_parameters, effective_parameters,
+                                                     *normalized, span);
             }
 
             if (call_generics.size() == call_generic_parameters.size()) {
                 GenericArgumentResolver arguments_resolver(context, sema, resolver, visitor);
                 if (!arguments_resolver.apply(call_generics, call_generic_parameters, span, false)) {
-                    return -1;
+                    return std::nullopt;
                 }
             } else {
-                return -1;
+                return std::nullopt;
             }
         }
 
         int score = 0;
         if (candidate.receiver != nullptr) {
             score += 10;
+            const auto moving = Values::moving(*candidate.receiver);
+            const auto temporary = !Values::place(*candidate.receiver);
+            if (candidate.symbol->has_attribute(".move_receiver")) {
+                if (!moving && !temporary) {
+                    return std::nullopt;
+                }
+                score += 3;
+            }
         }
 
         for (std::size_t i = 0; i < effective_parameters.size(); ++i) {
-            auto* arg = (*normalized_args)[i];
-            if (arg == nullptr || arg->value == nullptr || arg->value->type == nullptr) {
+            auto* argument = (*normalized)[i];
+            if (argument == nullptr || argument->value == nullptr || argument->value->type == nullptr) {
                 continue;
             }
 
-            const auto* param_type = resolver.resolve_type(effective_parameters[i].type);
-            const auto* arg_type = arg->value->type;
+            const auto* parameter_type = resolver.resolve_type(effective_parameters[i].type);
+            const auto* argument_type = argument->value->type;
 
-            if (param_type == nullptr || arg_type == nullptr) {
-                return -1;
+            if (parameter_type == nullptr || argument_type == nullptr) {
+                return std::nullopt;
             }
 
-            if (param_type->accepts(arg_type)) {
+            const auto* reference = parameter_type->as<PointerType>();
+            const auto moving = Values::moving(*argument->value);
+            if (reference != nullptr && reference->reference_kind == PointerType::ReferenceKind::Type::Move) {
+                if (!moving && Values::place(*argument->value)) {
+                    return std::nullopt;
+                }
                 score += 2;
-            } else if (param_type->is<IntegerType>() && arg_type->is<IntegerType>()) {
+            }
+
+            if (parameter_type->accepts(argument_type)) {
+                score += 2;
+            } else if (parameter_type->is<IntegerType>() && argument_type->is<IntegerType>()) {
                 score += 1;
-            } else if (param_type->is<FloatType>() && arg_type->is<FloatType>()) {
+            } else if (parameter_type->is<FloatType>() && argument_type->is<FloatType>()) {
                 score += 1;
-            } else if (facades.accepts(param_type, arg_type)) {
+            } else if (compatibility.accepts(parameter_type, argument_type)) {
                 score += 1;
-            } else if (TypeCoercion::classify(resolver, param_type, arg_type) !=
+            } else if (TypeCoercion::classify(resolver, parameter_type, argument_type) !=
                        Coercion::Type::None) {
                 score += 1;
             } else {
-                return -1;
+                return std::nullopt;
             }
         }
 
-        return score;
+        return Match(candidate, score, std::move(*normalized), std::move(call_generics),
+                     resolver.resolve_type(function_type)->as<FunctionType>(), resolver.substitutions);
     }
 
-    void typecheck_and_coerce_arguments(CallExpression& node, const FunctionType& function_type) {
-        auto normalized = normalize_arguments(node.arguments,
-                                              std::span<const ParameterType>(function_type.parameters),
-                                              node.span, function_type.variadic, true);
-        if (!normalized.has_value()) {
-            return;
-        }
-
-        node.arguments = std::move(*normalized);
-
+    void bind_arguments(CallExpression& node, const FunctionType& function_type) {
         for (std::size_t i = 0; i < node.arguments.size(); ++i) {
             auto* argument = node.arguments[i];
             if (argument == nullptr || argument->value == nullptr) {
@@ -928,24 +841,48 @@ export class CallResolver {
             if (expected_type != nullptr) {
                 target_type = expected_type;
             }
-            visitor.visit_expression(*argument->value);
+            auto* receiver_borrow = i == 0 && !function_type.parameters.empty() && function_type.parameters[0].name == "self"
+                ? argument->value->as<UnaryExpression>() : nullptr;
+            const auto temporary_receiver = receiver_borrow != nullptr && !Values::place(*receiver_borrow->operand);
+            if (temporary_receiver && receiver_borrow->op == UnaryOperator::Type::AddressOfMut) {
+                visitor.visit_expression(*receiver_borrow->operand);
+                receiver_borrow->type = expected_type;
+            } else {
+                visitor.visit_expression(*argument->value);
+            }
             target_type = saved_target;
 
             const auto* actual_type = argument->value->type;
             if (expected_type != nullptr && actual_type != nullptr) {
-                if (!facades.accepts(expected_type, actual_type)) {
+                if (!compatibility.accepts(expected_type, actual_type)) {
                     context.diagnostics.add_error(argument->span,
                                                   "type mismatch in call argument: expected '" +
                                                       expected_type->to_string() + "', got '" +
                                                       actual_type->to_string() + "'");
                 }
 
+                sema.binding.reference(*argument->value, expected_type, sema.env, context.diagnostics);
                 argument->value =
                     TypeCoercion::apply(sema, resolver, argument->value, expected_type);
                 argument->value =
-                    sema.lifetime.copy_construct(argument->value, expected_type, resolver);
+                    sema.binding.construct(argument->value, expected_type, resolver, context.diagnostics);
             }
         }
+    }
+
+    void resolve_indirect(CallExpression& node, const FunctionType& signature) {
+        auto normalized = Arguments::normalize(context, node.arguments, signature.parameters,
+                                               node.span, signature.variadic, true);
+
+        if (!normalized.has_value()) {
+            return;
+        }
+
+        node.arguments = std::move(*normalized);
+        bind_arguments(node, signature);
+        const auto* resolved = resolver.resolve_type(&signature)->as<FunctionType>();
+        node.resolved_target = std::make_unique<IndirectCallTarget>(*resolved);
+        node.type = resolved->return_type;
     }
 
     static bool is_receiver_argument(const Argument& argument, Expression* receiver) {
@@ -1014,7 +951,7 @@ export class CallResolver {
                           Visitor<void>& visitor, const NominalType* enclosing_type,
                           const Type*& target_type)
         : context(context), sema(sema), resolver(resolver),
-          facades(sema.facades, sema.types, resolver),
+          facades(sema.facades, resolver), compatibility(sema.types, resolver, facades),
           member_resolver(context, sema, resolver, facades, enclosing_type), visitor(visitor),
           enclosing_type(enclosing_type), target_type(target_type) {}
 
@@ -1028,17 +965,14 @@ export class CallResolver {
             if (var_symbol != nullptr && var_symbol->type != nullptr &&
                 var_symbol->type->is<FunctionType>()) {
                 visitor.visit_expression(*node.callee);
-                const auto* func_type = var_symbol->type->as<FunctionType>();
-                typecheck_and_coerce_arguments(node, *func_type);
-                node.resolved_target = std::make_unique<IndirectCallTarget>(*func_type);
-                node.type = resolver.resolve_type(func_type->return_type);
+                resolve_indirect(node, *var_symbol->type->as<FunctionType>());
                 return;
             }
 
             candidates = collect_direct_candidates(ident->name, node.span);
-        } else if (auto* member_expr = node.callee->as<MemberExpression>()) {
-            visitor.visit_expression(*member_expr->value);
-            candidates = member_resolver.resolve_callables(*member_expr);
+        } else if (auto* member = node.callee->as<MemberExpression>(); member != nullptr) {
+            visitor.visit_expression(*member->value);
+            candidates = member_resolver.resolve_callables(*member);
         } else if (auto* qualified = node.callee->as<QualifiedAccessExpression>()) {
             candidates = member_resolver.resolve_callables(*qualified);
         } else {
@@ -1049,9 +983,7 @@ export class CallResolver {
                 !sema.env.current_scope->lookup_function_overloads(identifier->name).empty();
             if (!named_function && node.callee->type != nullptr &&
                 node.callee->type->is<FunctionType>()) {
-                const auto* func_type = node.callee->type->as<FunctionType>();
-                typecheck_and_coerce_arguments(node, *func_type);
-                node.type = resolver.resolve_type(func_type->return_type);
+                resolve_indirect(node, *node.callee->type->as<FunctionType>());
                 return;
             }
         }
@@ -1065,14 +997,14 @@ export class CallResolver {
         std::optional<std::vector<Argument*>> contextual_arguments;
         if (candidates.size() == 1 && get_call_generic_parameters(candidates.front()).empty()) {
             const auto& candidate = candidates.front();
-            contextual_parameters = candidate.symbol->function_type->parameters;
+            contextual_parameters = candidate.symbol->signature()->parameters;
             if (candidate.receiver != nullptr && !contextual_parameters.empty() &&
                 contextual_parameters.front().name == "self") {
                 contextual_parameters = contextual_parameters.subspan(1);
             }
-            contextual_arguments = normalize_arguments(
+            contextual_arguments = Arguments::normalize(context,
                 node.arguments, contextual_parameters, node.span,
-                candidate.symbol->function_type->variadic, false);
+                candidate.symbol->signature()->variadic, false);
         }
 
         for (auto* argument : node.arguments) {
@@ -1096,39 +1028,41 @@ export class CallResolver {
             target_type = saved_target;
         }
 
-        ResolvedCallable best_candidate(nullptr);
-        int best_score = -1;
-        bool ambiguous = false;
+        std::optional<Match> best;
+        auto ambiguous = false;
 
         for (const auto& candidate : candidates) {
-            int score =
-                score_candidate(candidate, node.arguments, node.generic_arguments, node.span);
-            if (score > best_score) {
-                best_score = score;
-                best_candidate = candidate;
+            auto match = match_candidate(candidate, node.arguments, node.generic_arguments, node.span);
+
+            if (!match.has_value()) {
+                continue;
+            }
+
+            if (!best.has_value() || match->score > best->score) {
+                best = std::move(match);
                 ambiguous = false;
-            } else if (score == best_score && score >= 0) {
+            } else if (match->score == best->score) {
                 ambiguous = true;
             }
         }
 
-        if (best_score < 0 || best_candidate.symbol == nullptr) {
+        if (!best.has_value()) {
             if (candidates.size() == 1 && node.generic_arguments.empty()) {
                 const auto& candidate = candidates.front();
                 auto scope = resolver.create_substitution_scope();
                 apply_candidate_parent_bindings(candidate);
                 const auto parameters = get_call_generic_parameters(candidate);
                 std::span<const ParameterType> effective_parameters(
-                    candidate.symbol->function_type->parameters);
+                    candidate.symbol->signature()->parameters);
                 if (candidate.receiver != nullptr && !effective_parameters.empty() &&
                     effective_parameters.front().name == "self") {
                     effective_parameters = effective_parameters.subspan(1);
                 }
-                auto normalized = normalize_arguments(
+                auto normalized = Arguments::normalize(context,
                     node.arguments, effective_parameters, node.span,
-                    candidate.symbol->function_type->variadic, false);
+                    candidate.symbol->signature()->variadic, false);
                 if (!parameters.empty() && normalized.has_value() &&
-                    infer_from_arguments(parameters, effective_parameters, *normalized,
+                    Arguments::infer(context, sema, resolver, parameters, effective_parameters, *normalized,
                                          node.span, true).empty()) {
                     return;
                 }
@@ -1143,59 +1077,37 @@ export class CallResolver {
             return;
         }
 
+        const auto& best_candidate = best->candidate;
+
+        if (sema.lifecycle.deleted(best_candidate.symbol)) {
+            context.diagnostics.add_error(node.span, "use of deleted function '" + best_candidate.symbol->name + "'");
+            return;
+        }
+
         if (best_candidate.receiver != nullptr) {
             if (auto* ident = node.callee->as<IdentifierExpression>()) {
-                auto* member_expr = sema.nodes.create<MemberExpression>(
+                auto* member = sema.nodes.create<MemberExpression>(
                     node.span, best_candidate.receiver, ident->name);
-                member_expr->type = best_candidate.symbol->function_type;
-                node.callee = member_expr;
+                member->type = best_candidate.symbol->type;
+                node.callee = member;
             }
         }
 
-        node.resolved_target = std::make_unique<DirectCallTarget>(*best_candidate.symbol);
-        auto* func_type = best_candidate.symbol->function_type;
+        node.resolved_target = std::make_unique<DirectCallTarget>(*best_candidate.symbol, best->signature);
+        const auto* function_type = best->signature;
+        node.arguments = std::move(best->arguments);
+        node.generic_arguments = std::move(best->generics);
 
-        auto scope = resolver.create_substitution_scope();
-
-        apply_candidate_parent_bindings(best_candidate);
-
-        auto call_generic_parameters = get_call_generic_parameters(best_candidate);
-
-        if (!call_generic_parameters.empty()) {
-            if (node.generic_arguments.empty()) {
-                std::span<const ParameterType> effective_parameters(func_type->parameters);
-                if (best_candidate.receiver != nullptr && !effective_parameters.empty() &&
-                    effective_parameters.front().name == "self") {
-                    effective_parameters = effective_parameters.subspan(1);
-                }
-
-                auto normalized = normalize_arguments(node.arguments, effective_parameters,
-                                                      node.span, func_type->variadic, true);
-                if (!normalized.has_value()) {
-                    return;
-                }
-                auto inferred = infer_from_arguments(call_generic_parameters, effective_parameters,
-                                                      *normalized, node.span, true);
-                if (!inferred.empty()) {
-                    node.generic_arguments = std::move(inferred);
-                } else {
-                    return;
-                }
-            }
-
-            GenericArgumentResolver arguments_resolver(context, sema, resolver, visitor);
-            arguments_resolver.apply(node.generic_arguments, call_generic_parameters, node.span,
-                                     true);
-        }
+        StateGuard substitution_guard(resolver.substitutions, std::move(best->bindings));
 
         if (best_candidate.receiver != nullptr) {
             node.arguments =
-                build_call_arguments(node.arguments, best_candidate.receiver, func_type);
+                build_call_arguments(node.arguments, best_candidate.receiver, function_type);
         }
 
-        typecheck_and_coerce_arguments(node, *func_type);
+        bind_arguments(node, *function_type);
 
-        const auto* resolved_return = resolver.resolve_type(func_type->return_type);
+        const auto* resolved_return = resolver.resolve_type(function_type->return_type);
         node.type = resolved_return != nullptr ? resolved_return
                                                : sema.primitives.entries.at("void");
     }

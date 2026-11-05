@@ -15,6 +15,7 @@ import zep.workspace.module_path;
 import zep.workspace.package;
 import zep.workspace.package.graph;
 import zep.workspace.toolchain;
+import zep.common.paths;
 
 export class Project {
   public:
@@ -29,8 +30,8 @@ export class Project {
     std::optional<ModulePath> module(const std::filesystem::path& source_path) const {
         std::error_code error_code;
         auto canonical_source_directory =
-            std::filesystem::weakly_canonical(root_package->source_directory, error_code);
-        auto canonical_source = std::filesystem::weakly_canonical(source_path, error_code);
+            Paths::canonical(root_package->source_directory, error_code);
+        auto canonical_source = Paths::canonical(source_path, error_code);
 
         auto relative = canonical_source.lexically_relative(canonical_source_directory);
         if (relative.empty() || relative.string().starts_with("..")) {

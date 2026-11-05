@@ -1,4 +1,3 @@
-import std.ffi.c_snprintf
 import std.text.string.String
 import std.net.socket.stream.TcpStream
 import std.net.socket.error.SocketError
@@ -83,13 +82,19 @@ public struct Response {
         }
 
         fn send_to(stream: *mut TcpStream) mut -> Result<i32, SocketError> {
-            var mut header: u8[512]
             var body_length = body.length()
-            var header_length = c_snprintf(
-                &mut header, 512 as i64,
-                "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %lld\r\nConnection: close\r\n\r\n",
-                status.value, status.text(), content_type.as_cstr(), body_length as i64)
-            var header_result = stream->write_all(&mut header, header_length as i64)
+            var mut header = String("HTTP/1.1 ")
+            var status_text = String::from(status.value)
+            header.append(&status_text)
+            header.append(" ")
+            header.append(status.text())
+            header.append("\r\nContent-Type: ")
+            header.append(&content_type)
+            header.append("\r\nContent-Length: ")
+            var length_text = String::from(body_length)
+            header.append(&length_text)
+            header.append("\r\nConnection: close\r\n\r\n")
+            var header_result = stream->write_all(header.as_cstr(), header.length())
             if (header_result.is_error()) {
                 return Result<i32, SocketError>::Error { error: header_result.unwrap_error() }
             }

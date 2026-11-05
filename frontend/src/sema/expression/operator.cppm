@@ -7,8 +7,8 @@ export module zep.frontend.sema.expression.operator_checker;
 import zep.common.context;
 import zep.frontend.node;
 import zep.frontend.sema.context;
-import zep.frontend.sema.type;
-import zep.frontend.sema.type_resolver;
+import zep.frontend.sema.types;
+import zep.frontend.sema.types.resolver;
 
 export class OperatorChecker {
   private:

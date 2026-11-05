@@ -223,7 +223,7 @@ public fn main() -> i32 {
 void write_stdlib_format_fixture(CliTestHarness& harness) {
     write_project_config(harness, "stdlib_format");
     harness.workspace.write("src/main.zep", R"zep(import std.io.format.FormatArguments
-import std.io.format.sprint
+import std.io.format.format
 import std.io.eprint
 import std.io.print
 import std.text.string.String
@@ -239,7 +239,7 @@ public fn main() -> i32 {
     arguments.add(true)
     arguments.add('!')
 
-    var formatted = sprint("{} {} {} {} {} {} {{ok}}", &arguments)
+    var formatted = format("{} {} {} {} {} {} {{ok}}", &arguments)
     if (formatted.is_error()) {
         return 1
     }
@@ -249,7 +249,7 @@ public fn main() -> i32 {
     }
 
     var empty_arguments = FormatArguments()
-    var missing_argument = sprint("{}", &empty_arguments)
+    var missing_argument = format("{}", &empty_arguments)
     if (!missing_argument.is_error()) {
         return 3
     }
@@ -261,7 +261,7 @@ public fn main() -> i32 {
 
     arguments.clear()
     arguments.add(1)
-    var extra_argument = sprint("plain", &arguments)
+    var extra_argument = format("plain", &arguments)
     if (!extra_argument.is_error()) {
         return 5
     }
@@ -271,7 +271,7 @@ public fn main() -> i32 {
         return 6
     }
 
-    var unmatched_opening = sprint("{", &empty_arguments)
+    var unmatched_opening = format("{", &empty_arguments)
     if (!unmatched_opening.is_error()) {
         return 7
     }
@@ -281,7 +281,7 @@ public fn main() -> i32 {
         return 8
     }
 
-    var unmatched_closing = sprint("}", &empty_arguments)
+    var unmatched_closing = format("}", &empty_arguments)
     if (!unmatched_closing.is_error()) {
         return 9
     }
@@ -291,7 +291,7 @@ public fn main() -> i32 {
         return 10
     }
 
-    var literal = sprint("literal")
+    var literal = format("literal")
     if (literal.is_error() || !literal.unwrap().equals("literal")) {
         return 11
     }

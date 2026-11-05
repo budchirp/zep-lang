@@ -12,20 +12,21 @@ import zep.common.context;
 import zep.common.source.span;
 import zep.frontend.node;
 import zep.frontend.sema.context;
-import zep.frontend.sema.constant.evaluator;
+import zep.frontend.sema.constants.evaluator;
 import zep.frontend.kind;
-import zep.frontend.sema.lifetime;
-import zep.frontend.sema.facade;
+import zep.frontend.sema.resolution.facades;
+import zep.frontend.sema.types.compatibility;
 import zep.frontend.sema.expression.generic;
-import zep.frontend.sema.type;
-import zep.frontend.sema.type_resolver;
+import zep.frontend.sema.types;
+import zep.frontend.sema.types.resolver;
 
 export class LiteralChecker {
   private:
     Context& context;
     SemaContext& sema;
     TypeResolver& resolver;
-    FacadeResolver facades;
+    Facades facades;
+    Compatibility compatibility;
     Visitor<void>& visitor;
     const Type*& target_type;
 
@@ -128,7 +129,7 @@ export class LiteralChecker {
             const auto* actual_type = literal_field->value->type;
 
             if (expected_type != nullptr && actual_type != nullptr &&
-                !facades.accepts(expected_type, actual_type)) {
+                !compatibility.accepts(expected_type, actual_type)) {
                 context.diagnostics.add_error(
                     literal_field->span,
                     "field '" + literal_field->name + "' type mismatch: expected '" +
@@ -164,7 +165,7 @@ export class LiteralChecker {
             visitor.visit_expression(*literal_field->value);
             if (declared != nullptr) {
                 literal_field->value =
-                    sema.lifetime.copy_construct(literal_field->value, declared->type, resolver);
+                    sema.binding.construct(literal_field->value, declared->type, resolver, context.diagnostics);
             }
             target_type = saved_target_type;
         }
@@ -174,7 +175,7 @@ export class LiteralChecker {
     LiteralChecker(Context& context, SemaContext& sema, TypeResolver& resolver,
                    Visitor<void>& visitor, const Type*& target_type)
         : context(context), sema(sema), resolver(resolver),
-          facades(sema.facades, sema.types, resolver),
+          facades(sema.facades, resolver), compatibility(sema.types, resolver, facades),
           visitor(visitor), target_type(target_type) {}
 
     void resolve_struct_literal(StructLiteralExpression& node,

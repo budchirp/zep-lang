@@ -1,4 +1,5 @@
 import std.io.panic.panic
+import std.memory.Memory
 
 public enum Result<T, E> {
     Ok { value: T }
@@ -28,6 +29,13 @@ public enum Result<T, E> {
             }
         }
 
+        fn unwrap() move -> T {
+            return when (*self) {
+                Result::Ok { value } -> Memory::move(value),
+                else -> panic("called Result.unwrap on an Error value"),
+            }
+        }
+
         fn expect(message: cstr) -> T {
             return when (*self) {
                 Result::Ok { value } -> value,
@@ -43,6 +51,13 @@ public enum Result<T, E> {
                 else -> {
                     panic("called Result.unwrap_error on an Ok value")
                 },
+            }
+        }
+
+        fn unwrap_error() move -> E {
+            return when (*self) {
+                Result::Error { error } -> Memory::move(error),
+                else -> panic("called Result.unwrap_error on an Ok value"),
             }
         }
 

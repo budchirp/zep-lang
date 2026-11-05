@@ -1,10 +1,10 @@
 import std.io.format.FormatArguments
-import std.io.format.sprint
+import std.io.format.format
 import std.text.string.String
 
 public fn main() -> i32 {
     var mut arguments = FormatArguments()
-    if (!arguments.is_empty() || arguments.size() != 0 ||
+    if (!arguments.is_empty() || arguments.length() != 0 ||
         arguments.render(-1).is_some() || arguments.render(0).is_some()) {
         return 1
     }
@@ -13,12 +13,12 @@ public fn main() -> i32 {
         arguments.add(index)
     }
 
-    if (arguments.is_empty() || arguments.size() != 40 || arguments.render(40).is_some()) {
+    if (arguments.is_empty() || arguments.length() != 40 || arguments.render(40).is_some()) {
         return 2
     }
 
     for (var mut index: i32 = 0; index < 40; index = index + 1) {
-        var rendered = arguments.render(index)
+        var rendered = arguments.render(index as i64)
         if (rendered.is_none()) {
             return 3
         }
@@ -31,7 +31,7 @@ public fn main() -> i32 {
     }
 
     arguments.clear()
-    if (!arguments.is_empty() || arguments.size() != 0 || arguments.render(0).is_some()) {
+    if (!arguments.is_empty() || arguments.length() != 0 || arguments.render(0).is_some()) {
         return 4
     }
 
@@ -51,7 +51,7 @@ public fn main() -> i32 {
     arguments.add(true)
     arguments.add('Z')
 
-    var formatted = sprint("{} {} {} {} {} {} {} {} {} {} {} {} {} {}", &arguments)
+    var formatted = format("{} {} {} {} {} {} {} {} {} {} {} {} {} {}", &arguments)
     if (formatted.is_error()) {
         return 5
     }
@@ -65,7 +65,7 @@ public fn main() -> i32 {
         arguments.clear()
         arguments.add(iteration)
         var rendered = arguments.render(0)
-        if (arguments.size() != 1 || rendered.is_none()) {
+        if (arguments.length() != 1 || rendered.is_none()) {
             return 6
         }
 

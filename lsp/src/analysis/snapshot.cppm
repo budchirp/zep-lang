@@ -6,6 +6,7 @@ module;
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -24,8 +25,10 @@ import zep.compiler.unit;
 import zep.frontend.node;
 import zep.frontend.node.program;
 import zep.frontend.kind;
-import zep.frontend.sema.scope;
-import zep.frontend.sema.type;
+import zep.frontend.sema.symbols;
+import zep.frontend.sema.scopes.scope;
+import zep.frontend.sema.types;
+import zep.frontend.sema.lifecycle.operation;
 import zep.workspace.project;
 
 class IndexedModule {
@@ -46,18 +49,6 @@ export class Analysis {
     std::vector<Diagnostic> diagnostic_entries;
     std::filesystem::path analyzed_path;
     std::vector<IndexedModule> indexes;
-
-    static bool contains(Span span, Position position) {
-        if (span.start.line == 0 || position.line < span.start.line || position.line > span.end.line) {
-            return false;
-        }
-
-        if (position.line == span.start.line && position.column < span.start.column) {
-            return false;
-        }
-
-        return position.line != span.end.line || position.column <= span.end.column;
-    }
 
     static const void* identity(Node* node) {
         if (node == nullptr) {
@@ -139,8 +130,15 @@ export class Analysis {
             expression != nullptr && expression->variant_type != nullptr) {
             return expression->variant_type;
         }
-        if (auto* call = node->as<CallExpression>();
-            call != nullptr && call->resolved_target != nullptr) {
+        if (auto* call = node->as<CallExpression>(); call != nullptr) {
+            if (call->destruction != nullptr) {
+                return call->destruction->function;
+            }
+
+            if (call->resolved_target == nullptr) {
+                return nullptr;
+            }
+
             if (const auto* direct = call->resolved_target->as<DirectCallTarget>();
                 direct != nullptr) {
                 return direct->function_symbol;
@@ -235,18 +233,12 @@ export class Analysis {
 
         for (auto* candidate : index->syntax.nodes()) {
             auto* call = candidate->as<CallExpression>();
-            if (call == nullptr || call->resolved_target == nullptr ||
-                !contains(call->callee->span, position)) {
+            if (call == nullptr || !call->callee->span.contains(position)) {
                 continue;
             }
 
-            if (const auto* direct = call->resolved_target->as<DirectCallTarget>();
-                direct != nullptr) {
-                return direct->function_symbol;
-            }
-            if (const auto* interface = call->resolved_target->as<InterfaceCallTarget>();
-                interface != nullptr) {
-                return interface->method_symbol;
+            if (auto result = identity(call); result != nullptr) {
+                return result;
             }
         }
 
@@ -296,9 +288,9 @@ export class Analysis {
             }
 
             if (identifier->function_symbol != nullptr &&
-                identifier->function_symbol->function_type != nullptr) {
+                identifier->function_symbol->signature() != nullptr) {
                 return Hover("fn " + identifier->name + ": " +
-                                 identifier->function_symbol->function_type->to_string(),
+                                 identifier->function_symbol->signature()->to_string(),
                              identifier->span);
             }
 
@@ -315,9 +307,9 @@ export class Analysis {
                 }
 
                 if (const auto* function = scope->lookup_function(identifier->name);
-                    function != nullptr && function->function_type != nullptr) {
+                    function != nullptr && function->signature() != nullptr) {
                     return Hover("fn " + identifier->name + ": " +
-                                     function->function_type->to_string(),
+                                     function->signature()->to_string(),
                                  identifier->span);
                 }
 
@@ -338,8 +330,8 @@ export class Analysis {
 
         if (auto* function = node->as<FunctionDeclaration>(); function != nullptr) {
             auto type = function->function_symbol != nullptr &&
-                                function->function_symbol->function_type != nullptr
-                            ? function->function_symbol->function_type->to_string()
+                                function->function_symbol->signature() != nullptr
+                            ? function->function_symbol->signature()->to_string()
                             : "fn " + function->prototype->name;
             return Hover("fn " + function->prototype->name + ": " + type, function->span);
         }
@@ -414,7 +406,7 @@ export class Analysis {
             return std::nullopt;
         }
         for (auto* node : index->syntax.nodes()) {
-            if (is_declaration(node) && contains(selection(node), position)) {
+            if (is_declaration(node) && selection(node).contains(position)) {
                 if (auto result = describe(node, scope()); result.has_value()) {
                     return result;
                 }
@@ -423,9 +415,12 @@ export class Analysis {
         return describe(index->syntax.node(position), scope());
     }
 
-    std::vector<Completion> complete(Position position) const {
+    std::vector<Completion> complete(Position position,
+                                      std::optional<std::string_view> original = std::nullopt) const {
+        const auto text = original.value_or(content);
+
         if (project.has_value()) {
-            if (auto imports = ModuleCatalog::complete(*project, content, position, analyzed_path);
+            if (auto imports = ModuleCatalog::complete(*project, text, position, analyzed_path);
                 imports.has_value()) {
                 return std::move(*imports);
             }
@@ -438,7 +433,9 @@ export class Analysis {
                 completion_scope = indexed_scope;
             }
         }
-        return Completer::complete(content, position, completion_scope);
+        return Completer::complete(text, position, completion_scope,
+                                   index != nullptr ? &index->syntax : nullptr,
+                                   compiler != nullptr ? &compiler->sema : nullptr);
     }
 
     std::vector<SemanticToken> tokens(std::optional<Span> range = std::nullopt) const {
@@ -569,7 +566,7 @@ export class Analysis {
         CallExpression* selected = nullptr;
         for (auto* node : index->syntax.nodes()) {
             auto* call = node->as<CallExpression>();
-            if (call != nullptr && contains(call->span, position) &&
+            if (call != nullptr && call->span.contains(position) &&
                 (selected == nullptr || call->span.start.line >= selected->span.start.line)) {
                 selected = call;
             }
@@ -581,13 +578,13 @@ export class Analysis {
         const FunctionType* function_type = nullptr;
         if (const auto* direct = selected->resolved_target->as<DirectCallTarget>();
             direct != nullptr) {
-            function_type = direct->function_symbol->function_type;
+            function_type = direct->signature;
         } else if (const auto* indirect = selected->resolved_target->as<IndirectCallTarget>();
                    indirect != nullptr) {
             function_type = indirect->function_type;
         } else if (const auto* interface = selected->resolved_target->as<InterfaceCallTarget>();
                    interface != nullptr) {
-            function_type = interface->method_symbol->function_type;
+            function_type = interface->method_symbol->signature();
         }
         if (function_type == nullptr) {
             return std::nullopt;

@@ -17,7 +17,8 @@ import zep.frontend.lexer;
 import zep.frontend.node;
 import zep.frontend.node.program;
 import zep.frontend.kind;
-import zep.frontend.sema.scope;
+import zep.frontend.sema.symbols;
+import zep.frontend.sema.scopes.scope;
 import zep.frontend.token;
 import zep.frontend.token.keywords;
 import zep.lsp.analysis.types;
@@ -215,6 +216,15 @@ class AstTokenCollector : public Visitor<void> {
 
     void visit(QualifiedAccessExpression&) override {}
 
+    void visit(NewExpression& node) override {
+        visit_child(node.storage);
+        visit_child(node.value);
+    }
+
+    void visit(DeleteExpression& node) override {
+        visit_child(node.value);
+    }
+
     void visit(AssignExpression& node) override {
         visit_child(node.target);
         visit_child(node.value);
@@ -249,6 +259,12 @@ class AstTokenCollector : public Visitor<void> {
     }
 
     void visit(BlockExpression& node) override { visit_child(node.body); }
+
+    void visit(AssemblyExpression& node) override {
+        for (auto* argument : node.arguments) {
+            visit_child(argument);
+        }
+    }
 
     void visit(BuiltinCall& node) override {
         for (auto* argument : node.arguments) {
@@ -348,18 +364,6 @@ export class SyntaxIndex {
     std::vector<Node*> indexed_nodes;
     std::vector<SemanticToken> semantic_tokens;
 
-    static bool contains(Span span, Position position) {
-        if (span.start.line == 0 || position.line < span.start.line || position.line > span.end.line) {
-            return false;
-        }
-
-        if (position.line == span.start.line && position.column < span.start.column) {
-            return false;
-        }
-
-        return position.line != span.end.line || position.column <= span.end.column;
-    }
-
   public:
     SyntaxIndex(std::string_view content, const Program* program) {
         std::vector<RawToken> tokens;
@@ -400,6 +404,10 @@ export class SyntaxIndex {
                 auto key = std::make_pair(line, character);
                 if (auto it = semantic_map.find(key); it != semantic_map.end()) {
                     tokens.push_back(it->second);
+                } else if (token.value == "move" || token.value == "default" || token.value == "delete" ||
+                           token.value == "operator" || token.value == "out" || token.value == "inout" ||
+                           token.value == "clobber" || token.value == "options") {
+                    tokens.emplace_back(line, character, length, SemanticKind::Type::Keyword);
                 } else {
                     tokens.emplace_back(line, character, length, SemanticKind::Type::Variable);
                 }
@@ -426,6 +434,9 @@ export class SyntaxIndex {
             case Token::Type::Do:
             case Token::Type::Is:
             case Token::Type::As:
+            case Token::Type::Asm:
+            case Token::Type::New:
+            case Token::Type::Delete:
                 tokens.emplace_back(line, character, length, SemanticKind::Type::Keyword);
                 break;
 
@@ -507,7 +518,7 @@ export class SyntaxIndex {
     Node* node(Position position) const {
         Node* result = nullptr;
         for (auto* node : indexed_nodes) {
-            if (!contains(node->span, position)) {
+            if (!node->span.contains(position)) {
                 continue;
             }
 
@@ -527,7 +538,7 @@ export class SyntaxIndex {
 
         for (auto* node : indexed_nodes) {
             if (auto* block = node->as<BlockStatement>();
-                block != nullptr && block->scope != nullptr && contains(block->span, position)) {
+                block != nullptr && block->scope != nullptr && block->span.contains(position)) {
                 auto starts_after_latest = block->span.start.line > latest.line ||
                                            (block->span.start.line == latest.line &&
                                             block->span.start.column >= latest.column);

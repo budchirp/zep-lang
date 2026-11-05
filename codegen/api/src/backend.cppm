@@ -9,10 +9,10 @@ export module zep.codegen.api;
 export import zep.codegen.options;
 export import zep.hir.program;
 
-export class CodegenBackend {
+export class Backend {
   public:
-    virtual ~CodegenBackend() = default;
+    virtual ~Backend() = default;
     virtual std::expected<void, std::string> generate(const HIRProgram& program,
                                                       const std::filesystem::path& output,
-                                                      const CodegenOptions& options) = 0;
+                                                      const EmitOptions& options) = 0;
 };

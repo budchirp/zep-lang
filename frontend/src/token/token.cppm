@@ -44,6 +44,9 @@ export class Token {
         Defer,
         Do,
         Override,
+        Asm,
+        New,
+        Delete,
 
         Assign,
         Plus,
