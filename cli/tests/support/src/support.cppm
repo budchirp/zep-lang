@@ -19,16 +19,21 @@ export void write_project_config(CliTestHarness& harness, const std::string& nam
                                             "}\n");
 }
 
-export void write_runtime_fixture(CliTestHarness& harness, const std::string& name,
-                                  bool standard = false, bool named = false) {
-    write_project_config(harness, name);
+export void write_runtime_fixture(CliTestHarness& harness, const std::filesystem::path& source) {
+    write_project_config(harness, source.stem().stem().string());
+    harness.workspace.write("src/main.zep", TextFile::read(TestPaths::project_source_root() / source));
+}
 
-    const auto directory = standard ? TestPaths::project_source_root() / "std/tests"
-                                   : TestPaths::source_root() / "fixtures";
-    const auto source = directory / (standard && !named ? "fixtures" : "") /
-                        (name + ".test.zep");
+export void write_test_group(CliTestHarness& harness, const std::filesystem::path& directory) {
+    write_project_config(harness, directory.filename().string());
 
-    harness.workspace.write(named ? "src/main.test.zep" : "src/main.zep", TextFile::read(source));
+    for (const auto& entry : std::filesystem::directory_iterator(
+             TestPaths::project_source_root() / directory)) {
+        if (entry.is_regular_file() && entry.path().filename().string().ends_with(".test.zep")) {
+            harness.workspace.write(std::filesystem::path("tests") / entry.path().filename(),
+                                    TextFile::read(entry.path()));
+        }
+    }
 }
 
 export ProcessResult build_and_run(CliTestHarness& harness, const std::string& name,

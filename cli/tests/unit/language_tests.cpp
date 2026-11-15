@@ -207,22 +207,16 @@ test "omitted" { Test::fail("must not run in normal builds") }
 }
 
 TEST(CliCalls, BindsConcreteGenericAndInterfaceCalls) {
-    for (const auto* fixture : {"calls", "interfaces"}) {
-        SCOPED_TRACE(fixture);
-        CliTestHarness harness(fixture, ZEP_ZEP_EXECUTABLE);
-        write_runtime_fixture(harness, fixture, false, true);
+    CliTestHarness harness("calls", ZEP_ZEP_EXECUTABLE);
+    write_test_group(harness, "cli/tests/fixtures/calls");
+    harness.workspace.write("src/dispatch_types.zep",
+        TextFile::read(TestPaths::source_root() / "fixtures/dispatch_types.zep"));
 
-        if (std::string(fixture) == "interfaces") {
-            harness.workspace.write("src/dispatch_types.zep",
-                TextFile::read(TestPaths::source_root() / "fixtures/dispatch_types.zep"));
-        }
+    for (const auto* level : {"0", "1", "2", "3"}) {
+        SCOPED_TRACE(level);
+        const auto result = harness.run({"test", "-O", level});
 
-        for (const auto* level : {"0", "1", "2", "3"}) {
-            SCOPED_TRACE(level);
-            const auto result = harness.run({"test", "-O", level});
-
-            ASSERT_TRUE(result.succeeded()) << result.stderr_text << "exit: " << result.exit.status;
-        }
+        ASSERT_TRUE(result.succeeded()) << result.stderr_text << "exit: " << result.exit.status;
     }
 }
 

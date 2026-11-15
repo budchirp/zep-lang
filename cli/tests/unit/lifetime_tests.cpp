@@ -5,7 +5,7 @@ import zep.cli.test.support;
 
 TEST(CliCleanup, SharesEnumFieldsAndErasesVoidPayloads) {
     CliTestHarness harness("cli_enums", ZEP_ZEP_EXECUTABLE);
-    write_runtime_fixture(harness, "enums", false, true);
+    write_test_group(harness, "cli/tests/fixtures/enums");
 
     for (const auto* level : {"0", "2"}) {
         SCOPED_TRACE(level);
@@ -55,7 +55,7 @@ public fn main() -> i32 {
 
 TEST(CliCleanup, ConstructsCopiesAndRebuildsOwnedStorage) {
     CliTestHarness harness("cli_lifetime", ZEP_ZEP_EXECUTABLE);
-    write_runtime_fixture(harness, "lifetime", false, true);
+    write_test_group(harness, "cli/tests/fixtures/lifetime");
 
     for (const auto* level : {"0", "2"}) {
         SCOPED_TRACE(level);
@@ -97,7 +97,7 @@ public fn main() -> i32 {
 
 TEST(CliCleanup, OrdersDiscardedValuesParametersArraysPayloadsAndGlobals) {
     CliTestHarness harness("cli_cleanup", ZEP_ZEP_EXECUTABLE);
-    write_runtime_fixture(harness, "cleanup");
+    write_runtime_fixture(harness, "cli/tests/fixtures/cleanup.test.zep");
 
     for (const auto* level : {"0", "2"}) {
         const auto result = build_and_run(harness, "cleanup", level);

@@ -1013,6 +1013,13 @@ Build coordination lives in `zep.build`. Both project builds and single-file com
 construction and execution. Dependency fetching and installation live in `zep.build.fetch` and
 `zep.build.install`; their consumers import those modules directly.
 
+`zep.compiler.test_sources` discovers and loads test inputs before one semantic check.
+`zep.compiler.tests` prepares test identities, private sibling access, selection, and dispatcher
+source. `zep.build.tests` coordinates the test build and isolated processes. Project and test
+builds share object generation: root module objects retain their module paths, dependency objects
+live under a separate `dependencies/<package>/` directory, and test objects retain `.test` in their
+filenames. Dependency modules cannot overwrite root-package objects with the same module path.
+
 Lowering's `lifetime.cppm` groups construction, cleanup registration, full-expression temporaries,
 and their shared `TemporaryNames` generator. Names are internal and do not change source-level
 symbol identity. The main lowerer is the module interface, with call and type implementation units.

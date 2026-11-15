@@ -124,7 +124,8 @@ Project discovery includes `.test.zep` files under `src/` and `tests/`. `src/mat
 and `tests/math.test.zep` can access private declarations from `src/math.zep`. Ordinary builds
 exclude test files; explicitly loaded tests are always type-checked. Standard-library tests live
 under `std/tests/`; `tests/fixtures/` holds specialized subprocess inputs and is excluded from
-discovery. Each selected test runs in a fresh process, so assertion
+discovery. Std cases are split by module, including collections, text, I/O, files, and HTTP.
+Each selected test runs in a fresh process, so assertion
 failures, panics, and crashes do not stop subsequent tests. The command reports totals and returns
 a failure status when any test fails or no tests match. Filesystem state is shared between tests.
 

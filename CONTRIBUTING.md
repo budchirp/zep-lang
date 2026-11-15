@@ -129,6 +129,9 @@ module/
 - Put Google Benchmark targets in `tests/benchmarks`; they must be opt-in.
 - Copy mutable project fixtures into the CMake binary tree before running tests.
 - Group tests by behavior in focused files, sharing setup through test support.
+- Keep Zep call, enum, and lifetime fixtures in their feature directories. Standard-library tests
+  use separate `.test.zep` files by module under `std/tests/`. Test groups compile together once per
+  selected optimization level; splitting files should not add repeated builds for each case.
 - Preserve distinct regressions; remove smoke tests already covered by stronger assertions.
 - Consolidate small files within a subsystem. Keep separate files for independently built fuzzers,
   benchmarks, snapshots, and fixtures that require different process-wide FFI overrides.

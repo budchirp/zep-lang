@@ -3,6 +3,7 @@ module;
 #include <algorithm>
 #include <cstddef>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -11,6 +12,7 @@ export module zep.compiler.tests;
 import zep.compiler.unit;
 import zep.frontend.node;
 import zep.frontend.sema.context;
+import zep.frontend.sema.scopes.scope;
 import zep.frontend.sema.declaration.attribute;
 import zep.workspace.package;
 import zep.frontend.kind;
@@ -78,11 +80,17 @@ export class TestSuite {
         }
 
         cases.reserve(capacity);
+        std::unordered_set<const Scope*> borrowed_scopes;
+        borrowed_scopes.reserve(modules.size());
 
         for (auto* module : modules) {
-            const auto borrowed = std::ranges::any_of(modules, [&](const Module* test) {
-                return test->scope->parent == module->scope;
-            });
+            if (module->scope->parent != nullptr) {
+                borrowed_scopes.insert(module->scope->parent);
+            }
+        }
+
+        for (auto* module : modules) {
+            const auto borrowed = borrowed_scopes.contains(module->scope);
 
             for (auto ordinal = std::size_t{0}; ordinal < module->syntax.statements.size(); ++ordinal) {
                 auto* statement = module->syntax.statements[ordinal];

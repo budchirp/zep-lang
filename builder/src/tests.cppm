@@ -13,6 +13,7 @@ import zep.build.linker;
 import zep.compiler;
 import zep.compiler.unit;
 import zep.compiler.tests;
+import zep.compiler.test_sources;
 import zep.common.diagnostic.collection;
 import zep.common.logger;
 import zep.common.system.command;
@@ -29,6 +30,35 @@ export class TestRunner {
     Objects& objects;
     Linker& linker;
     ProcessRunner& process_runner;
+
+    bool execute(const TestSuite& suite, const std::filesystem::path& executable,
+                  const std::filesystem::path& directory) {
+        auto passed = std::size_t{0};
+
+        for (auto index = std::size_t{0}; index < suite.cases.size(); ++index) {
+            const auto& test = suite.cases[index];
+            const auto result = process_runner.run(Command(
+                {executable.string(), std::to_string(index)}, directory));
+
+            Logger::print(result.succeeded() ? "PASS " : "FAIL ", test.name, "\n");
+            Logger::print(result.stdout_text);
+            Logger::print_stderr(result.stderr_text);
+
+            if (result.succeeded()) {
+                ++passed;
+                continue;
+            }
+
+            Logger::print_stderr(test.module.source->name, ":", test.declaration.span.start.line,
+                ": test failed (",
+                result.exit.kind == ProcessExit::Kind::Type::Signaled ? "signal " : "exit ",
+                result.exit.status, ")\n");
+        }
+
+        Logger::print(passed, " passed; ", suite.cases.size() - passed, " failed\n");
+
+        return passed == suite.cases.size();
+    }
 
   public:
     TestRunner(const Toolchain& toolchain, Objects& objects, Linker& linker,
@@ -55,52 +85,9 @@ export class TestRunner {
             return Logger::fail("could not open test project");
         }
 
-        std::vector<std::filesystem::path> sources;
-        sources.reserve(32);
-
-        if (input.empty()) {
-            for (const auto& directory : {project->root_package->source_directory,
-                                         project->root_directory / "tests"}) {
-                if (!std::filesystem::is_directory(directory)) {
-                    continue;
-                }
-
-                const auto external = directory != project->root_package->source_directory;
-
-                for (std::filesystem::recursive_directory_iterator iterator(directory), end;
-                     iterator != end; ++iterator) {
-                    if (external && iterator->is_directory() &&
-                        iterator->path().filename() == "fixtures") {
-                        iterator.disable_recursion_pending();
-                        continue;
-                    }
-
-                    if (iterator->is_regular_file() &&
-                        (external ? ModulePath::is_test(iterator->path())
-                                  : iterator->path().extension() == ".zep")) {
-                        sources.push_back(iterator->path());
-                    }
-                }
-            }
-        } else {
-            sources.push_back(input);
-        }
-
-        std::ranges::sort(sources);
         Compiler compiler(options.target);
 
-        for (const auto& source : sources) {
-            const auto module = project->module(source);
-
-            if (!module.has_value() ||
-                compiler.load(*project->root_package, *module, diagnostics, source) == nullptr) {
-                diagnostics.print();
-
-                return Logger::fail("could not load test source '", source.string(), "'");
-            }
-        }
-
-        if (diagnostics.has_errors()) {
+        if (!TestSources::load(compiler, *project, input, diagnostics)) {
             diagnostics.print();
 
             return false;
@@ -142,17 +129,11 @@ export class TestRunner {
             return true;
         }
 
-        std::vector<std::filesystem::path> outputs;
-        outputs.reserve(compiler.modules.size());
+        const auto outputs = objects.generate_all(compiler, *project->root_package,
+            diagnostics, directory / "objects", options);
 
-        for (auto index = std::size_t{0}; index < compiler.modules.size(); ++index) {
-            const auto output = directory / "objects" / (std::to_string(index) + ".o");
-
-            if (!objects.generate(compiler, *compiler.modules[index], diagnostics, output, options)) {
-                return false;
-            }
-
-            outputs.push_back(output);
+        if (!outputs.has_value()) {
+            return false;
         }
 
         std::vector<std::string> arguments;
@@ -168,32 +149,10 @@ export class TestRunner {
 
         const auto executable = directory / "runner";
 
-        if (!linker.link(outputs, executable, options.target, arguments, project->root_directory)) {
+        if (!linker.link(*outputs, executable, options.target, arguments, project->root_directory)) {
             return false;
         }
 
-        auto passed = std::size_t{0};
-
-        for (auto index = std::size_t{0}; index < suite.cases.size(); ++index) {
-            const auto& test = suite.cases[index];
-            const auto result = process_runner.run(Command(
-                {executable.string(), std::to_string(index)}, project->root_directory));
-
-            Logger::print(result.succeeded() ? "PASS " : "FAIL ", test.name, "\n");
-            Logger::print(result.stdout_text);
-            Logger::print_stderr(result.stderr_text);
-
-            if (result.succeeded()) {
-                ++passed;
-            } else {
-                Logger::print_stderr(test.module.source->name, ":", test.declaration.span.start.line,
-                    ": test failed (", result.exit.kind == ProcessExit::Kind::Type::Signaled ? "signal " : "exit ",
-                    result.exit.status, ")\n");
-            }
-        }
-
-        Logger::print(passed, " passed; ", suite.cases.size() - passed, " failed\n");
-
-        return passed == suite.cases.size();
+        return execute(suite, executable, project->root_directory);
     }
 };

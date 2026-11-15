@@ -2,7 +2,6 @@ module;
 
 #include <filesystem>
 #include <utility>
-#include <vector>
 
 export module zep.build;
 
@@ -110,24 +109,15 @@ export class Builder {
             }
 
             EmitOptions options(target, optimization, debug_output);
-            std::vector<std::filesystem::path> outputs;
-            outputs.reserve(compiler.modules.size());
+            const auto outputs = objects.generate_all(compiler, *project->root_package,
+                diagnostics, build_directory / "objs", options);
 
-            for (auto* module : compiler.modules) {
-                auto relative = module->path.path();
-                relative.replace_extension(".o");
-
-                auto output = build_directory / "objs" / relative;
-
-                if (!objects.generate(compiler, *module, diagnostics, output, options)) {
-                    return false;
-                }
-
-                outputs.push_back(std::move(output));
+            if (!outputs.has_value()) {
+                return false;
             }
 
             if (manifest.type == Manifest::Type::Kind::Executable &&
-                !linker.link(outputs, build_directory / manifest.name, target,
+                !linker.link(*outputs, build_directory / manifest.name, target,
                              build_target.linker_arguments, project->root_directory)) {
                 return false;
             }

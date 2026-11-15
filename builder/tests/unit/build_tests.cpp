@@ -85,6 +85,30 @@ TEST(Builder, StopsBeforeLinkingWhenCodeGenerationFails) {
     EXPECT_TRUE(process_runner.commands.empty());
 }
 
+TEST(Builder, SeparatesObjectsWithTheSameModulePathInDifferentPackages) {
+    TestWorkspace workspace("builder_package_objects");
+    workspace.write("zep.json", R"({
+        "name":"builder_package_objects",
+        "libs":{"dep":{"version":"0.1.0","path":"dep"}}
+    })");
+    workspace.write("dep/zep.json", R"({"name":"dep","version":"0.1.0","type":"library"})");
+    workspace.write("dep/src/helper.zep", "public fn remote() -> i32 { return 2 }");
+    workspace.write("src/helper.zep", "public fn local() -> i32 { return 1 }");
+    workspace.write("src/main.zep",
+        "import helper.local\nimport dep.helper.remote\nfn main() -> i32 { return local() + remote() }");
+
+    FakeBackend backend;
+    FakeProcessRunner process_runner;
+    Builder builder(backend, Toolchain("clang", {}, {}), process_runner);
+
+    ASSERT_TRUE(builder.build(workspace.root(), OptimizationLevel::Type::O0, DebugOutput::Type::None));
+    ASSERT_EQ(backend.outputs.size(), 3U);
+    EXPECT_NE(std::ranges::find(backend.outputs, workspace.file("build/objs/helper.o")),
+              backend.outputs.end());
+    EXPECT_NE(std::ranges::find(backend.outputs, workspace.file("build/dependencies/dep/helper.o")),
+              backend.outputs.end());
+}
+
 TEST(Builder, DoesNotLinkLibraries) {
     TestWorkspace workspace("builder_library");
     workspace.write("zep.json", R"({"name": "builder_library", "type": "library"})");
