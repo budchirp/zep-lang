@@ -435,7 +435,8 @@ export class Analysis {
         }
         return Completer::complete(text, position, completion_scope,
                                    index != nullptr ? &index->syntax : nullptr,
-                                   compiler != nullptr ? &compiler->sema : nullptr);
+                                   compiler != nullptr ? &compiler->sema : nullptr,
+                                   analyzed_path.string());
     }
 
     std::vector<SemanticToken> tokens(std::optional<Span> range = std::nullopt) const {
@@ -516,7 +517,10 @@ export class Analysis {
 
         result.reserve(program()->statements.size());
         for (auto* statement : program()->statements) {
-            if (auto* function = statement->as<FunctionDeclaration>();
+            if (auto* test = statement->as<TestDeclaration>(); test != nullptr) {
+                result.emplace_back(test->name, CompletionKind::Type::Function,
+                                    AnalysisLocation(analyzed_path, test->span), test->name_span);
+            } else if (auto* function = statement->as<FunctionDeclaration>();
                 function != nullptr && function->prototype != nullptr) {
                 result.emplace_back(function->prototype->name, CompletionKind::Type::Function,
                                     AnalysisLocation(analyzed_path, function->span),

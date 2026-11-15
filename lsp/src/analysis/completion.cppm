@@ -31,6 +31,7 @@ import zep.frontend.sema.expression.values;
 import zep.common.diagnostic.collection;
 import zep.lsp.analysis.index;
 import zep.lsp.analysis.types;
+import zep.workspace.module_path;
 
 class ParsedCursorContext {
   public:
@@ -704,6 +705,13 @@ export class Completer {
                 }
             }
 
+            if (const auto* enumeration = type->as<EnumType>();
+                enumeration != nullptr && !context.is_static_access) {
+                for (const auto& field : enumeration->fields) {
+                    append(field.name, field.type, CompletionKind::Type::Field);
+                }
+            }
+
             type = structure != nullptr ? structure->base_type : nullptr;
         }
     }
@@ -905,6 +913,10 @@ export class Completer {
         }
 
         for (const auto& [name, overloads] : scope.local_functions()) {
+            if (name.starts_with('$')) {
+                continue;
+            }
+
             for (const auto* function : overloads) {
                 if (function != nullptr && !function->is_deleted) {
                     append(name, function, CompletionKind::Type::Function);
@@ -1074,7 +1086,8 @@ export class Completer {
 
     static std::vector<Completion> complete(std::string_view content, Position position,
                                             const Scope* scope, const SyntaxIndex* syntax = nullptr,
-                                            SemaContext* sema = nullptr) {
+                                            SemaContext* sema = nullptr,
+                                            const std::string& filename = "") {
         auto context = parse_cursor_context(content, position);
 
         if (context.suppressed) {
@@ -1127,7 +1140,11 @@ export class Completer {
                 const auto* variant = enumeration->find_variant(context.receiver.substr(separator + 2));
 
                 if (variant != nullptr) {
-                    for (const auto& field : variant->fields) {
+                    for (const auto& field : enumeration->fields_for(*variant)) {
+                        if (field.type->is<VoidType>()) {
+                            continue;
+                        }
+
                         if (field.name.starts_with(context.prefix) && !context.named_arguments.contains(field.name)) {
                             items.emplace_back(field.name, CompletionKind::Type::Field,
                                 field.type->to_string(), Span(), field.name + ": ");
@@ -1212,7 +1229,34 @@ export class Completer {
             }
         }
 
+        auto header = content.substr(0, offset(content, position) - context.prefix.size());
+
+        while (!header.empty() && std::isspace(static_cast<unsigned char>(header.back())) != 0) {
+            header.remove_suffix(1);
+        }
+
+        const auto function = header.rfind("fn ");
+        const auto body = header.find_last_of("{};");
+        const auto arrow = header.rfind("->");
+        const auto implementation = header.ends_with('=') && function != std::string_view::npos &&
+            arrow != std::string_view::npos && arrow > function &&
+            (body == std::string_view::npos || function > body);
+
+        if (implementation && std::string_view("default").starts_with(context.prefix) &&
+            seen.insert("default").second) {
+            items.emplace_back("default", CompletionKind::Type::Keyword, "defaulted special member");
+        }
+
         for (const auto& [keyword, _] : keywords) {
+            if (keyword == "test" && (!ModulePath::is_test(filename) ||
+                (scope != nullptr && !scope->is_global()))) {
+                continue;
+            }
+
+            if ((keyword == "delete" || keyword == "default") && !implementation) {
+                continue;
+            }
+
             std::string name(keyword);
             if (name.starts_with(context.prefix) && seen.insert(name).second) {
                 items.emplace_back(std::move(name), CompletionKind::Type::Keyword, "keyword");

@@ -17,6 +17,7 @@ import zep.frontend.kind;
 import zep.frontend.sema.symbols;
 import zep.frontend.sema.scopes.scope;
 import zep.frontend.sema.types;
+import zep.workspace.module_path;
 
 export class CompilerChecker {
   private:
@@ -76,6 +77,16 @@ export class CompilerChecker {
 
         for (auto* module : graph.modules) {
             Context context(*module->source);
+
+            if (!ModulePath::is_test(module->source->name)) {
+                for (auto* statement : module->syntax.statements) {
+                    if (statement->is<TestDeclaration>()) {
+                        context.diagnostics.add_error(statement->span,
+                            "test declarations require a .test.zep file");
+                    }
+                }
+            }
+
             if (builtins != nullptr && module != builtins) {
                 import_builtin_types(*module->scope, *builtins->scope);
             }

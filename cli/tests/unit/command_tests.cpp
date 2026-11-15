@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 import zep.test.support;
+import zep.cli.test.support;
 
 TEST(CliZep, BuildsExecutableFixture) {
     CliTestHarness harness("cli_zep_build", ZEP_ZEP_EXECUTABLE, "fixtures/smoke");
@@ -61,4 +62,33 @@ TEST(CliZep, RejectsUnsupportedCompileTarget) {
                               harness.workspace.root());
 
     harness.assert_fails_with_stderr("unsupported target 'not-a-real-target'", result);
+}
+
+TEST(CliZep, RunsTargetAttributeFixture) {
+    CliTestHarness harness("cli_zep_target_attribute", ZEP_ZEP_EXECUTABLE);
+    write_project_config(harness, "target_attribute");
+    harness.workspace.write("src/target.zep", R"zep(
+@os("linux")
+fn platform_code() -> i32 { return 1 }
+
+@arch("x86_64")
+fn architecture_code() -> i32 { return 2 }
+
+public fn target_score() -> i32 {
+    return platform_code() + architecture_code()
+}
+)zep");
+    harness.workspace.write("src/main.zep", R"zep(
+import target.target_score
+
+public fn main() -> i32 {
+    if (target_score() != 3) { return 1 }
+
+    return 0
+}
+)zep");
+
+    const auto result = build_and_run(harness, "target_attribute");
+
+    EXPECT_TRUE(result.succeeded()) << result.stderr_text;
 }

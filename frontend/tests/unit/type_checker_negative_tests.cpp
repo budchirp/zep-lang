@@ -11,10 +11,6 @@ TEST(FrontendLifecycle, RejectsInvalidPlacementAndDestruction) {
     EXPECT_TRUE(assert_type_check_error("fn clear(ptr: *mut void) -> void { ptr->~void() }"));
     EXPECT_TRUE(assert_type_check_error("fn clear(ptr: *mut i32) -> void { ptr->~boolean() }"));
     EXPECT_TRUE(assert_type_check_error("fn clear(ptr: *mut i32) -> void { ptr->~i32(42) }"));
-    EXPECT_TRUE(assert_type_check_error("fn clear(value: i32) -> void { delete value }"));
-    EXPECT_TRUE(assert_type_check_error("fn clear(value: &i32) -> void { delete value }"));
-    EXPECT_TRUE(assert_type_check_error("fn clear(ptr: *mut void) -> void { delete ptr }"));
-    EXPECT_TRUE(assert_type_check_error("fn allocate() -> void { new 42 }"));
     EXPECT_TRUE(assert_type_check_error(R"zep(
 fn main() -> i32 {
     var mut value = 42

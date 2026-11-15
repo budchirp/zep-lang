@@ -1,5 +1,6 @@
 module;
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -58,9 +59,10 @@ export class LiteralChecker {
         }
     }
 
+    template <typename Fields>
     std::vector<GenericArgument*>
     infer_from_fields(const std::vector<GenericParameterType>& parameters,
-                      const std::vector<FieldType>& declared_fields,
+                      const Fields& declared_fields,
                       const std::vector<StructLiteralField*>& literal_fields, Span span,
                       bool emit_errors) {
         GenericInference inference(context, sema, resolver, parameters);
@@ -81,9 +83,10 @@ export class LiteralChecker {
         return inference.arguments(span, emit_errors);
     }
 
+    template <typename Fields>
     bool apply_field_generic_bindings(std::vector<GenericArgument*>& arguments,
                                       const std::vector<GenericParameterType>& parameters,
-                                      const std::vector<FieldType>& declared_fields,
+                                      const Fields& declared_fields,
                                       const std::vector<StructLiteralField*>& literal_fields,
                                       Span span, bool emit_errors) {
         if (arguments.empty() && !parameters.empty()) {
@@ -98,10 +101,10 @@ export class LiteralChecker {
         return arguments_resolver.apply(arguments, parameters, span, emit_errors);
     }
 
-    template <typename FieldOwner>
+    template <typename Fields>
     void validate_literal_fields(Span parent_span, const std::string& parent_name,
                                  std::vector<StructLiteralField*>& literal_fields,
-                                 const FieldOwner& owner, bool check_visibility) {
+                                 const Fields& fields, bool check_visibility) {
         std::unordered_set<std::string> seen;
         seen.reserve(literal_fields.size());
 
@@ -112,20 +115,20 @@ export class LiteralChecker {
                 continue;
             }
 
-            const auto* declared = owner.find_field(literal_field->name);
-            if (declared == nullptr) {
+            const auto declared = std::ranges::find(fields, literal_field->name, &FieldType::name);
+            if (declared == fields.end()) {
                 context.diagnostics.add_error(literal_field->span, parent_name + " has no field '" +
                                                                        literal_field->name + "'");
                 continue;
             }
 
-            if (check_visibility && declared->visibility == Visibility::Type::Private) {
+            if (check_visibility && (*declared).visibility == Visibility::Type::Private) {
                 context.diagnostics.add_error(literal_field->span, "cannot set private field '" +
-                                                                       declared->name + "' of " +
+                                                                       (*declared).name + "' of " +
                                                                        parent_name);
             }
 
-            const auto* expected_type = resolver.resolve_type(declared->type);
+            const auto* expected_type = resolver.resolve_type((*declared).type);
             const auto* actual_type = literal_field->value->type;
 
             if (expected_type != nullptr && actual_type != nullptr &&
@@ -137,16 +140,17 @@ export class LiteralChecker {
             }
         }
 
-        for (const auto& field : owner.fields) {
-            if (!seen.contains(field.name)) {
+        for (const auto& field : fields) {
+            if (!seen.contains(field.name) && !resolver.resolve_type(field.type)->template is<VoidType>()) {
                 context.diagnostics.add_error(parent_span, "missing field '" + field.name +
                                                                "' in " + parent_name + " literal");
             }
         }
     }
 
+    template <typename Fields>
     void resolve_field_values(std::vector<StructLiteralField*>& literal_fields,
-                              const std::vector<FieldType>& declared_fields) {
+                              const Fields& declared_fields) {
         for (auto* literal_field : literal_fields) {
             const FieldType* declared = nullptr;
 
@@ -192,25 +196,26 @@ export class LiteralChecker {
             return;
         }
 
-        auto scope = resolver.create_substitution_scope();
-
         contextual_arguments(node.generic_arguments, *struct_type, node.span);
         const auto has_arguments = !node.generic_arguments.empty();
-        if (has_arguments) {
-            GenericArgumentResolver arguments(context, sema, resolver, visitor);
-            if (!arguments.apply(node.generic_arguments, struct_type->generic_parameters,
-                                 node.span, true)) {
-                return;
-            }
-        }
-
-        resolve_field_values(node.fields, struct_type->fields);
 
         if (!has_arguments) {
+            resolve_field_values(node.fields, struct_type->fields);
+        }
+
+        {
+            auto scope = resolver.create_substitution_scope();
+
             if (!apply_field_generic_bindings(node.generic_arguments, struct_type->generic_parameters,
                                               struct_type->fields, node.fields, node.span, true)) {
                 return;
             }
+
+            struct_type = resolver.resolve_type(struct_type)->as<StructType>();
+        }
+
+        if (has_arguments) {
+            resolve_field_values(node.fields, struct_type->fields);
         }
 
         const auto* definition =
@@ -221,9 +226,34 @@ export class LiteralChecker {
                 : enclosing_type;
 
         validate_literal_fields(node.span, "struct '" + struct_type->name + "'", node.fields,
-                                *struct_type, definition != enclosing_definition);
+                                struct_type->fields, definition != enclosing_definition);
 
-        node.type = resolver.resolve_type(struct_type);
+        node.type = struct_type;
+    }
+
+    bool resolve_variant(QualifiedAccessExpression& node,
+                         const std::vector<StructLiteralField*>& fields = {}) {
+        const auto* symbol = sema.env.current_scope->lookup_type(node.parent);
+        const auto* enumeration = symbol != nullptr ? symbol->type->as<EnumType>() : nullptr;
+
+        if (enumeration == nullptr || enumeration->find_variant(node.member) == nullptr) {
+            return false;
+        }
+
+        auto* name = sema.nodes.create<IdentifierExpression>(node.span, node.parent);
+        EnumVariantExpression literal(node.span, name, node.parent_generic_arguments,
+                                      node.member, !fields.empty(), fields);
+        resolve_enum_literal(literal);
+
+        node.type = literal.type;
+        node.enum_type = literal.enum_type;
+        node.variant_type = literal.variant_type;
+
+        if (literal.variant_type != nullptr) {
+            node.enum_value = literal.variant_type->discriminant;
+        }
+
+        return true;
     }
 
     void resolve_enum_literal(EnumVariantExpression& node) {
@@ -247,30 +277,22 @@ export class LiteralChecker {
             return;
         }
 
-        auto scope = resolver.create_substitution_scope();
-
         contextual_arguments(node.generic_arguments, *enum_type, node.span);
         const auto has_arguments = !node.generic_arguments.empty();
-        if (has_arguments) {
-            GenericArgumentResolver arguments(context, sema, resolver, visitor);
-            if (!arguments.apply(node.generic_arguments, enum_type->generic_parameters,
-                                 node.span, true)) {
-                return;
-            }
-        }
-
-        resolve_field_values(node.fields, raw_variant->fields);
 
         if (!has_arguments) {
-            if (!apply_field_generic_bindings(node.generic_arguments, enum_type->generic_parameters,
-                                              raw_variant->fields, node.fields, node.span, true)) {
-                return;
-            }
+            resolve_field_values(node.fields, enum_type->fields_for(*raw_variant));
         }
 
-        const auto* resolved_enum = resolver.resolve_type(enum_type);
-        if (resolved_enum != nullptr && resolved_enum->is<EnumType>()) {
-            enum_type = resolved_enum->as<EnumType>();
+        {
+            auto scope = resolver.create_substitution_scope();
+
+            if (!apply_field_generic_bindings(node.generic_arguments, enum_type->generic_parameters,
+                                              enum_type->fields_for(*raw_variant), node.fields, node.span, true)) {
+                return;
+            }
+
+            enum_type = resolver.resolve_type(enum_type)->as<EnumType>();
         }
 
         const auto* variant = enum_type->find_variant(node.variant_name);
@@ -278,19 +300,28 @@ export class LiteralChecker {
             return;
         }
 
+        if (has_arguments) {
+            resolve_field_values(node.fields, enum_type->fields_for(*variant));
+        }
+
         const auto label = enum_type->name + "::" + variant->name;
-        if (!node.has_payload && !variant->fields.empty()) {
+        const auto fields = enum_type->fields_for(*variant);
+        const auto requires_payload = std::ranges::any_of(fields, [&](const FieldType& field) -> bool {
+            return !resolver.resolve_type(field.type)->is<VoidType>();
+        });
+
+        if (!node.has_payload && requires_payload) {
             context.diagnostics.add_error(node.span,
                                           "enum variant '" + label + "' requires payload");
             return;
         }
 
-        if (node.has_payload && variant->fields.empty()) {
+        if (node.has_payload && fields.empty()) {
             context.diagnostics.add_error(node.span, "enum variant '" + label + "' has no payload");
             return;
         }
 
-        validate_literal_fields(node.span, "enum variant '" + label + "'", node.fields, *variant,
+        validate_literal_fields(node.span, "enum variant '" + label + "'", node.fields, fields,
                                 false);
 
         node.enum_type = enum_type;

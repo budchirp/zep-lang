@@ -83,10 +83,11 @@ export class NominalDeclarationChecker {
                 continue;
             }
 
-            const auto* requirement = interface_type->find_method(method_name);
-            if (requirement != nullptr &&
-                functions.method_signature_matches(requirement->type, actual, &struct_type)) {
-                return true;
+            for (const auto& requirement : interface_type->methods) {
+                if (requirement.name == method_name &&
+                    functions.method_signature_matches(requirement.type, actual, &struct_type)) {
+                    return true;
+                }
             }
         }
 
@@ -386,6 +387,19 @@ export class NominalDeclarationChecker {
     void validate_enum_declaration(EnumDeclaration& node) {
         const auto has_backing_type = node.backing_type != nullptr;
 
+        std::unordered_set<std::string> shared_names;
+        shared_names.reserve(node.fields.size());
+
+        for (const auto* field : node.fields) {
+            if (!shared_names.insert(field->name).second) {
+                context.diagnostics.add_error(field->span, "duplicate shared enum field '" + field->name + "'");
+            }
+        }
+
+        if (has_backing_type && !node.fields.empty()) {
+            context.diagnostics.add_error(node.span, "backed enums cannot have shared fields");
+        }
+
         if (has_backing_type && !node.generic_parameters.empty()) {
             context.diagnostics.add_error(node.span,
                                           "backed enums do not support generic parameters in v1");
@@ -411,7 +425,7 @@ export class NominalDeclarationChecker {
             field_names.reserve(variant->fields.size());
 
             for (auto* field : variant->fields) {
-                if (field_names.contains(field->name)) {
+                if (field_names.contains(field->name) || shared_names.contains(field->name)) {
                     context.diagnostics.add_error(field->span, "duplicate field '" + field->name +
                                                                    "' in enum variant '" +
                                                                    variant->name + "'");
@@ -600,6 +614,11 @@ export class NominalDeclarationChecker {
 
         auto* enum_type = type->as<EnumType>();
         if (enum_type != nullptr) {
+            for (const auto& field : enum_type->fields) {
+                type_scope->define_var(field.name, sema.env.symbols.create<VariableSymbol>(
+                    field.name, node.span, field.visibility, StorageKind::Type::Var, field.type));
+            }
+
             evaluate_enum_discriminants(node, *enum_type, type_scope);
         }
 

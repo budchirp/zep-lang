@@ -5,6 +5,148 @@ import zep.frontend.test.harness;
 import zep.frontend.node;
 import zep.frontend.sema.types;
 
+TEST(FrontendWhen, InfersValuesAcrossReturningArms) {
+    EXPECT_TRUE(assert_type_check_ok(R"zep(
+enum Value { Missing Present { value: i64 } }
+fn read(value: Value) -> i32 {
+    var number = when (value) {
+        Value::Missing -> { return -1 },
+        Value::Present { value } -> value,
+    }
+    var next = if (number < 0) { return -2 } else { number + 1 }
+    return next as i32
+}
+fn speed(value: i32) -> f32 {
+    return when (value) { 0 -> 0.5, else -> 1.0, }
+}
+fn literal() -> f32 {
+    return when (1) { 1 -> 0.5, else -> 1.0, }
+}
+)zep"));
+    EXPECT_TRUE(assert_type_check_error(R"zep(
+fn invalid(value: i32) -> i32 {
+    var result = when (value) {
+        0 -> { return 0 },
+        1 -> true,
+        else -> 42,
+    }
+    return 0
+}
+)zep"));
+}
+
+TEST(FrontendWhen, AcceptsCompleteBooleanAndEnumCoverage) {
+    EXPECT_TRUE(assert_type_check_ok(R"zep(
+enum Choice { First Second }
+fn from_boolean(value: boolean) -> i32 {
+    return when (value) { true -> 1, false -> 0, }
+}
+fn from_enum(value: Choice) -> i32 {
+    return when (value) { Choice::First -> 1, Choice::Second -> 2, }
+}
+)zep"));
+}
+
+TEST(FrontendWhen, GuardedPatternsDoNotEstablishCoverage) {
+    EXPECT_TRUE(assert_type_check_error(R"zep(
+fn read(value: boolean, enabled: boolean) -> i32 {
+    return when (value) { true if (enabled) -> 1, false -> 0, }
+}
+)zep"));
+    FrontendHarness harness(R"zep(
+enum Choice { First Second Third }
+fn read(value: Choice, enabled: boolean) -> i32 {
+    return when (value) { Choice::First -> 1, Choice::Second if (enabled) -> 2, }
+}
+)zep");
+
+    EXPECT_FALSE(harness.type_check_succeeded());
+    ASSERT_EQ(harness.context.diagnostics.entries.size(), 1U);
+    EXPECT_EQ(harness.context.diagnostics.entries.front().message,
+              "when expression requires an else arm; missing variants: Choice::Second, Choice::Third");
+}
+
+TEST(FrontendWhen, WarnsForCoveredPatternsAndRedundantElse) {
+    FrontendHarness harness(R"zep(
+enum Choice { First Second }
+fn boolean_value(value: boolean) -> i32 {
+    return when (value) { true, true -> 1, true if (value) -> 2, false -> 0, else -> 3, }
+}
+fn enum_value(value: Choice) -> i32 {
+    return when (value) { Choice::First, Choice::First -> 1, Choice::Second -> 2, else -> 3, }
+}
+)zep");
+
+    EXPECT_TRUE(harness.type_check_succeeded());
+    EXPECT_EQ(harness.context.diagnostics.entries.size(), 5U);
+}
+
+TEST(FrontendWhen, AllowsRepeatedGuardedPatternsBeforeAnUnguardedPattern) {
+    FrontendHarness harness(R"zep(
+fn read(value: boolean, enabled: boolean) -> i32 {
+    return when (value) {
+        true if (enabled) -> 1,
+        true if (!enabled) -> 2,
+        true -> 3,
+        false -> 0,
+    }
+}
+)zep");
+
+    EXPECT_TRUE(harness.type_check_succeeded());
+    EXPECT_TRUE(harness.context.diagnostics.entries.empty());
+}
+
+TEST(FrontendWhen, RejectsDifferentSpecializationsInPatterns) {
+    EXPECT_TRUE(assert_type_check_error(R"zep(
+enum Maybe<T> { Some { value: T } None }
+type IntegerMaybe = Maybe<i32>
+type BooleanMaybe = Maybe<boolean>
+fn read(value: IntegerMaybe) -> i32 {
+    return when (value) { BooleanMaybe::Some { value } -> 1, else -> 0, }
+}
+)zep"));
+    EXPECT_TRUE(assert_type_check_ok(R"zep(
+enum Maybe<T> { Some { value: T } None }
+fn read(value: Maybe<i32>) -> i32 {
+    return when (value) { Maybe::Some { value } -> value, Maybe::None -> 0, }
+}
+)zep"));
+}
+
+TEST(FrontendEnums, ChecksSharedFieldsAndVoidSubstitution) {
+    EXPECT_TRUE(assert_type_check_ok(R"zep(
+enum Event<T>(context: T) {
+    Ready
+    Data { count: i32 }
+}
+enum Outcome<T> { Ok { value: T } Error { code: i32 } }
+fn ready() -> Outcome<void> { return Outcome::Ok }
+fn check() -> i32 {
+    var event: Event<i32> = Event::Data { context: 7, count: 42 }
+    return when (event) {
+        Event::Ready -> 0,
+        Event::Data { count } -> count + event.context,
+    }
+}
+enum Shared<T>(context: T) { Ready }
+fn empty() -> Shared<void> { return Shared::Ready }
+)zep"));
+
+    EXPECT_TRUE(assert_type_check_error("enum Event(code: i32, code: i32) { Ready }"));
+    EXPECT_TRUE(assert_type_check_error("enum Event(code: i32) { Data { code: i32 } }"));
+    EXPECT_TRUE(assert_type_check_error("enum Event(code: i32) : i32 { Ready }"));
+    EXPECT_TRUE(assert_type_check_error("enum Event { Data { value: void } }"));
+    EXPECT_TRUE(assert_type_check_error("fn invalid() -> void { var value: void }"));
+    EXPECT_TRUE(assert_type_check_error(R"zep(
+enum Item { Value { number: i32 } }
+fn invalid() -> void {
+    var item = Item::Value { number: 1 }
+    when (item) { Item::Value { number } -> number = 2, }
+}
+)zep"));
+}
+
 TEST(FrontendTypeCheckerPositive, AcceptsEnumPayloadConstructionBackedValuesAndWhenDestructuring) {
     const std::string source = R"zep(
 enum Key : i32 {

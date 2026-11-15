@@ -8,22 +8,13 @@ public extern fn c_free(ptr: *mut void) -> void
 public extern fn c_strlen(value: cstr) -> i64
 
 @name("memcpy")
-public extern fn c_memcpy(destination: *mut void, source: *mut void, size: i64) -> *mut void
+public extern fn c_memcpy(destination: *mut void, source: *void, size: i64) -> *mut void
 
 @name("memmove")
 public extern fn c_memmove(destination: *mut void, source: *void, size: i64) -> *mut void
 
 @name("memcmp")
 public extern fn c_memcmp(left: *void, right: *void, size: i64) -> i32
-
-@name("strcat")
-public extern fn c_strcat(destination: cstr, source: cstr) -> cstr
-
-@name("strcmp")
-public extern fn c_strcmp(left: cstr, right: cstr) -> i32
-
-@name("strncmp")
-public extern fn c_strncmp(left: cstr, right: cstr, size: i64) -> i32
 
 @name("strtoll")
 public extern fn c_strtoll(value: cstr, end: *mut cstr, base: i32) -> i64
@@ -72,14 +63,20 @@ public extern fn c_getsockname(file_descriptor: i32, address: *mut void, length:
 @name("setsockopt")
 public extern fn c_setsockopt(file_descriptor: i32, level: i32, name: i32, value: *void, length: u32) -> i32
 
-@name("recv")
-public extern fn c_recv(file_descriptor: i32, buffer: *mut void, length: i64, flags: i32) -> i64
-
 @name("send")
 public extern fn c_send(file_descriptor: i32, buffer: *void, length: i64, flags: i32) -> i64
 
 @name("close")
 public extern fn c_close(file_descriptor: i32) -> i32
+
+@name("open")
+public extern fn c_open(path: cstr, flags: i32, ...) -> i32
+
+@name("read")
+public extern fn c_read(file_descriptor: i32, buffer: *mut void, length: i64) -> i64
+
+@name("lseek")
+public extern fn c_lseek(file_descriptor: i32, offset: i64, origin: i32) -> i64
 
 @name("htons")
 public extern fn c_htons(value: u16) -> u16
@@ -106,10 +103,6 @@ public enum FfiSocketAddressLength : u32 {
     Ipv4 = 16
 }
 
-public enum FfiFileDescriptor : i32 {
-    Invalid = -1
-}
-
 public enum FfiSocketOption : i32 {
     ReuseAddress = 2
 
@@ -124,30 +117,6 @@ public enum FfiSocketOption : i32 {
             return 4
         }
 }
-
-@name("fopen")
-public extern fn c_fopen(path: cstr, mode: cstr) -> *mut void
-
-@name("fread")
-public extern fn c_fread(buffer: *mut void, size: i64, count: i64, stream: *mut void) -> i64
-
-@name("fwrite")
-public extern fn c_fwrite(buffer: *void, size: i64, count: i64, stream: *mut void) -> i64
-
-@name("fclose")
-public extern fn c_fclose(stream: *mut void) -> i32
-
-@name("clearerr")
-public extern fn c_clearerr(stream: *mut void) -> void
-
-@name("ferror")
-public extern fn c_ferror(stream: *mut void) -> i32
-
-@name("fseek")
-public extern fn c_fseek(stream: *mut void, offset: i64, whence: i32) -> i32
-
-@name("ftell")
-public extern fn c_ftell(stream: *mut void) -> i64
 
 @name("remove")
 public extern fn c_remove(path: cstr) -> i32
@@ -164,8 +133,8 @@ public extern fn c_popen(command: cstr, mode: cstr) -> *mut void
 @name("pclose")
 public extern fn c_pclose(stream: *mut void) -> i32
 
-@name("fgets")
-public extern fn c_fgets(buffer: *mut void, size: i32, stream: *mut void) -> cstr
+@name("fileno")
+public extern fn c_fileno(stream: *mut void) -> i32
 
 @name("getenv")
 public extern fn c_getenv(name: cstr) -> cstr

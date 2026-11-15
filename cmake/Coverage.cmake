@@ -1,5 +1,3 @@
-option(ZEP_ENABLE_COVERAGE "Enable LLVM source-based coverage" OFF)
-
 if(ZEP_ENABLE_COVERAGE)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         message(FATAL_ERROR "ZEP_ENABLE_COVERAGE requires Clang")

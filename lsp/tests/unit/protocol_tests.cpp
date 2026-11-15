@@ -1,6 +1,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -55,4 +56,25 @@ TEST_F(LspProtocolTest, DeltaEncodesSemanticTokens) {
     auto result = protocol.tokens(document, tokens);
 
     EXPECT_EQ(result["data"], std::vector<std::uint32_t>({0, 1, 3, 7, 1, 1, 2, 3, 10, 0}));
+}
+
+TEST(LspDocument, AppliesIncrementalUtf16Changes) {
+    Document document("file:///test.zep", 1, "a😀b");
+    const auto changes = nlohmann::json::array(
+        {{{"range", {{"start", {{"line", 0}, {"character", 1}}},
+                       {"end", {{"line", 0}, {"character", 3}}}}},
+          {"text", "value"}}});
+
+    EXPECT_TRUE(document.change(2, changes));
+    EXPECT_EQ(document.text, "avalueb");
+    EXPECT_EQ(document.version, 2);
+    EXPECT_FALSE(document.change(2, nlohmann::json::array({{{"text", "stale"}}})));
+    EXPECT_EQ(document.text, "avalueb");
+}
+
+TEST(LspDocument, EncodesAndDecodesFileUris) {
+    const auto path = document_path("file:///tmp/source%20file.zep");
+
+    EXPECT_EQ(path, "/tmp/source file.zep");
+    EXPECT_EQ(document_uri(path), "file:///tmp/source%20file.zep");
 }

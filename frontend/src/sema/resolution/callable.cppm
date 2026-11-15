@@ -97,6 +97,11 @@ export class MemberResolver {
     }
 
     void resolve_enum_member(MemberExpression& node, const EnumType* enum_type) {
+        if (const auto* field = enum_type->find_field(node.member); field != nullptr) {
+            node.type = resolver.resolve_type(field->type);
+            return;
+        }
+
         if (node.member == "value") {
             node.type = enum_type->backing_type != nullptr
                             ? resolver.resolve_type(enum_type->backing_type)
@@ -119,6 +124,11 @@ export class MemberResolver {
         }
 
         if (const auto* field = type_scope->find_local_var(node.member); field != nullptr) {
+            if (nominal->is<EnumType>()) {
+                node.type = resolver.resolve_type(field->type);
+                return;
+            }
+
             if (!nominal->is<StructType>()) {
                 context.diagnostics.add_error(
                     node.span, "enum '" + nominal->name + "' has no field '" + node.member + "'");
@@ -399,7 +409,7 @@ export class MemberResolver {
             return callables;
         }
 
-        const auto* receiver_type = receiver->type;
+        const auto* receiver_type = resolver.resolve_type(receiver->type);
         if (receiver_type == nullptr) {
             return callables;
         }
@@ -519,7 +529,7 @@ export class MemberResolver {
             return;
         }
 
-        const auto* value_type = node.value->type;
+        const auto* value_type = resolver.resolve_type(node.value->type);
         if (value_type == nullptr) {
             return;
         }
@@ -757,7 +767,7 @@ export class CallResolver {
         if (!call_generic_parameters.empty()) {
             if (call_generics.empty()) {
                 call_generics = Arguments::infer(context, sema, resolver, call_generic_parameters, effective_parameters,
-                                                     *normalized, span);
+                                                     *normalized, span, function_type->return_type, target_type);
             }
 
             if (call_generics.size() == call_generic_parameters.size()) {
@@ -790,15 +800,15 @@ export class CallResolver {
             }
 
             const auto* parameter_type = resolver.resolve_type(effective_parameters[i].type);
-            const auto* argument_type = argument->value->type;
+            const auto* argument_type = resolver.resolve_type(argument->value->type);
 
             if (parameter_type == nullptr || argument_type == nullptr) {
                 return std::nullopt;
             }
 
-            const auto* reference = parameter_type->as<PointerType>();
+            const auto* pointer = parameter_type->as<PointerType>();
             const auto moving = Values::moving(*argument->value);
-            if (reference != nullptr && reference->reference_kind == PointerType::ReferenceKind::Type::Move) {
+            if (pointer != nullptr && pointer->reference_kind == PointerType::ReferenceKind::Type::Move) {
                 if (!moving && Values::place(*argument->value)) {
                     return std::nullopt;
                 }
@@ -807,6 +817,18 @@ export class CallResolver {
 
             if (parameter_type->accepts(argument_type)) {
                 score += 2;
+
+                const auto* source = argument_type->as<PointerType>();
+
+                if (pointer != nullptr && source != nullptr &&
+                    pointer->reference_kind == PointerType::ReferenceKind::Type::None &&
+                    Type::same(pointer->element, source->element)) {
+                    ++score;
+
+                    if (Type::same(parameter_type, argument_type)) {
+                        ++score;
+                    }
+                }
             } else if (parameter_type->is<IntegerType>() && argument_type->is<IntegerType>()) {
                 score += 1;
             } else if (parameter_type->is<FloatType>() && argument_type->is<FloatType>()) {
@@ -870,19 +892,27 @@ export class CallResolver {
         }
     }
 
-    void resolve_indirect(CallExpression& node, const FunctionType& signature) {
-        auto normalized = Arguments::normalize(context, node.arguments, signature.parameters,
-                                               node.span, signature.variadic, true);
+    bool resolve_indirect(CallExpression& node) {
+        const auto* type = resolver.resolve_type(node.callee->type);
+        const auto* signature = type != nullptr ? type->as<FunctionType>() : nullptr;
+
+        if (signature == nullptr) {
+            return false;
+        }
+
+        auto normalized = Arguments::normalize(context, node.arguments, signature->parameters,
+                                               node.span, signature->variadic, true);
 
         if (!normalized.has_value()) {
-            return;
+            return true;
         }
 
         node.arguments = std::move(*normalized);
-        bind_arguments(node, signature);
-        const auto* resolved = resolver.resolve_type(&signature)->as<FunctionType>();
-        node.resolved_target = std::make_unique<IndirectCallTarget>(*resolved);
-        node.type = resolved->return_type;
+        bind_arguments(node, *signature);
+        node.resolved_target = std::make_unique<IndirectCallTarget>(*signature);
+        node.type = signature->return_type;
+
+        return true;
     }
 
     static bool is_receiver_argument(const Argument& argument, Expression* receiver) {
@@ -962,10 +992,16 @@ export class CallResolver {
 
         if (auto* ident = node.callee->as<IdentifierExpression>()) {
             const auto* var_symbol = sema.env.current_scope->lookup_var(ident->name);
+
+            if (var_symbol == nullptr) {
+                const auto* scope = Scope::members(enclosing_type);
+                var_symbol = scope != nullptr ? scope->find_local_var(ident->name) : nullptr;
+            }
+
             if (var_symbol != nullptr && var_symbol->type != nullptr &&
                 var_symbol->type->is<FunctionType>()) {
                 visitor.visit_expression(*node.callee);
-                resolve_indirect(node, *var_symbol->type->as<FunctionType>());
+                resolve_indirect(node);
                 return;
             }
 
@@ -973,6 +1009,18 @@ export class CallResolver {
         } else if (auto* member = node.callee->as<MemberExpression>(); member != nullptr) {
             visitor.visit_expression(*member->value);
             candidates = member_resolver.resolve_callables(*member);
+
+            if (candidates.empty()) {
+                const auto* scope = member_resolver.resolve_nominal_scope(member->value->type);
+                const auto* field = scope != nullptr ? scope->find_local_var(member->member) : nullptr;
+
+                if (field != nullptr && field->type != nullptr && field->type->is<FunctionType>()) {
+                    visitor.visit_expression(*node.callee);
+                    resolve_indirect(node);
+
+                    return;
+                }
+            }
         } else if (auto* qualified = node.callee->as<QualifiedAccessExpression>()) {
             candidates = member_resolver.resolve_callables(*qualified);
         } else {
@@ -981,9 +1029,7 @@ export class CallResolver {
             const auto named_function =
                 identifier != nullptr &&
                 !sema.env.current_scope->lookup_function_overloads(identifier->name).empty();
-            if (!named_function && node.callee->type != nullptr &&
-                node.callee->type->is<FunctionType>()) {
-                resolve_indirect(node, *node.callee->type->as<FunctionType>());
+            if (!named_function && resolve_indirect(node)) {
                 return;
             }
         }
@@ -997,7 +1043,15 @@ export class CallResolver {
         std::optional<std::vector<Argument*>> contextual_arguments;
         if (candidates.size() == 1 && get_call_generic_parameters(candidates.front()).empty()) {
             const auto& candidate = candidates.front();
-            contextual_parameters = candidate.symbol->signature()->parameters;
+            const FunctionType* signature = nullptr;
+
+            {
+                auto scope = resolver.create_substitution_scope();
+                apply_candidate_parent_bindings(candidate);
+                signature = resolver.resolve_type(candidate.symbol->signature())->as<FunctionType>();
+            }
+
+            contextual_parameters = signature->parameters;
             if (candidate.receiver != nullptr && !contextual_parameters.empty() &&
                 contextual_parameters.front().name == "self") {
                 contextual_parameters = contextual_parameters.subspan(1);
@@ -1019,7 +1073,7 @@ export class CallResolver {
                 const auto index = static_cast<std::size_t>(found - contextual_arguments->begin());
                 if (index < contextual_parameters.size()) {
                     const auto* expected = resolver.resolve_type(contextual_parameters[index].type);
-                    if (resolver.is_concrete(expected)) {
+                    if (expected != nullptr && !expected->is<NamedType>()) {
                         target_type = expected;
                     }
                 }
@@ -1063,7 +1117,8 @@ export class CallResolver {
                     candidate.symbol->signature()->variadic, false);
                 if (!parameters.empty() && normalized.has_value() &&
                     Arguments::infer(context, sema, resolver, parameters, effective_parameters, *normalized,
-                                         node.span, true).empty()) {
+                                         node.span, candidate.symbol->signature()->return_type,
+                                         target_type, true).empty()) {
                     return;
                 }
             }
@@ -1094,11 +1149,50 @@ export class CallResolver {
         }
 
         node.resolved_target = std::make_unique<DirectCallTarget>(*best_candidate.symbol, best->signature);
+
+        if (best_candidate.receiver != nullptr) {
+            const auto* receiver = resolver.resolve_type(best_candidate.receiver->type);
+
+            if (const auto* pointer = receiver != nullptr ? receiver->as<PointerType>() : nullptr;
+                pointer != nullptr) {
+                receiver = resolver.resolve_type(pointer->element);
+            }
+
+            if (const auto* interface = receiver != nullptr ? receiver->as<InterfaceType>() : nullptr;
+                interface != nullptr) {
+                for (auto slot = std::size_t{0}; slot < interface->methods.size(); ++slot) {
+                    const auto& method = interface->methods[slot];
+
+                    if (method.name == best_candidate.symbol->name &&
+                        (method.type == best_candidate.symbol->signature() ||
+                         method.type->same(best->signature))) {
+                        node.resolved_target = std::make_unique<InterfaceCallTarget>(
+                            *best_candidate.symbol, slot, best->signature);
+                        break;
+                    }
+                }
+            }
+        }
+
         const auto* function_type = best->signature;
         node.arguments = std::move(best->arguments);
         node.generic_arguments = std::move(best->generics);
 
         StateGuard substitution_guard(resolver.substitutions, std::move(best->bindings));
+
+        node.bindings.clear();
+        node.bindings.reserve(best_candidate.symbol->signature()->generic_parameters.size());
+
+        for (const auto& parameter : best_candidate.symbol->signature()->generic_parameters) {
+            const auto* binding = resolver.substitutions.lookup(parameter);
+
+            if (binding == nullptr) {
+                context.diagnostics.add_error(node.span, "call is missing a generic binding for '" + parameter.name + "'");
+                return;
+            }
+
+            node.bindings.push_back(*binding);
+        }
 
         if (best_candidate.receiver != nullptr) {
             node.arguments =
@@ -1107,7 +1201,7 @@ export class CallResolver {
 
         bind_arguments(node, *function_type);
 
-        const auto* resolved_return = resolver.resolve_type(function_type->return_type);
+        const auto* resolved_return = function_type->return_type;
         node.type = resolved_return != nullptr ? resolved_return
                                                : sema.primitives.entries.at("void");
     }

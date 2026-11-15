@@ -56,7 +56,7 @@ export class OperatorChecker {
             return;
         }
 
-        node.type = left_type;
+        node.type = node.left->type;
     }
 
     void validate_numeric_comparison(BinaryExpression& node, const Type* left_type,
@@ -94,8 +94,8 @@ export class OperatorChecker {
     void resolve(BinaryExpression& node) {
         using Operator = BinaryExpression::Operator::Type;
 
-        const auto* left_type = node.left->type;
-        const auto* right_type = node.right->type;
+        const auto* left_type = type_resolver.constraint_type(node.left->type);
+        const auto* right_type = type_resolver.constraint_type(node.right->type);
 
         if (left_type == nullptr || right_type == nullptr) {
             return;
@@ -105,7 +105,7 @@ export class OperatorChecker {
         case Operator::As:
         case Operator::Is:
             if (node.op == BinaryExpression::Operator::Type::As) {
-                node.type = type_resolver.resolve_type(right_type);
+                node.type = node.right->type;
                 return;
             }
 

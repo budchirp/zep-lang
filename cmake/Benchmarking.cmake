@@ -1,5 +1,3 @@
-option(ZEP_BUILD_BENCHMARKS "Build benchmark targets" OFF)
-
 if(ZEP_BUILD_BENCHMARKS)
     include(FetchContent)
 
@@ -9,6 +7,7 @@ if(ZEP_BUILD_BENCHMARKS)
     FetchContent_Declare(
         benchmark
         URL https://github.com/google/benchmark/archive/refs/tags/v1.9.5.tar.gz
+        EXCLUDE_FROM_ALL
     )
 
     FetchContent_MakeAvailable(benchmark)

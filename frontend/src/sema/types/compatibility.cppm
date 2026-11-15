@@ -12,8 +12,8 @@ export class Compatibility {
     TypeResolver& resolver;
     const Facades& facades;
 
-    bool string_pointer(const PointerType& pointer) const {
-        const auto* element = resolver.resolve_type(pointer.element);
+    bool string_element(const Type* type) const {
+        const auto* element = resolver.resolve_type(type);
 
         if (element == nullptr || element->is<VoidType>() || element->is<CharType>()) {
             return true;
@@ -29,8 +29,8 @@ export class Compatibility {
         : types(types), resolver(resolver), facades(facades) {}
 
     bool accepts(const Type* expected, const Type* actual) const {
-        expected = resolver.resolve_type(expected);
-        actual = resolver.resolve_type(actual);
+        expected = resolver.constraint_type(expected);
+        actual = resolver.constraint_type(actual);
 
         if (expected == nullptr) {
             return false;
@@ -41,15 +41,20 @@ export class Compatibility {
         }
 
         if (const auto* pointer = expected->as<PointerType>();
-            pointer != nullptr && actual->is<StringType>() && string_pointer(*pointer)) {
+            pointer != nullptr && actual->is<StringType>() && string_element(pointer->element)) {
             return true;
         }
 
         if (const auto* pointer = actual->as<PointerType>();
             pointer != nullptr && expected->is<StringType>()) {
-            const auto* element = resolver.resolve_type(pointer->element);
+            auto* element = resolver.resolve_type(pointer->element);
 
-            if (string_pointer(*pointer) || (element != nullptr && element->is<ArrayType>())) {
+            if (const auto* array = element != nullptr ? element->as<ArrayType>() : nullptr;
+                array != nullptr) {
+                element = resolver.resolve_type(array->element);
+            }
+
+            if (string_element(element)) {
                 return true;
             }
         }

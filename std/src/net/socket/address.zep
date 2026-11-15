@@ -4,10 +4,6 @@ import std.ffi.c_ntohs
 import std.ffi.FfiSocketAddressLength
 import std.ffi.FfiSocketDomain
 
-var FAMILY_OFFSET_LINUX: i32 = 0
-var PORT_OFFSET: i32 = 1
-var ADDRESS_OFFSET: i32 = 1
-
 public struct Ipv4Address {
     public:
         var value: u32
@@ -51,8 +47,7 @@ public struct SocketAddress {
 
         @os("linux")
         fn set_family() mut -> void {
-            var mut values = (&mut storage) as *mut u16
-            values[FAMILY_OFFSET_LINUX] = FfiSocketDomain::Ipv4.value as u16
+            ((&mut storage) as *mut u16)[0] = FfiSocketDomain::Ipv4.value as u16
         }
 
         @os("macos")
@@ -62,19 +57,15 @@ public struct SocketAddress {
         }
 
         fn set_port(port: u16) mut -> void {
-            var mut values = (&mut storage) as *mut u16
-            values[PORT_OFFSET] = c_htons(port)
+            ((&mut storage) as *mut u16)[1] = c_htons(port)
         }
 
         fn set_address(address: Ipv4Address) mut -> void {
-            var mut values = (&mut storage) as *mut u32
-            values[ADDRESS_OFFSET] = c_htonl(address.value)
+            ((&mut storage) as *mut u32)[1] = c_htonl(address.value)
         }
 
         fn port() -> u16 {
-            var values = (&storage) as *u16
-
-            return c_ntohs(values[PORT_OFFSET])
+            return c_ntohs(((&storage) as *u16)[1])
         }
 
         fn as_mut_ptr() mut -> *mut void {

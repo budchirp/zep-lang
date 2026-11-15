@@ -10,13 +10,26 @@ public struct Box<T> {
         fn Box(source: move Box<T>) -> Box<T> {
             var storage = source.ptr
             source.ptr = null
-            return Box<T> { ptr: storage }
+
+            return Box { ptr: storage }
         }
 
         fn Box(value: T) -> Box<T> {
-            var ptr = new Memory::move(value)
+            var storage: *mut T = Memory::allocate()
+            new (storage) Memory::move(value)
 
-            return Box<T> { ptr: ptr }
+            return Box { ptr: storage }
+        }
+
+        static fn from_raw(ptr: *mut T) -> Box<T> {
+            return Box { ptr: ptr }
+        }
+
+        fn into_raw() move -> *mut T {
+            var storage = ptr
+            ptr = null
+
+            return storage
         }
 
         fn get() -> *T {
@@ -36,15 +49,17 @@ public struct Box<T> {
 
         fn into_inner() move -> T {
             var value = Memory::move(ptr[0])
-            delete ptr
+            ptr[0].~T()
+            Memory::free(ptr as *mut void)
             ptr = null
+
             return Memory::move(value)
         }
 
         fn ~Box() -> void {
             if (ptr != null) {
-                delete ptr
-                ptr = null
+                ptr[0].~T()
+                Memory::free(ptr as *mut void)
             }
         }
 }

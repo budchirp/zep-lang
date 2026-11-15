@@ -66,6 +66,22 @@ export class Functions : public HIRVisitor<llvm::Value*> {
         return builder.CreateExtractValue(enum_value, {0});
     }
 
+    llvm::Value* emit_statements(const std::vector<HIRStatement*>& statements) {
+        llvm::Value* result = nullptr;
+
+        for (auto* statement : statements) {
+            if (builder.GetInsertBlock()->hasTerminator()) {
+                break;
+            }
+
+            if (auto* value = visit_statement(*statement); value != nullptr) {
+                result = value;
+            }
+        }
+
+        return result;
+    }
+
     void return_fallback(const Type* return_type, llvm::Value* last_value) {
         auto* block = builder.GetInsertBlock();
         if (block == nullptr || block->hasTerminator()) {
@@ -85,9 +101,9 @@ export class Functions : public HIRVisitor<llvm::Value*> {
         }
     }
 
-    void bind_pattern_fields(HIRWhenArm& arm, llvm::Value* subject, const Type* subject_type, llvm::Value* subject_address) {
+    void bind_pattern_fields(HIRWhenArm& arm, const Type* subject_type, llvm::Value* subject_address) {
         const auto* enum_type = subject_type != nullptr ? subject_type->as<EnumType>() : nullptr;
-        if (enum_type == nullptr || subject == nullptr) {
+        if (enum_type == nullptr || subject_address == nullptr) {
             return;
         }
 
@@ -97,21 +113,17 @@ export class Functions : public HIRVisitor<llvm::Value*> {
             }
 
             for (const auto& field : pattern.fields) {
+                if (field.type->is<VoidType>()) {
+                    continue;
+                }
+
                 auto index = enum_type->payload_index(pattern.variant_name, field.field_name);
                 if (!index.has_value()) {
                     continue;
                 }
 
-                if (subject_address != nullptr) {
-                    scope.set(field.binding_name, builder.CreateStructGEP(lowerer.lower(enum_type), subject_address,
-                        static_cast<unsigned>(*index)));
-                    continue;
-                }
-
-                auto* value = builder.CreateExtractValue(subject, {static_cast<unsigned>(*index)});
-                auto* ptr = places.allocate(lowerer.lower(field.type));
-                builder.CreateStore(value, ptr);
-                scope.set(field.binding_name, ptr);
+                scope.set(field.binding_name, builder.CreateStructGEP(lowerer.lower(enum_type), subject_address,
+                    static_cast<unsigned>(*index)));
             }
 
             return;
@@ -186,7 +198,7 @@ export class Functions : public HIRVisitor<llvm::Value*> {
 
                 builder.SetInsertPoint(guard_block);
                 scope.enter();
-                bind_pattern_fields(arm, subject_value, subject_type, subject_address);
+                bind_pattern_fields(arm, subject_type, subject_address);
                 auto* guard_value = visit_expression(*arm.guard);
                 scope.exit();
                 if (guard_value == nullptr) {
@@ -201,7 +213,7 @@ export class Functions : public HIRVisitor<llvm::Value*> {
 
         builder.SetInsertPoint(body_block);
         scope.enter();
-        bind_pattern_fields(arm, subject_value, subject_type, subject_address);
+        bind_pattern_fields(arm, subject_type, subject_address);
         auto* body_value = visit_statement(*arm.body);
         scope.exit();
 
@@ -238,9 +250,10 @@ export class Functions : public HIRVisitor<llvm::Value*> {
             return;
         }
 
-        for (std::size_t index = 0; index < function_type->parameters.size(); ++index) {
-            const auto& parameter = function_type->parameters[index];
-            auto* argument = function->getArg(static_cast<unsigned>(index));
+        auto index = 0u;
+
+        for (const auto& parameter : function_type->value_parameters()) {
+            auto* argument = function->getArg(index++);
             auto* ptr = places.allocate(lowerer.lower(parameter.type));
             builder.CreateStore(argument, ptr);
             scope.set(parameter.name, ptr);
@@ -249,28 +262,16 @@ export class Functions : public HIRVisitor<llvm::Value*> {
 
     llvm::Value* visit(HIRBlockStatement& node) override {
         scope.enter();
-        llvm::Value* last = nullptr;
-        for (auto* statement : node.statements) {
-            auto* value = visit_statement(*statement);
-            if (value != nullptr) {
-                last = value;
-            }
-        }
+        auto* result = emit_statements(node.statements);
         scope.exit();
-        return last;
+
+        return result;
     }
 
     llvm::Value* visit(HIRBlockExpression& node) override { return visit(*node.body); }
 
     llvm::Value* visit(HIRStatementGroup& node) override {
-        llvm::Value* last = nullptr;
-        for (auto* statement : node.statements) {
-            auto* value = visit_statement(*statement);
-            if (value != nullptr) {
-                last = value;
-            }
-        }
-        return last;
+        return emit_statements(node.statements);
     }
 
     llvm::Value* visit(HIRNumberLiteral& node) override {
@@ -482,6 +483,11 @@ export class Functions : public HIRVisitor<llvm::Value*> {
 
     llvm::Value* visit(HIRUnaryExpression& node) override {
         if (node.op == UnaryOperator::Type::AddressOf || node.op == UnaryOperator::Type::AddressOfMut) {
+            if (node.operand->type->is<VoidType>()) {
+                visit_expression(*node.operand);
+                return llvm::ConstantPointerNull::get(builder.getPtrTy());
+            }
+
             auto* pointer = places.address(node.operand);
             if (pointer != nullptr) {
                 return pointer;
@@ -495,6 +501,11 @@ export class Functions : public HIRVisitor<llvm::Value*> {
             return temporary;
         }
         auto* operand_value = visit_expression(*node.operand);
+
+        if (node.type->is<VoidType>()) {
+            return nullptr;
+        }
+
         if (operand_value == nullptr) {
             return nullptr;
         }
@@ -585,7 +596,7 @@ export class Functions : public HIRVisitor<llvm::Value*> {
             auto* object_ptr = builder.CreateStructGEP(interface_llvm_type, value, 0);
             builder.CreateStore(object_address, object_ptr);
 
-            auto* method_table = dispatch.get(source_struct, interface_type);
+            auto* method_table = dispatch.get(source_struct, interface_type, node.implementations);
             if (method_table != nullptr) {
                 auto* method_table_ptr = builder.CreateStructGEP(interface_llvm_type, value, 1);
                 builder.CreateStore(method_table, method_table_ptr);
@@ -615,7 +626,8 @@ export class Functions : public HIRVisitor<llvm::Value*> {
 
     llvm::Value* visit(HIRMemberExpression& node) override {
         if (node.member == "value" && node.object != nullptr && node.object->type != nullptr &&
-            node.object->type->is<EnumType>()) {
+            node.object->type->is<EnumType>() &&
+            node.object->type->as<EnumType>()->find_field(node.member) == nullptr) {
             auto* value = visit_expression(*node.object);
             return enum_tag(value);
         }
@@ -655,11 +667,22 @@ export class Functions : public HIRVisitor<llvm::Value*> {
     }
 
     llvm::Value* visit(HIRWhenExpression& node) override {
-        auto* subject_address = node.borrow_payloads && node.subject != nullptr ? places.address(node.subject) : nullptr;
-        auto* subject_value = subject_address != nullptr ? builder.CreateLoad(lowerer.lower(node.subject->type), subject_address)
-            : node.subject != nullptr ? visit_expression(*node.subject) : nullptr;
+        auto* subject_address = node.subject != nullptr ? places.address(node.subject) : nullptr;
+        llvm::Value* subject_value = nullptr;
+
+        if (node.subject != nullptr) {
+            subject_value = subject_address != nullptr
+                ? builder.CreateLoad(lowerer.lower(node.subject->type), subject_address)
+                : visit_expression(*node.subject);
+        }
+
         if (node.subject != nullptr && subject_value == nullptr) {
             return nullptr;
+        }
+
+        if (subject_address == nullptr && node.subject != nullptr && node.subject->type->is<EnumType>()) {
+            subject_address = places.allocate(lowerer.lower(node.subject->type));
+            builder.CreateStore(subject_value, subject_address);
         }
 
         auto* function = builder.GetInsertBlock()->getParent();
@@ -690,6 +713,12 @@ export class Functions : public HIRVisitor<llvm::Value*> {
 
         function->insert(function->end(), merge_block);
         builder.SetInsertPoint(merge_block);
+
+        if (node.type != nullptr && node.type->is<NeverType>()) {
+            builder.CreateUnreachable();
+
+            return nullptr;
+        }
 
         if (node.type != nullptr && !node.type->is<VoidType>()) {
             auto incoming_count = static_cast<unsigned>(incoming_values.size());
@@ -725,6 +754,11 @@ export class Functions : public HIRVisitor<llvm::Value*> {
             return builder.CreateRetVoid();
         }
         auto* value = visit_expression(*node.value);
+
+        if (node.value->type->is<VoidType>()) {
+            return builder.CreateRetVoid();
+        }
+
         if (value == nullptr) {
             return nullptr;
         }
@@ -738,6 +772,10 @@ export class Functions : public HIRVisitor<llvm::Value*> {
     llvm::Value* visit(HIRVarDeclaration& node) override {
         if (node.is_global) {
             return scope.lookup(node.name);
+        }
+
+        if (node.type->is<VoidType>()) {
+            return node.initializer != nullptr ? visit_expression(*node.initializer) : nullptr;
         }
 
         auto* type = lowerer.lower(node.type);

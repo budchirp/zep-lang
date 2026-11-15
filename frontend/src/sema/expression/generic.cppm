@@ -1,6 +1,7 @@
 module;
 
 #include <algorithm>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -17,6 +18,7 @@ import zep.frontend.sema.context;
 import zep.frontend.sema.types;
 import zep.frontend.sema.types.resolver;
 import zep.frontend.sema.constants.evaluator;
+import zep.frontend.sema.expression.values;
 
 export class GenericInference {
   private:
@@ -25,20 +27,31 @@ export class GenericInference {
     TypeResolver& resolver;
     const std::vector<GenericParameterType>& parameters;
     std::vector<const Type*> inferred;
+    std::unordered_set<std::size_t> literals;
     std::string failure;
 
   public:
+    class Source {
+      public:
+        enum class Type : std::uint8_t { Argument, Expected, Literal };
+    };
+
     GenericInference(Context& context, SemaContext& sema, TypeResolver& resolver,
                      const std::vector<GenericParameterType>& parameters)
         : context(context), sema(sema), resolver(resolver), parameters(parameters),
-          inferred(parameters.size(), nullptr), failure() {}
+          inferred(parameters.size(), nullptr), literals(), failure() {
+        literals.reserve(parameters.size());
+    }
 
-    void match(const Type* declared, const Type* actual) {
+    void match(const Type* declared, const Type* actual,
+               Source::Type origin = Source::Type::Argument) {
         if (declared == nullptr || actual == nullptr || !failure.empty()) {
             return;
         }
 
-        actual = resolver.resolve_type(actual);
+        if (resolver.is_concrete(actual)) {
+            actual = resolver.resolve_type(actual);
+        }
         if (actual == nullptr) {
             return;
         }
@@ -51,9 +64,22 @@ export class GenericInference {
                     continue;
                 }
 
+                const auto* previous = resolver.constraint_type(inferred[index]);
+                const auto* candidate = resolver.constraint_type(actual);
+                const auto same_number_family = previous != nullptr && candidate != nullptr &&
+                    previous->kind == candidate->kind &&
+                    (previous->is<IntegerType>() || previous->is<FloatType>());
+
                 if (inferred[index] == nullptr) {
                     inferred[index] = actual;
-                } else if (!inferred[index]->same(actual)) {
+
+                    if (origin == Source::Type::Literal && resolver.is_concrete(actual)) {
+                        literals.insert(index);
+                    }
+                } else if (origin == Source::Type::Expected && literals.contains(index) && same_number_family) {
+                    inferred[index] = actual;
+                } else if (origin != Source::Type::Expected && !inferred[index]->same(actual) &&
+                           !(origin == Source::Type::Literal && same_number_family)) {
                     failure = "conflicting inferred types for generic parameter '" + parameter.name +
                               "': '" + inferred[index]->to_string() + "' and '" +
                               actual->to_string() + "'";
@@ -72,33 +98,38 @@ export class GenericInference {
                 const auto* source = actual->as<PointerType>();
                 const auto* value = source != nullptr && source->reference_kind != PointerType::ReferenceKind::Type::None
                     ? source->element : actual;
-                match(pointer->element, value);
+                match(pointer->element, value, origin);
                 return;
             }
             if (const auto* actual_pointer = actual->as<PointerType>(); actual_pointer != nullptr) {
-                match(pointer->element, actual_pointer->element);
+                match(pointer->element, actual_pointer->element, origin);
             }
             return;
         }
 
         if (const auto* array = declared->as<ArrayType>(); array != nullptr) {
             if (const auto* actual_array = actual->as<ArrayType>(); actual_array != nullptr) {
-                match(array->element, actual_array->element);
+                match(array->element, actual_array->element, origin);
             }
             return;
         }
 
         if (const auto* function = declared->as<FunctionType>(); function != nullptr) {
             const auto* actual_function = actual->as<FunctionType>();
-            if (actual_function == nullptr ||
-                function->parameters.size() != actual_function->parameters.size() ||
-                function->variadic != actual_function->variadic) {
+            if (actual_function == nullptr || function->variadic != actual_function->variadic) {
                 return;
             }
 
-            match(function->return_type, actual_function->return_type);
-            for (auto index = std::size_t{0}; index < function->parameters.size(); ++index) {
-                match(function->parameters[index].type, actual_function->parameters[index].type);
+            const auto parameters = function->value_parameters();
+            const auto actual_parameters = actual_function->value_parameters();
+
+            if (parameters.size() != actual_parameters.size()) {
+                return;
+            }
+
+            match(function->return_type, actual_function->return_type, origin);
+            for (auto index = std::size_t{0}; index < parameters.size(); ++index) {
+                match(parameters[index].type, actual_parameters[index].type, origin);
             }
             return;
         }
@@ -115,7 +146,7 @@ export class GenericInference {
             const auto& argument = nominal->generic_arguments[index];
             const auto& actual_argument = actual_nominal->generic_arguments[index];
             if (!argument.is_const() && !actual_argument.is_const()) {
-                match(argument.type, actual_argument.type);
+                match(argument.type, actual_argument.type, origin);
             }
         }
     }
@@ -156,16 +187,16 @@ export class GenericArgumentResolver {
     Visitor<void>& visitor;
 
     static void contextualize_literal(Expression& expression, const Type* type) {
-        if (expression.as<NumberLiteral>() != nullptr || expression.as<FloatLiteral>() != nullptr) {
-            expression.type = type;
-            expression.compile_time_value.reset();
-        } else if (auto* unary = expression.as<UnaryExpression>();
-                   unary != nullptr && (unary->op == UnaryExpression::Operator::Type::Plus ||
-                                        unary->op == UnaryExpression::Operator::Type::Minus)) {
-            contextualize_literal(*unary->operand, type);
-            expression.type = type;
-            expression.compile_time_value.reset();
+        if (!Values::numeric_literal(expression)) {
+            return;
         }
+
+        if (auto* unary = expression.as<UnaryExpression>(); unary != nullptr) {
+            contextualize_literal(*unary->operand, type);
+        }
+
+        expression.type = type;
+        expression.compile_time_value.reset();
     }
 
     std::optional<GenericBinding> resolve(GenericArgument& argument,

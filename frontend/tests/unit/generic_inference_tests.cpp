@@ -9,6 +9,63 @@ import zep.frontend.sema.types.resolver;
 import zep.frontend.sema.expression.generic;
 import zep.common.source.span;
 
+TEST(FrontendInference, ContextualizesInstantiatedReceiverArguments) {
+    EXPECT_TRUE(assert_type_check_ok(R"zep(
+enum Outcome<T, E> { Ok { value: T } Error { error: E } }
+struct Sink<T> {
+    public:
+        fn put(value: T) mut -> void {}
+}
+fn check() -> void {
+    var mut sink: Sink<Outcome<i64, i32>> = Sink {}
+    sink.put(Outcome::Ok { value: 42 })
+}
+)zep"));
+}
+
+TEST(FrontendInference, ResolvesGenericCallableFieldsAndLocalShadowing) {
+    EXPECT_TRUE(assert_type_check_ok(R"zep(
+struct Callable<T> {
+    public:
+        var function: (T) -> T
+        fn apply(value: T) -> T { return function(value) }
+        fn apply_with(function: (T) -> T, value: T) -> T { return function(value) }
+}
+fn increment(value: i64) -> i64 { return value + 1 }
+fn check() -> i64 {
+    var callable = Callable { function: increment }
+    return callable.apply(41) + callable.function(41) + callable.apply_with(increment, 41)
+}
+)zep"));
+}
+
+TEST(FrontendInference, UsesConcreteArgumentsAndResultContextBeforeNumericLiterals) {
+    FrontendHarness harness(R"zep(
+fn bound<T: f64>(value: T, lower: T, upper: T) -> T { return value }
+fn choose<T: i32>(left: T, right: T) -> T { return left }
+fn check() -> void {
+    var value: f32 = 0.5
+    var bounded = bound(value, -1.0, 1.0)
+    var wide = choose(1, 4294967296 as i64)
+    var contextual: i64 = choose(1, 2)
+}
+)zep");
+
+    ASSERT_TRUE(harness.type_check_succeeded());
+    EXPECT_EQ(harness.variable("bounded", "check")->type->bit_width(), 32);
+    EXPECT_EQ(harness.variable("wide", "check")->type->bit_width(), 64);
+    EXPECT_EQ(harness.variable("contextual", "check")->initializer->type->bit_width(), 64);
+
+    EXPECT_TRUE(assert_type_check_error(R"zep(
+fn choose<T: f64>(left: T, right: T) -> T { return left }
+fn invalid() -> void {
+    var left: f32 = 1.0
+    var right: f64 = 2.0
+    choose(left, right)
+}
+)zep"));
+}
+
 TEST(FrontendInference, InfersDefaultAndNestedLiteralArguments) {
     FrontendHarness harness(R"zep(
 struct Box<T> { public: var value: T }
@@ -23,6 +80,34 @@ fn main() -> i32 {
     const auto* box = harness.variable("box", "main")->type->as<StructType>();
     ASSERT_NE(box, nullptr);
     EXPECT_TRUE(box->find_field("value")->type->same(harness.sema.primitives.entries.at("i32")));
+}
+
+TEST(FrontendInference, InfersFactoriesFromTheirExpectedResult) {
+    EXPECT_TRUE(assert_type_check_ok(R"zep(
+struct Holder<T> { public: var ptr: *mut T }
+fn allocate<T>() -> *mut T { return null }
+fn make<T>() -> Holder<T> { return Holder { ptr: allocate() } }
+fn build() -> Holder<i32> { return make() }
+fn nested<T>() -> *mut T { return allocate() }
+fn main() -> i32 {
+    var ptr: *mut i32 = allocate()
+    var holder: Holder<i32> = make()
+    var other: *mut i32 = nested()
+    return 0
+}
+)zep"));
+}
+
+TEST(FrontendInference, KeepsArgumentBindingsWhenTheExpectedResultConflicts) {
+    EXPECT_TRUE(assert_type_check_error(R"zep(
+fn identity<T>(value: T) -> T { return value }
+fn check() -> boolean { return identity(42) }
+)zep"));
+
+    EXPECT_TRUE(assert_type_check_error(R"zep(
+fn allocate<T>() -> *mut T { return null }
+fn check() -> void { var ptr = allocate() }
+)zep"));
 }
 
 TEST(FrontendInference, InfersNestedCallArgumentsAndNormalizesNamedArguments) {

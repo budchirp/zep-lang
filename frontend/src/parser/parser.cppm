@@ -39,6 +39,7 @@ export class Parser {
     Token current_token;
     Token peek_token;
     bool stop_expression_at_greater = false;
+    std::size_t test_count = 0;
 
     class NominalHeader {
       public:
@@ -254,12 +255,38 @@ export class Parser {
         return nullptr;
     }
 
-    Statement* parse_statement() {
+    Statement* parse_statement(bool module_scope = false) {
         auto attributes = parse_attributes();
-
+        const auto has_visibility = check(Token::Type::Public) || check(Token::Type::Private);
         auto visibility = parse_visibility();
 
         switch (current_token.type) {
+        case Token::Type::Test: {
+            const auto span = current_token.span;
+
+            if (!module_scope || has_visibility || !attributes.empty()) {
+                error(span, "tests must be module declarations without visibility or attributes");
+            }
+
+            advance();
+            const auto name = expect(Token::Type::String);
+
+            if (name.value.empty()) {
+                error(name.span, "test names must not be empty");
+            }
+
+            auto* body = parse_block_statement();
+            auto* result = sema.nodes.create<TypeExpression>(span, sema.primitives.entries.at("void"));
+            auto* prototype = sema.nodes.create<FunctionPrototype>(
+                name.span, false, "$test$" + std::to_string(test_count++),
+                std::vector<GenericParameter*>(), std::vector<Parameter*>(), result);
+            auto* function = sema.nodes.create<FunctionDeclaration>(
+                Span(span.start, body->span.end), Visibility::Type::Private,
+                std::vector<Attribute*>(), false, false, false, "", prototype, body);
+
+            return sema.nodes.create<TestDeclaration>(function->span, std::string(name.value),
+                                                      name.span, function);
+        }
         case Token::Type::Import:
             return parse_import_statement(visibility);
         case Token::Type::Extern:
@@ -326,12 +353,9 @@ export class Parser {
 
         case Token::Type::New: {
             advance();
-            Expression* storage = nullptr;
-
-            if (match(Token::Type::LeftParen)) {
-                storage = parse_expression();
-                expect(Token::Type::RightParen);
-            }
+            expect(Token::Type::LeftParen);
+            auto* storage = parse_expression();
+            expect(Token::Type::RightParen);
 
             auto* value = parse_expression(Precedence::Type::Unary);
 
@@ -339,10 +363,8 @@ export class Parser {
         }
 
         case Token::Type::Delete: {
-            advance();
-            auto* value = parse_expression(Precedence::Type::Unary);
-
-            return sema.nodes.create<DeleteExpression>(span, value);
+            error(span, "delete expressions are not supported; invoke the destructor and free storage explicitly");
+            return nullptr;
         }
 
         case Token::Type::String: {
@@ -1363,6 +1385,21 @@ export class Parser {
                                             std::vector<Attribute*> attributes = {}) {
         auto header = parse_nominal_header(Token::Type::Enum);
 
+        std::vector<Field*> fields;
+        fields.reserve(4);
+
+        if (match(Token::Type::LeftParen)) {
+            while (!check(Token::Type::RightParen) && !check(Token::Type::Eof)) {
+                fields.push_back(parse_field(Visibility::Type::Public));
+
+                if (!match(Token::Type::Comma)) {
+                    break;
+                }
+            }
+
+            expect(Token::Type::RightParen);
+        }
+
         auto entries = parse_inheritance_list();
         auto* backing_type = static_cast<TypeExpression*>(nullptr);
         auto inheritance = std::vector<TypeExpression*>{};
@@ -1417,7 +1454,7 @@ export class Parser {
         return sema.nodes.create<EnumDeclaration>(
             header.span, visibility, std::move(header.name), std::move(attributes),
             std::move(header.generic_parameters), backing_type, std::move(inheritance),
-            std::move(variants), std::move(methods));
+            std::move(variants), std::move(methods), std::move(fields));
     }
 
     TypeAliasDeclaration* parse_type_alias_declaration(Visibility::Type visibility) {
@@ -1881,7 +1918,7 @@ export class Parser {
 
         while (!check(Token::Type::Eof)) {
             try {
-                if (auto* statement = parse_statement(); statement != nullptr) {
+                if (auto* statement = parse_statement(true); statement != nullptr) {
                     program.statements.push_back(statement);
                 }
             } catch (const ParseFailure&) {

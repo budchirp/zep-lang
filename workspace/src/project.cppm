@@ -33,26 +33,15 @@ export class Project {
             Paths::canonical(root_package->source_directory, error_code);
         auto canonical_source = Paths::canonical(source_path, error_code);
 
-        auto relative = canonical_source.lexically_relative(canonical_source_directory);
+        const auto directory = ModulePath::is_test(canonical_source)
+            ? root_directory : canonical_source_directory;
+        const auto relative = canonical_source.lexically_relative(directory);
+
         if (relative.empty() || relative.string().starts_with("..")) {
             return std::nullopt;
         }
 
-        std::vector<std::string> segments;
-        for (const auto& part : relative) {
-            segments.push_back(part.string());
-        }
-
-        if (segments.empty()) {
-            return std::nullopt;
-        }
-
-        auto last = segments.back();
-        if (last.ends_with(".zep")) {
-            segments.back() = last.substr(0, last.length() - 4);
-        }
-
-        return ModulePath(std::move(segments));
+        return ModulePath::from_file(relative);
     }
 
     static std::optional<Project> open(const std::filesystem::path& path, Diagnostics& diagnostics,

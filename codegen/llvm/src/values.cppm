@@ -71,14 +71,35 @@ export class Places {
             return nullptr;
         }
 
+        if (auto* block = expression->as<HIRBlockExpression>(); block != nullptr &&
+            !block->body->statements.empty()) {
+            const auto* tail = block->body->statements.back()->as<HIRExpressionStatement>();
+
+            if (tail == nullptr || tail->expression->as<HIRIdentifierExpression>() == nullptr) {
+                return nullptr;
+            }
+
+            scope.enter();
+
+            for (auto index = std::size_t{0}; index + 1 < block->body->statements.size(); ++index) {
+                expressions.visit_statement(*block->body->statements[index]);
+            }
+
+            auto* result = address(tail->expression);
+            scope.exit();
+
+            return result;
+        }
+
         if (const auto* identifier = expression->as<HIRIdentifierExpression>(); identifier != nullptr) {
             return scope.lookup(identifier->name);
         }
 
         if (auto* member = expression->as<HIRMemberExpression>(); member != nullptr) {
             const auto* structure = member->object->type->as<StructType>();
+            const auto* enumeration = member->object->type->as<EnumType>();
 
-            if (structure == nullptr) {
+            if (structure == nullptr && enumeration == nullptr) {
                 return nullptr;
             }
 
@@ -86,7 +107,7 @@ export class Places {
 
             if (storage == nullptr) {
                 auto* value = expressions.visit_expression(*member->object);
-                storage = allocate(types.lower(structure));
+                storage = allocate(types.lower(member->object->type));
 
                 if (value == nullptr) {
                     return nullptr;
@@ -95,13 +116,14 @@ export class Places {
                 builder.CreateStore(value, storage);
             }
 
-            const auto field = structure->field_index(member->member);
+            const auto field = structure != nullptr ? structure->field_index(member->member)
+                : enumeration->payload_index({}, member->member);
 
             if (!field.has_value()) {
                 return nullptr;
             }
 
-            return builder.CreateStructGEP(types.lower(structure), storage,
+            return builder.CreateStructGEP(types.lower(member->object->type), storage,
                                            static_cast<unsigned>(*field));
         }
 
@@ -252,6 +274,10 @@ export class Aggregates {
         for (const auto& field : expression.fields) {
             auto* value = expressions.visit_expression(*field.value);
 
+            if (field.value->type->is<VoidType>()) {
+                continue;
+            }
+
             if (value == nullptr) {
                 return nullptr;
             }
@@ -286,6 +312,10 @@ export class Aggregates {
 
         for (const auto& field : expression.fields) {
             auto* value = expressions.visit_expression(*field.value);
+
+            if (field.value->type->is<VoidType>()) {
+                continue;
+            }
 
             if (value == nullptr) {
                 return nullptr;

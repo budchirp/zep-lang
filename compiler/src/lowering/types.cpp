@@ -81,6 +81,15 @@ const Type* Lowerer::lower_enum_type(const EnumType* type, Span span) {
     const auto* backing = lower_type(type->backing_type, span);
     auto changed = backing != type->backing_type;
 
+    std::vector<FieldType> shared;
+    shared.reserve(type->fields.size());
+
+    for (const auto& field : type->fields) {
+        const auto* lowered = lower_type(field.type, span);
+        changed = changed || lowered != field.type;
+        shared.emplace_back(field.name, lowered, field.visibility);
+    }
+
     for (const auto& variant : type->variants) {
         std::vector<FieldType> fields;
         fields.reserve(variant.fields.size());
@@ -97,7 +106,7 @@ const Type* Lowerer::lower_enum_type(const EnumType* type, Span span) {
     const auto* lowered = changed
         ? sema.types.create<EnumType>(type->name, std::vector<GenericParameterType>(),
             std::move(variants), backing, type->generic_arguments, type->interfaces,
-            type->methods, type->definition)
+            type->methods, type->definition, std::move(shared))
         : type;
 
     register_type_symbol(type_name(*type), Visibility::Type::Public, lowered, span);
@@ -235,14 +244,18 @@ const Type* Lowerer::lower_struct_type(const Type* source, const StructType* typ
             continue;
         }
 
-        const auto name = method->function_symbol != nullptr
-            ? method->function_symbol->base_name() : method->prototype->name;
         auto method_scope = resolver.create_substitution_scope();
         apply_parent_substitutions(definition->name, bindings);
 
-        if (lower_function_type(method->type, method->span) == nullptr) {
+        const auto* signature = lower_function_type(method->type, method->span);
+
+        if (signature == nullptr) {
             continue;
         }
+
+        const auto name = Mangler::function_name(method->function_symbol != nullptr
+            ? method->function_symbol->base_name() : method->prototype->name,
+            method->function_symbol, signature);
 
         const auto instance = specializations.get_or_create(method, name, bindings);
 

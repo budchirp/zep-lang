@@ -433,12 +433,6 @@ export class Evaluator : public ExpressionVisitor<std::optional<CompileTimeValue
         return std::nullopt;
     }
 
-    std::optional<CompileTimeValue> visit(DeleteExpression& node) override {
-        output().add_error(node.span, "delete not supported in const expressions");
-
-        return std::nullopt;
-    }
-
     std::optional<CompileTimeValue> visit(AssignExpression& node) override {
         output().add_error(node.span, "assignment not supported in const expressions");
         return std::nullopt;

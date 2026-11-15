@@ -19,6 +19,7 @@ import zep.common.source.span;
 import zep.lsp.analysis.types;
 import zep.workspace.package;
 import zep.workspace.project;
+import zep.workspace.module_path;
 import zep.common.paths;
 
 class CatalogExport {
@@ -127,7 +128,8 @@ export class ModuleCatalog {
 
         for (const auto& entry : std::filesystem::recursive_directory_iterator(
                  package.source_directory, std::filesystem::directory_options::skip_permission_denied)) {
-            if (!entry.is_regular_file() || entry.path().extension() != ".zep") {
+            if (!entry.is_regular_file() || entry.path().extension() != ".zep" ||
+                ModulePath::is_test(entry.path())) {
                 continue;
             }
 

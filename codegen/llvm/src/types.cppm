@@ -75,7 +75,7 @@ export class Types {
         }
 
         std::vector<llvm::Type*> llvm_field_types;
-        auto field_count = std::size_t{1};
+        auto field_count = std::size_t{1} + enum_type->fields.size();
         for (const auto& variant : enum_type->variants) {
             field_count += variant.fields.size();
         }
@@ -83,8 +83,18 @@ export class Types {
 
         llvm_field_types.push_back(llvm::Type::getInt32Ty(context));
 
+        for (const auto& field : enum_type->fields) {
+            if (!field.type->is<VoidType>()) {
+                llvm_field_types.push_back(lower(field.type));
+            }
+        }
+
         for (const auto& variant : enum_type->variants) {
             for (const auto& field : variant.fields) {
+                if (field.type->is<VoidType>()) {
+                    continue;
+                }
+
                 auto* field_type = lower(field.type);
                 if (field_type == nullptr) {
                     continue;
@@ -271,15 +281,16 @@ export class Types {
             return nullptr;
         }
 
-        const auto parameter_count = function_type->parameters.size();
+        const auto parameters = function_type->value_parameters();
+        const auto parameter_count = parameters.size();
 
         std::vector<llvm::Type*> llvm_parameter_types;
         llvm_parameter_types.reserve(parameter_count);
 
         for (std::size_t index = 0; index < parameter_count; ++index) {
             auto* parameter_type = abi == Abi::Type::C
-                                       ? lower_c_abi(function_type->parameters[index].type)
-                                       : lower(function_type->parameters[index].type);
+                                       ? lower_c_abi(parameters[index].type)
+                                       : lower(parameters[index].type);
             if (parameter_type == nullptr) {
                 return nullptr;
             }

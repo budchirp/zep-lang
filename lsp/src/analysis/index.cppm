@@ -89,6 +89,10 @@ class AstTokenCollector : public Visitor<void> {
 
     void visit(Argument& node) override { visit_child(node.value); }
 
+    void visit(TestDeclaration& node) override {
+        visit_child(node.function->body);
+    }
+
     void visit(FunctionDeclaration& node) override {
         if (node.prototype != nullptr && node.prototype->span.start.line > 0) {
             auto line = static_cast<std::uint32_t>(node.prototype->span.start.line - 1);
@@ -221,10 +225,6 @@ class AstTokenCollector : public Visitor<void> {
         visit_child(node.value);
     }
 
-    void visit(DeleteExpression& node) override {
-        visit_child(node.value);
-    }
-
     void visit(AssignExpression& node) override {
         visit_child(node.target);
         visit_child(node.value);
@@ -332,6 +332,10 @@ class AstTokenCollector : public Visitor<void> {
             add_token(line, character, length, SemanticKind::Type::Enum,
                       SemanticModifier::Declaration);
         }
+        for (auto* field : node.fields) {
+            visit_child(field);
+        }
+
         for (auto* variant : node.variants) {
             visit_child(variant);
         }
@@ -416,6 +420,7 @@ export class SyntaxIndex {
 
             switch (token.type) {
             case Token::Type::Fn:
+            case Token::Type::Test:
             case Token::Type::Var:
             case Token::Type::Const:
             case Token::Type::Struct:

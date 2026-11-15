@@ -16,6 +16,10 @@ TEST(HirNodes, PreserveKindTypeSpanAndChildIdentity) {
     auto* value = program.nodes.create<HIRNumberLiteral>(span, "42", &integer);
     auto* returned = program.nodes.create<HIRReturnStatement>(span, value, &integer);
 
+    for (auto index = 0; index < 4096; ++index) {
+        static_cast<void>(program.nodes.create<HIRNumberLiteral>(Span{}, std::to_string(index)));
+    }
+
     const HIRNode* node = value;
     EXPECT_EQ(node->as<HIRNumberLiteral>(), value);
     EXPECT_EQ(node->as<HIRStringLiteral>(), nullptr);
@@ -23,20 +27,7 @@ TEST(HirNodes, PreserveKindTypeSpanAndChildIdentity) {
     EXPECT_EQ(value->span.start.line, 2U);
     EXPECT_EQ(value->span.end.column, 5U);
     EXPECT_EQ(returned->value, value);
-}
-
-TEST(HirNodes, ArenaGrowthPreservesReferences) {
-    HIRProgram program;
-    auto* first = program.nodes.create<HIRNumberLiteral>(Span{}, "first");
-    auto* returned = program.nodes.create<HIRReturnStatement>(Span{}, first);
-
-    for (auto index = 0; index < 4096; ++index) {
-        static_cast<void>(
-            program.nodes.create<HIRNumberLiteral>(Span{}, std::to_string(index)));
-    }
-
-    EXPECT_EQ(returned->value, first);
-    EXPECT_EQ(first->value, "first");
+    EXPECT_EQ(value->value, "42");
 }
 
 TEST(HirProgram, OrderedStatementsPreserveFunctionAndChildIdentity) {

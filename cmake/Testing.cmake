@@ -4,13 +4,18 @@ include(GoogleTest)
 FetchContent_Declare(
     googletest
     URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.tar.gz
+    EXCLUDE_FROM_ALL
 )
 
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 function(zep_add_test TARGET)
-    cmake_parse_arguments(ARG "" "" "DEPENDS;SOURCES" ${ARGN})
+    cmake_parse_arguments(PARSE_ARGV 1 ARG "" "" "DEPENDS;SOURCES")
+
+    if(ARG_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR "Unknown test arguments: ${ARG_UNPARSED_ARGUMENTS}")
+    endif()
 
     if(ARG_SOURCES)
         set(TEST_SOURCES ${ARG_SOURCES})
@@ -41,9 +46,11 @@ function(zep_add_test TARGET)
     zep_configure_target(${TARGET})
 
     gtest_discover_tests(${TARGET}
+        DISCOVERY_MODE PRE_TEST
         DISCOVERY_TIMEOUT 60
         PROPERTIES
             TIMEOUT 120
+            LABELS "${TARGET}"
             ENVIRONMENT "ZEP_TEST_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR};ZEP_TEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR};ZEP_PROJECT_SOURCE_DIR=${PROJECT_SOURCE_DIR};ZEP_PROJECT_BINARY_DIR=${PROJECT_BINARY_DIR};LLVM_PROFILE_FILE=${PROJECT_BINARY_DIR}/coverage/%p.profraw"
     )
 

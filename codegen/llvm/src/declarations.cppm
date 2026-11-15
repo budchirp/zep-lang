@@ -179,8 +179,7 @@ export class Declarations {
             return;
         }
 
-        auto linkage = node.linkage == Linkage::Type::External ? llvm::GlobalValue::ExternalLinkage
-                                                               : llvm::GlobalValue::InternalLinkage;
+        const auto linkage = llvm_linkage(node.linkage);
         auto* global = new llvm::GlobalVariable(module, type, false, linkage, nullptr, node.name);
 
         for (const auto& attribute : node.attributes) {
@@ -200,7 +199,7 @@ export class Declarations {
             } else {
                 global->setInitializer(llvm::Constant::getNullValue(type));
             }
-        } else if (node.linkage != Linkage::Type::External) {
+        } else if (node.is_definition) {
             global->setInitializer(llvm::Constant::getNullValue(type));
         }
 

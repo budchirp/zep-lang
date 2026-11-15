@@ -1,5 +1,3 @@
-option(ZEP_BUILD_FUZZERS "Build libFuzzer targets" OFF)
-
 if(ZEP_BUILD_FUZZERS)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         message(FATAL_ERROR "ZEP_BUILD_FUZZERS requires Clang")

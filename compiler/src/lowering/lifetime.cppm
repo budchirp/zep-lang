@@ -171,7 +171,7 @@ export class Construction {
                 fields.reserve(variant.fields.size());
 
                 for (const auto& part : plan->parts) {
-                    if (part.variant != variant.index) {
+                    if (part.kind == LifecyclePart::Kind::Type::Payload && part.variant != variant.index) {
                         continue;
                     }
 
@@ -194,7 +194,6 @@ export class Construction {
 
             auto* selection = program.nodes.create<HIRWhenExpression>(span, source,
                 std::move(arms), true, type);
-            selection->borrow_payloads = true;
             result = selection;
         }
 
@@ -254,7 +253,8 @@ export class Construction {
                 body.reserve(variant.fields.size());
 
                 for (const auto& part : plan->parts | std::views::reverse) {
-                    if (part.variant != variant.index || part.plan->action == LifecyclePlan::Action::Type::Trivial) {
+                    if ((part.kind == LifecyclePart::Kind::Type::Payload && part.variant != variant.index) ||
+                        part.plan->action == LifecyclePlan::Action::Type::Trivial) {
                         continue;
                     }
 
@@ -275,7 +275,6 @@ export class Construction {
 
             auto* selection = program.nodes.create<HIRWhenExpression>(span, value,
                 std::move(arms), true, sema.primitives.entries.at("void"));
-            selection->borrow_payloads = true;
             statements.push_back(program.nodes.create<HIRExpressionStatement>(span, selection));
 
             return;

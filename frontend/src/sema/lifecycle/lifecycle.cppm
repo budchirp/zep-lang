@@ -166,13 +166,18 @@ export class Lifecycle {
                                    resolve(array->element, operation, resolver));
             } else if (const auto* enumeration = resolved != nullptr ? resolved->as<EnumType>() : nullptr;
                        enumeration != nullptr && enumeration->backing_type == nullptr) {
-                auto count = std::size_t{0};
+                auto count = enumeration->fields.size();
 
                 for (const auto& variant : enumeration->variants) {
                     count += variant.fields.size();
                 }
 
                 parts.reserve(count);
+
+                for (const auto& field : enumeration->fields) {
+                    parts.emplace_back(LifecyclePart::Kind::Type::Field, field.name,
+                                       0, 1, resolve(field.type, operation, resolver));
+                }
 
                 for (const auto& variant : enumeration->variants) {
                     for (const auto& field : variant.fields) {

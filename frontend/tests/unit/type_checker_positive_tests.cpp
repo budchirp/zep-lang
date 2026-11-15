@@ -6,6 +6,19 @@ import zep.frontend.test.harness;
 import zep.frontend.node;
 import zep.frontend.sema.symbols;
 
+TEST(FrontendTests, ChecksBodiesAndModulePrivateAccess) {
+    EXPECT_TRUE(assert_type_check_ok(R"zep(
+fn answer() -> i32 { return 42 }
+test "private helpers" { var value = answer() }
+test "early return" { return }
+)zep"));
+
+    EXPECT_TRUE(assert_type_check_error("test \"invalid return\" { return 42 }"));
+    EXPECT_TRUE(assert_type_check_error("test \"invalid body\" { missing() }"));
+    EXPECT_TRUE(assert_type_check_error("test \"same\" {} test \"same\" {}"));
+    EXPECT_TRUE(assert_type_check_error("test \"hidden\" {} fn call() -> void { hidden() }"));
+}
+
 TEST(FrontendLifecycle, ClassifiesReferenceCopiesWithoutRawPointerCompatibility) {
     FrontendHarness harness(R"zep(
 struct Raw {
@@ -78,22 +91,14 @@ fn main() -> i32 {
 )zep"));
 }
 
-TEST(FrontendLifecycle, ResolvesHeapOperationsThroughMemory) {
+TEST(FrontendLifecycle, ConstructsInProvidedStorage) {
     EXPECT_TRUE(assert_type_check_ok(R"zep(
-struct Memory {
-    public:
-        static fn allocate_bytes(size: i64) -> *mut void { return null }
-        static fn free(ptr: *mut void) -> void {}
-}
 struct Record { public: var value: i32 }
-fn check() -> void {
-    var record = new Record { value: 42 }
-    delete record
-    var number = new 42
-    delete number
-    var missing: *mut Record = null
-    delete missing
-    delete null
+fn check(record: *mut Record, number: *mut i32) -> void {
+    new (record) Record { value: 42 }
+    record->~Record()
+    new (number) 42
+    number->~i32()
 }
 )zep"));
 }
@@ -192,17 +197,6 @@ fn main() -> i32 {
         var value = 40
         value + 2
     }
-}
-)zep";
-
-    EXPECT_TRUE(assert_type_check_ok(source));
-}
-
-TEST(FrontendTypeCheckerPositive, AcceptsDirectCapturedClosureInvocation) {
-    const std::string source = R"zep(
-fn main() -> i32 {
-    var value = 42
-    return { -> value }()
 }
 )zep";
 

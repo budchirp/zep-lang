@@ -5,20 +5,6 @@
 
 import zep.lsp.transport;
 
-TEST(LspTransport, ReadsFramedMessage) {
-    std::string payload = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}";
-    std::string input = "Content-Length: " + std::to_string(payload.size()) + "\r\n\r\n" + payload;
-
-    std::istringstream in(input);
-    std::ostringstream out;
-    Transport transport(in, out);
-
-    auto message = transport.read();
-    ASSERT_TRUE(message.has_value());
-    EXPECT_EQ((*message)["id"], 1);
-    EXPECT_EQ((*message)["method"], "initialize");
-}
-
 TEST(LspTransport, ReadsConsecutiveMessages) {
     std::string first = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"first\"}";
     std::string second = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"second\"}";
@@ -32,10 +18,12 @@ TEST(LspTransport, ReadsConsecutiveMessages) {
     auto first_message = transport.read();
     ASSERT_TRUE(first_message.has_value());
     EXPECT_EQ((*first_message)["id"], 1);
+    EXPECT_EQ((*first_message)["method"], "first");
 
     auto second_message = transport.read();
     ASSERT_TRUE(second_message.has_value());
     EXPECT_EQ((*second_message)["id"], 2);
+    EXPECT_EQ((*second_message)["method"], "second");
 }
 
 TEST(LspTransport, WritesFramedMessage) {

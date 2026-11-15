@@ -17,25 +17,29 @@ Configure and build the debug preset:
 
 ```bash
 cmake --preset debug
-cmake --build cmake-build-debug
+cmake --build --preset debug
 ```
 
 Build release when you need optimized binaries:
 
 ```bash
 cmake --preset release
-cmake --build cmake-build-release
+cmake --build --preset release
 ```
 
 The debug build directory is `cmake-build-debug`; the release build directory is
 `cmake-build-release`.
+
+Build presets use two compilation jobs by default; override with `--parallel` when memory permits.
+Release disables tests and avoids native CPU flags, forced LTO, and stripping. Enable
+`BUILD_TESTING`, `ZEP_NATIVE`, or `ZEP_ENABLE_IPO` explicitly when required.
 
 ## Test
 
 Run the default suite:
 
 ```bash
-ctest --test-dir cmake-build-debug --output-on-failure
+ctest --preset debug
 ```
 
 List discovered tests:
@@ -68,8 +72,8 @@ cmake --build cmake-build-debug --target zep_fuzz_smoke zep_benchmarks zep_cover
 Both project builds and single-file compilation accept optimization levels:
 
 ```bash
-cmake-build-debug/cli/zep build -o 2
-cmake-build-debug/cli/zep compile --input file.zep -o 3
+cmake-build-debug/cli/zep build -O 2
+cmake-build-debug/cli/zep compile --input file.zep -O 3
 ```
 
 Valid levels are `0`, `1`, `2`, and `3`. Level `0` is the default. Nonzero levels run LLVM module
@@ -118,9 +122,19 @@ module/
 - Put default GoogleTest cases in `tests/unit`.
 - Put test-only modules in `tests/support` and link them only into tests.
 - Put source fixtures and snapshots in `tests/fixtures`.
+- Use named `test "description" { ... }` blocks and `std.testing.Test` assertions for Zep runtime
+  scenarios. Keep C++ tests for compiler internals, CLI behavior, process output, and isolated FFI
+  overrides. The `zep test` command compiles once and executes each selected block in a fresh process.
 - Put libFuzzer targets in `tests/fuzz`; they must be opt-in.
 - Put Google Benchmark targets in `tests/benchmarks`; they must be opt-in.
 - Copy mutable project fixtures into the CMake binary tree before running tests.
+- Group tests by behavior in focused files, sharing setup through test support.
+- Preserve distinct regressions; remove smoke tests already covered by stronger assertions.
+- Consolidate small files within a subsystem. Keep separate files for independently built fuzzers,
+  benchmarks, snapshots, and fixtures that require different process-wide FFI overrides.
+- Keep a scenario at multiple pipeline stages only when each stage asserts its own contract;
+  a parse-only duplicate adds no coverage to a test that already checks successful parsing and types.
+- Use representative optimization levels; reserve full sweeps for assembly and ABI-sensitive cases.
 
 Example frontend parser test:
 
@@ -164,8 +178,9 @@ TEST(FrontendTypeChecker, AcceptsNamedArguments) {
 ## Contribution Checklist
 
 1. Keep the change scoped to the module that owns the behavior.
-2. Add or update tests beside that module.
+2. Add or update tests beside that module. Put Zep tests in `.test.zep` files; keep standard-library
+   tests under `std/tests/` and run them with `zep test --project std`.
 3. Run `cmake --preset debug`.
-4. Run `cmake --build cmake-build-debug`.
-5. Run `ctest --test-dir cmake-build-debug --output-on-failure`.
+4. Run `cmake --build --preset debug`.
+5. Run `ctest --preset debug`.
 6. Update docs when commands, layout, or workflows change.

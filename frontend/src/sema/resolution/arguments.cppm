@@ -16,6 +16,7 @@ import zep.frontend.sema.context;
 import zep.frontend.sema.types;
 import zep.frontend.sema.types.resolver;
 import zep.frontend.sema.expression.generic;
+import zep.frontend.sema.expression.values;
 
 export class Arguments {
   public:
@@ -106,17 +107,27 @@ export class Arguments {
     static std::vector<GenericArgument*> infer(Context& context, SemaContext& sema,
         TypeResolver& resolver, const std::vector<GenericParameterType>& generics,
         std::span<const ParameterType> parameters, const std::vector<Argument*>& arguments,
-        Span span, bool report = false) {
+        Span span, const Type* result, const Type* expected, bool report = false) {
         GenericInference inference(context, sema, resolver, generics);
         const auto count = std::min(parameters.size(), arguments.size());
 
         for (auto index = std::size_t{0}; index < count; ++index) {
             const auto* value = arguments[index]->value;
 
-            if (value != nullptr && value->type != nullptr) {
+            if (value != nullptr && value->type != nullptr && !Values::numeric_literal(*value)) {
                 inference.match(parameters[index].type, value->type);
             }
         }
+
+        for (auto index = std::size_t{0}; index < count; ++index) {
+            const auto* value = arguments[index]->value;
+
+            if (value != nullptr && value->type != nullptr && Values::numeric_literal(*value)) {
+                inference.match(parameters[index].type, value->type, GenericInference::Source::Type::Literal);
+            }
+        }
+
+        inference.match(result, expected, GenericInference::Source::Type::Expected);
 
         return inference.arguments(span, report);
     }

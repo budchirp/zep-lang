@@ -11,6 +11,17 @@ import zep.hir.program;
 import zep.frontend.kind;
 import zep.compiler.test.harness;
 
+TEST(HirBuilder, OmitsTestsFromOrdinaryPrograms) {
+    HirHarness harness("test \"only in tests\" {} fn main() -> i32 { return 0 }");
+
+    ASSERT_TRUE(harness.succeeded());
+    const auto program = harness.lower();
+
+    ASSERT_NE(program, nullptr);
+    ASSERT_EQ(program->statements.size(), 1U);
+    ASSERT_NE(HirHarness::function(*program, "main"), nullptr);
+}
+
 TEST(HirBuilder, RejectsCallsWithoutResolvedSemanticTargets) {
     FrontendHarness harness(R"zep(
 fn answer() -> i32 { return 42 }
@@ -45,11 +56,13 @@ struct Owner<T> {
         fn read() -> T { return value }
 }
 
+fn identity<T>(value: T) -> T { return value }
+
 fn main() -> i32 {
     var original = Owner<i32> { value: 21 }
     var copied = original
     var explicit_copy = Owner<i32>(original)
-    return copied.read() + explicit_copy.read()
+    return identity<i32>(copied.read()) + explicit_copy.read()
 }
 )zep");
     ASSERT_TRUE(harness.succeeded());
@@ -58,6 +71,7 @@ fn main() -> i32 {
     std::unordered_set<std::string> names;
     names.reserve(program->statements.size());
     auto constructors = std::size_t{0};
+    auto identities = std::size_t{0};
 
     for (auto* statement : program->statements) {
         const auto* function = statement->as<HIRFunctionDeclaration>();
@@ -71,18 +85,15 @@ fn main() -> i32 {
         if (function->name.starts_with("Owner::Owner")) {
             ++constructors;
         }
+
+        if (function->name.starts_with("identity")) {
+            ++identities;
+        }
     }
 
     EXPECT_EQ(constructors, 1U);
-}
+    EXPECT_EQ(identities, 1U);
 
-TEST(HirBuilder, LowersFunctionsAndReturns) {
-    HirHarness harness("fn main() -> i32 { return 42 }\n");
-    ASSERT_TRUE(harness.succeeded());
-
-    auto program = harness.lower();
-
-    ASSERT_EQ(program->statements.size(), 1U);
     auto* function = HirHarness::function(*program, "main");
     ASSERT_NE(function, nullptr);
     EXPECT_EQ(function->name, "main");
@@ -201,23 +212,6 @@ TEST(HirBuilder, LowersLoopsToLoopStatements) {
     }
 
     EXPECT_TRUE(found_loop);
-}
-
-TEST(HirBuilder, EmitsGenericSpecializations) {
-    HirHarness harness("fn identity<T>(value: T) -> T { return value }\n"
-                       "fn main() -> i32 { return identity<i32>(1) }\n");
-    ASSERT_TRUE(harness.succeeded());
-
-    auto program = harness.lower();
-
-    auto function_count = std::size_t(0);
-    for (auto* statement : program->statements) {
-        if (statement->as<HIRFunctionDeclaration>() != nullptr) {
-            function_count++;
-        }
-    }
-
-    EXPECT_GE(function_count, 2U);
 }
 
 TEST(HirBuilder, InsertsCleanupForOwnedLocals) {

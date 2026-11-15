@@ -168,6 +168,11 @@ export class Mangler {
             return original_name;
         }
 
+        if (const auto* attribute = symbol->find_attribute(".test_name");
+            attribute != nullptr && !attribute->arguments.empty()) {
+            return attribute->arguments.front();
+        }
+
         return AttributeResolver::get_linker_name(original_name, symbol->attributes);
     }
 

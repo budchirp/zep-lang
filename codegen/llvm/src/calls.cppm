@@ -7,6 +7,7 @@ module;
 #include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/Module.h>
 #include <string>
+#include <stdexcept>
 #include <vector>
 
 export module zep.codegen.llvm.calls;
@@ -14,7 +15,6 @@ export module zep.codegen.llvm.calls;
 import zep.frontend.kind;
 import zep.frontend.sema.types;
 import zep.frontend.sema.symbols;
-import zep.frontend.sema.scopes.scope;
 import zep.hir.node;
 import zep.codegen.llvm.types;
 import zep.codegen.llvm.declarations;
@@ -25,37 +25,17 @@ export class Dispatch {
     llvm::Module& module;
     llvm::IRBuilder<>& builder;
 
-    llvm::Constant* resolve_method_pointer(const StructType* structure, const std::string& name) {
-        if (structure == nullptr) {
-            return llvm::ConstantPointerNull::get(builder.getPtrTy());
-        }
-
-        if (const auto* scope = Scope::members(structure); scope != nullptr) {
-            const auto* overloads = scope->find_local_function_overloads(name);
-
-            if (overloads != nullptr && !overloads->empty()) {
-                const auto* symbol = overloads->front();
-
-                if (auto* function = llvm::dyn_cast_or_null<llvm::Function>(
-                        module.getNamedValue(symbol->name)); function != nullptr) {
-                    return llvm::ConstantExpr::getBitCast(function, builder.getPtrTy());
-                }
-            }
-        }
-
-        return resolve_method_pointer(structure->base_type, name);
-    }
-
   public:
     Dispatch(llvm::Module& module, llvm::IRBuilder<>& builder)
         : module(module), builder(builder) {}
 
-    llvm::GlobalVariable* get(const StructType* structure, const InterfaceType* interface) {
+    llvm::GlobalVariable* get(const StructType* structure, const InterfaceType* interface,
+                             const std::vector<HIRDispatchMethod>& methods) {
         if (structure == nullptr || interface == nullptr) {
             return nullptr;
         }
 
-        const auto name = ".method_table." + structure->name + "." + interface->name;
+        const auto name = ".method_table." + structure->to_string() + "." + interface->to_string();
 
         if (auto* existing = module.getGlobalVariable(name); existing != nullptr) {
             return existing;
@@ -64,8 +44,14 @@ export class Dispatch {
         std::vector<llvm::Constant*> entries;
         entries.reserve(interface->methods.size());
 
-        for (const auto& method : interface->methods) {
-            entries.push_back(resolve_method_pointer(structure, method.name));
+        for (const auto& method : methods) {
+            auto* function = module.getFunction(method.name);
+
+            if (function == nullptr) {
+                return nullptr;
+            }
+
+            entries.push_back(function);
         }
 
         auto* type = llvm::ArrayType::get(builder.getPtrTy(), entries.size());
@@ -140,22 +126,23 @@ export class Calls {
             auto* index = llvm::ConstantInt::get(builder.getInt64Ty(), dispatch->slot);
             auto* entry = builder.CreateGEP(builder.getPtrTy(), table, index);
             callee = builder.CreateLoad(builder.getPtrTy(), entry);
-            signature = dispatch->method_symbol->signature();
+            signature = dispatch->function_type;
         }
 
         if (signature == nullptr || callee == nullptr) {
-            return nullptr;
+            throw std::runtime_error("resolved call has no emitted callee or signature");
         }
 
         auto* function_type = types.lower_function(signature, abi);
 
         if (function_type == nullptr) {
-            return nullptr;
+            throw std::runtime_error("resolved call has an unresolved LLVM signature: " + signature->to_string());
         }
 
         if (const auto* function = llvm::dyn_cast<llvm::Function>(callee);
             function != nullptr && function->getFunctionType() != function_type) {
-            return nullptr;
+            throw std::runtime_error("resolved call signature differs from the emitted function: " +
+                                     function->getName().str());
         }
 
         std::vector<llvm::Value*> arguments;
@@ -164,6 +151,10 @@ export class Calls {
         for (auto index = std::size_t{0}; index < node.arguments.size(); ++index) {
             auto* value = index == 0 && object != nullptr ? object
                 : expressions.visit_expression(*node.arguments[index]);
+
+            if (node.arguments[index]->type->is<VoidType>()) {
+                continue;
+            }
 
             if (value == nullptr) {
                 return nullptr;

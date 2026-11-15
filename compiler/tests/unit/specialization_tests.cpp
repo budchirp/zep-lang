@@ -23,18 +23,13 @@ class MonomorphizerTest : public testing::Test {
 
     const Type* boolean_type() const { return sema.primitives.entries.at("boolean"); }
 
-    const Type* void_type() const { return sema.primitives.entries.at("void"); }
-
     static std::size_t hash(const GenericBinding& binding) { return GenericBindingHash{}(binding); }
 };
 
-TEST_F(MonomorphizerTest, EncodesIntegerTypes) {
-    EXPECT_EQ(Mangler::encode(i32_type()), "i32");
-    EXPECT_EQ(Mangler::encode(u32_type()), "u32");
-}
-
-TEST_F(MonomorphizerTest, EncodesFloatType) {
-    EXPECT_EQ(Mangler::encode(f32_type()), "f32");
+TEST_F(MonomorphizerTest, EncodesPrimitiveTypes) {
+    for (const auto* name : {"i32", "u32", "f32", "boolean", "void"}) {
+        EXPECT_EQ(Mangler::encode(sema.primitives.entries.at(name)), name) << name;
+    }
 }
 
 TEST_F(MonomorphizerTest, EncodesExactTypedFloatPayloads) {
@@ -60,14 +55,6 @@ TEST_F(MonomorphizerTest, DistinguishesNestedGenericArgumentBoundaries) {
     EXPECT_NE(Mangler::encode(&left), Mangler::encode(&right));
 }
 
-TEST_F(MonomorphizerTest, EncodesBooleanType) {
-    EXPECT_EQ(Mangler::encode(boolean_type()), "boolean");
-}
-
-TEST_F(MonomorphizerTest, EncodesVoidType) {
-    EXPECT_EQ(Mangler::encode(void_type()), "void");
-}
-
 TEST_F(MonomorphizerTest, EncodesPointerTypes) {
     PointerType mutable_i32(i32_type(), true);
     PointerType immutable_i32(i32_type(), false);
@@ -88,21 +75,16 @@ TEST_F(MonomorphizerTest, EncodesNamedTypes) {
     EXPECT_EQ(Mangler::encode(&option), "N6Option");
 }
 
-TEST_F(MonomorphizerTest, ManglesFunctionWithEmptyParameters) {
+TEST_F(MonomorphizerTest, ManglesEmptyAndBoundParameters) {
     EXPECT_EQ(Mangler::mangle("main", {}), "main");
-}
+    EXPECT_EQ(Mangler::mangle_parameters("main", {}), "main");
 
-TEST_F(MonomorphizerTest, ManglesFunctionWithParameters) {
     std::vector<GenericBinding> types = {TypeBinding(i32_type()), TypeBinding(u32_type())};
 
     EXPECT_EQ(Mangler::mangle("add", types), "add$i32_u32");
 }
 
-TEST_F(MonomorphizerTest, MangleParametersReturnsNameForEmptyList) {
-    EXPECT_EQ(Mangler::mangle_parameters("main", {}), "main");
-}
-
-TEST_F(MonomorphizerTest, CacheDetectsFirstSpecializationAsNew) {
+TEST_F(MonomorphizerTest, CacheReusesOneGeneratedNamePerIdentity) {
     Specializations cache;
     std::vector<GenericBinding> types = {TypeBinding(i32_type())};
 
@@ -110,16 +92,14 @@ TEST_F(MonomorphizerTest, CacheDetectsFirstSpecializationAsNew) {
 
     EXPECT_FALSE(result.is_generated);
     EXPECT_EQ(result.name, "identity$i32");
-}
 
-TEST_F(MonomorphizerTest, CacheDetectsDuplicateSpecialization) {
-    Specializations cache;
-    std::vector<GenericBinding> types = {TypeBinding(i32_type())};
+    const auto duplicate = cache.get_or_create(i32_type(), "identity", types);
+    const auto renamed = cache.get_or_create(i32_type(), "renamed", types);
 
-    cache.get_or_create(i32_type(), "identity", types);
-    auto result = cache.get_or_create(i32_type(), "identity", types);
-
-    EXPECT_TRUE(result.is_generated);
+    EXPECT_TRUE(duplicate.is_generated);
+    EXPECT_TRUE(renamed.is_generated);
+    EXPECT_EQ(duplicate.name, result.name);
+    EXPECT_EQ(renamed.name, result.name);
 }
 
 TEST_F(MonomorphizerTest, CacheRegistersAndRetrievesGenericFunctions) {
@@ -133,18 +113,6 @@ TEST_F(MonomorphizerTest, CacheRegistersAndRetrievesGenericFunctions) {
 
     EXPECT_EQ(cache.get_function("generic"), declaration);
     EXPECT_EQ(cache.get_struct("generic"), nullptr);
-}
-
-TEST_F(MonomorphizerTest, CacheReusesTheFirstNameForOneIdentity) {
-    Specializations cache;
-    NumberLiteral declaration(Span(), "1");
-
-    auto first = cache.get_or_create(&declaration, "spec1", {});
-    auto second = cache.get_or_create(&declaration, "spec2", {});
-
-    EXPECT_FALSE(first.is_generated);
-    EXPECT_TRUE(second.is_generated);
-    EXPECT_EQ(first.name, second.name);
 }
 
 TEST_F(MonomorphizerTest, ConstBindingsDistinguishPayloadsAndTypes) {

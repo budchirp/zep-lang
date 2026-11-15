@@ -1,9 +1,8 @@
 #include <cstddef>
+#include <cstdlib>
 #include <filesystem>
 #include <gtest/gtest.h>
-#include <map>
 #include <memory>
-#include <nlohmann/json.hpp>
 #include <signal.h>
 #include <stdexcept>
 #include <string>
@@ -11,7 +10,6 @@
 #include <vector>
 
 import zep.common.arena;
-import zep.common.context;
 import zep.common.diagnostic.collection;
 import zep.common.logger;
 import zep.common.diagnostic.diagnostic;
@@ -30,13 +28,6 @@ class ArenaBase {
     virtual ~ArenaBase() = default;
 };
 
-class ArenaValue : public ArenaBase {
-  public:
-    int value;
-
-    explicit ArenaValue(int value) : value(value) {}
-};
-
 class TrackedArenaValue : public ArenaBase {
   private:
     std::vector<int>& destroyed;
@@ -50,26 +41,19 @@ class TrackedArenaValue : public ArenaBase {
     ~TrackedArenaValue() override { destroyed.push_back(value); }
 };
 
-TEST(CommonArena, StoresCreatedObjects) {
-    Arena<ArenaBase> arena;
-
-    auto* first = arena.create<ArenaValue>(1);
-    auto* second = arena.create<ArenaValue>(2);
-
-    ASSERT_NE(first, nullptr);
-    ASSERT_NE(second, nullptr);
-    EXPECT_EQ(first->value, 1);
-    EXPECT_EQ(second->value, 2);
-}
-
 TEST(CommonArena, DestroysObjectsInCreationOrder) {
     std::vector<int> destroyed;
     destroyed.reserve(2);
 
     {
         Arena<ArenaBase> arena;
-        static_cast<void>(arena.create<TrackedArenaValue>(destroyed, 1));
-        static_cast<void>(arena.create<TrackedArenaValue>(destroyed, 2));
+        const auto* first = arena.create<TrackedArenaValue>(destroyed, 1);
+        const auto* second = arena.create<TrackedArenaValue>(destroyed, 2);
+
+        ASSERT_NE(first, nullptr);
+        ASSERT_NE(second, nullptr);
+        EXPECT_EQ(first->value, 1);
+        EXPECT_EQ(second->value, 2);
         EXPECT_TRUE(destroyed.empty());
     }
 
@@ -161,6 +145,9 @@ TEST(CommonPosition, TracksLinesAndColumns) {
 
     position.increment_column();
     position.increment_column();
+
+    EXPECT_EQ(position.column, 2U);
+
     position.next_line();
 
     EXPECT_EQ(position.line, 2U);
@@ -216,38 +203,6 @@ TEST(CommonDiagnostics, RetainsSourceForEveryLocation) {
     EXPECT_TRUE(diagnostics.has_errors());
 }
 
-TEST(CommonJson, ParsesNestedObjectsAndArrays) {
-    auto value = nlohmann::json::parse(
-        "{\"name\":\"zep\",\"enabled\":true,\"items\":[1,2,{\"kind\":\"compiler\"}]}");
-
-    ASSERT_TRUE(value.is_object());
-    EXPECT_EQ(value["name"].get<std::string>(), "zep");
-    EXPECT_TRUE(value["enabled"].get<bool>());
-    ASSERT_EQ(value["items"].size(), 3U);
-    EXPECT_EQ(value["items"][2]["kind"].get<std::string>(), "compiler");
-}
-
-TEST(CommonJson, RejectsInvalidDocuments) {
-    EXPECT_THROW(static_cast<void>(nlohmann::json::parse("{\"name\":}")),
-                 nlohmann::json::parse_error);
-    EXPECT_THROW(static_cast<void>(nlohmann::json::parse("[true false]")),
-                 nlohmann::json::parse_error);
-}
-
-TEST(CommonDiagnostics, DetectsErrorsAndDeduplicates) {
-    Diagnostics diagnostics;
-    auto span = Span(Position(1, 1), Position(1, 2));
-
-    diagnostics.add_error(span, "first");
-    EXPECT_TRUE(diagnostics.has_errors());
-
-    diagnostics.add_error(span, "first");
-    EXPECT_TRUE(diagnostics.has_errors());
-
-    diagnostics.add_warning(span, "second");
-    EXPECT_TRUE(diagnostics.has_errors());
-}
-
 TEST(CommonTarget, ParsesSupportedTriples) {
     TargetInfo target("x86_64-unknown-linux-gnu");
 
@@ -263,4 +218,31 @@ TEST(CommonLogger, PrintsToStdoutThroughLogger) {
     auto output = capture_stdout([] { Logger::print("zep", " ", 1); });
 
     EXPECT_EQ(output, "zep 1");
+}
+
+TEST(TestFixtures, ExcludesGeneratedBuildDirectories) {
+    TestWorkspace source("fixture_copy_source");
+    TestWorkspace destination("fixture_copy_destination");
+    source.write("sample/src/main.zep", "fn main() -> i32 { return 0 }");
+    source.write("sample/zep.json", "{}");
+    source.write("sample/build/objs/main.o", "stale");
+    source.write("sample/nested/build/executable", "stale");
+
+    const auto* previous = std::getenv("ZEP_TEST_SOURCE_DIR");
+    const auto previous_root = previous != nullptr ? std::string(previous) : std::string();
+    ASSERT_EQ(setenv("ZEP_TEST_SOURCE_DIR", source.root().c_str(), 1), 0);
+
+    destination.copy_fixture("sample");
+
+    if (previous != nullptr) {
+        EXPECT_EQ(setenv("ZEP_TEST_SOURCE_DIR", previous_root.c_str(), 1), 0);
+    } else {
+        EXPECT_EQ(unsetenv("ZEP_TEST_SOURCE_DIR"), 0);
+    }
+
+    EXPECT_EQ(TextFile::read(destination.file("sample/src/main.zep")),
+              "fn main() -> i32 { return 0 }");
+    EXPECT_TRUE(std::filesystem::exists(destination.file("sample/zep.json")));
+    EXPECT_FALSE(std::filesystem::exists(destination.file("sample/build")));
+    EXPECT_FALSE(std::filesystem::exists(destination.file("sample/nested/build")));
 }

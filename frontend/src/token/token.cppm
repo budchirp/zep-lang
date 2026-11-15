@@ -24,6 +24,7 @@ export class Token {
         Struct,
         Enum,
         Fn,
+        Test,
         Return,
         Var,
         Const,

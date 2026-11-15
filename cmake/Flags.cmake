@@ -1,5 +1,3 @@
-option(ZEP_DEBUG_FULL_SYMBOLS "Debug: use -g3 -ggdb instead of -g (much slower compiles)" OFF)
-
 function(zep_set_flags TARGET)
     if(ZEP_DEBUG_FULL_SYMBOLS)
         set(zep_debug_symbols -g3 -ggdb)
@@ -26,10 +24,18 @@ function(zep_set_flags TARGET)
         -Wunused
         -Wvla
         $<$<CONFIG:Debug>:${zep_debug_symbols} -O0 -fno-omit-frame-pointer -DZEP_DEBUG>
-        $<$<CONFIG:Release>:-O3 -DNDEBUG -flto -march=native -ffunction-sections -fdata-sections>
+        $<$<CONFIG:Release>:-ffunction-sections -fdata-sections>
     )
 
     target_link_options(${TARGET} PRIVATE
-        $<$<CONFIG:Release>:-flto -s -Wl,--gc-sections>
+        $<$<CONFIG:Release>:-Wl,--gc-sections>
     )
+
+    if(ZEP_NATIVE)
+        target_compile_options(${TARGET} PRIVATE $<$<CONFIG:Release>:-march=native>)
+    endif()
+
+    if(ZEP_ENABLE_IPO)
+        set_property(TARGET ${TARGET} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+    endif()
 endfunction()

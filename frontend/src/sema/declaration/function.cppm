@@ -106,6 +106,11 @@ export class DeclarationTypeBuilder {
                                        std::size_t index = 0) {
         if (parameter.type != nullptr) {
             visitor.visit(*parameter.type);
+
+            if (parameter.type->type != nullptr && parameter.type->type->is<VoidType>()) {
+                context.diagnostics.add_error(parameter.span, "parameters cannot explicitly have type void");
+            }
+
             return resolver.resolve_type(parameter.type->type);
         }
 
@@ -152,7 +157,7 @@ export class DeclarationTypeBuilder {
         auto generic_parameter_types = build_generic_parameter_types(node.generic_parameters);
 
         auto substitution_scope = resolver.create_substitution_scope();
-        resolver.bind_generic_parameters(generic_parameter_types, true);
+        resolver.bind_generic_parameters(generic_parameter_types);
         const auto* self_type =
             sema.types.create<NamedType>(node.name, std::vector<GenericArgumentType>());
         resolver.bind_type_parameter("Self", self_type);
@@ -214,7 +219,7 @@ export class DeclarationTypeBuilder {
         auto generic_parameter_types = build_generic_parameter_types(node.generic_parameters);
 
         auto substitution_scope = resolver.create_substitution_scope();
-        resolver.bind_generic_parameters(generic_parameter_types, true);
+        resolver.bind_generic_parameters(generic_parameter_types);
         const auto* self_type =
             sema.types.create<NamedType>("Self", std::vector<GenericArgumentType>());
         resolver.bind_type_parameter("Self", self_type);
@@ -258,7 +263,15 @@ export class DeclarationTypeBuilder {
         auto generic_parameter_types = build_generic_parameter_types(node.generic_parameters);
 
         auto substitution_scope = resolver.create_substitution_scope();
-        resolver.bind_generic_parameters(generic_parameter_types, true);
+        resolver.bind_generic_parameters(generic_parameter_types);
+
+        std::vector<FieldType> fields;
+        fields.reserve(node.fields.size());
+
+        for (auto* field : node.fields) {
+            visitor.visit(*field);
+            fields.emplace_back(field->name, field->type->type);
+        }
         const auto* self_type =
             sema.types.create<NamedType>(node.name, std::vector<GenericArgumentType>());
         resolver.bind_type_parameter("Self", self_type);
@@ -282,7 +295,8 @@ export class DeclarationTypeBuilder {
 
         return sema.types.create<EnumType>(
             node.name, std::move(generic_parameter_types), std::move(variant_types), backing_type,
-            std::vector<GenericArgumentType>(), std::move(interfaces), std::move(methods));
+            std::vector<GenericArgumentType>(), std::move(interfaces), std::move(methods),
+            nullptr, std::move(fields));
     }
 
     const FunctionType*
@@ -295,8 +309,7 @@ export class DeclarationTypeBuilder {
                                        parent_generic_parameters.end());
 
         auto substitution_scope = resolver.create_substitution_scope();
-        resolver.bind_generic_parameters(parent_generic_parameters, true);
-        resolver.bind_generic_parameters(generic_parameter_types, true);
+        resolver.bind_generic_parameters(generic_parameter_types);
         if (self_type != nullptr) {
             resolver.bind_type_parameter("Self", self_type);
         }
@@ -318,21 +331,6 @@ export class FunctionDeclarationChecker {
     TypeResolver& resolver;
     DeclarationTypeBuilder& builder;
     Compatibility& compatibility;
-
-    const FunctionType* resolve_with_self_type(const FunctionType* type, const Type* self_type) {
-        auto scope = resolver.create_substitution_scope();
-        const auto* nominal = self_type != nullptr ? self_type->as_nominal() : nullptr;
-        if (nominal != nullptr) {
-            for (const auto& parameter : nominal->generic_parameters) {
-                resolver.bind_generic_parameter(parameter, true);
-            }
-        }
-
-        resolver.bind_type_parameter("Self", self_type);
-
-        const auto* resolved = resolver.resolve_type(type);
-        return resolved != nullptr ? resolved->as<FunctionType>() : nullptr;
-    }
 
     bool matches_extension_owner(const Type* receiver_type, const Type* owner_type) {
         if (compatibility.accepts(receiver_type, owner_type)) {
@@ -390,58 +388,11 @@ export class FunctionDeclarationChecker {
 
     bool method_signature_matches(const FunctionType* expected, const FunctionType* actual,
                                   const Type* self_type) {
-        const auto* resolved_expected = resolve_with_self_type(expected, self_type);
-        const auto* resolved_actual = resolve_with_self_type(actual, self_type);
+        const auto* resolved_expected = resolver.method_type(expected, self_type);
+        const auto* resolved_actual = resolver.method_type(actual, self_type);
 
-        if (resolved_expected == nullptr || resolved_actual == nullptr) {
-            return false;
-        }
-
-        if (resolved_expected->return_type == nullptr || resolved_actual->return_type == nullptr) {
-            return false;
-        }
-
-        if (!resolved_expected->return_type->accepts(resolved_actual->return_type)) {
-            return false;
-        }
-
-        if (resolved_expected->parameters.size() != resolved_actual->parameters.size()) {
-            return false;
-        }
-
-        for (std::size_t i = 0; i < resolved_expected->parameters.size(); ++i) {
-            const auto* expected_param = resolved_expected->parameters[i].type;
-            const auto* actual_param = resolved_actual->parameters[i].type;
-
-            if (expected_param == nullptr || actual_param == nullptr) {
-                return false;
-            }
-
-            const auto* expected_pointer = expected_param->as<PointerType>();
-            const auto* actual_pointer = actual_param->as<PointerType>();
-
-            if (expected_pointer != nullptr && actual_pointer != nullptr && i == 0) {
-                const auto* expected_element = resolver.resolve_type(expected_pointer->element);
-                const auto* actual_element = resolver.resolve_type(actual_pointer->element);
-                const auto* expected_struct =
-                    expected_element != nullptr ? expected_element->as<StructType>() : nullptr;
-                const auto* actual_struct =
-                    actual_element != nullptr ? actual_element->as<StructType>() : nullptr;
-
-                if (expected_struct != nullptr && actual_struct != nullptr &&
-                    (expected_struct->inherits_from(actual_struct) ||
-                     actual_struct->inherits_from(expected_struct) ||
-                     expected_struct->same_nominal(*actual_struct))) {
-                    continue;
-                }
-            }
-
-            if (!expected_param->accepts(actual_param)) {
-                return false;
-            }
-        }
-
-        return true;
+        return resolved_expected != nullptr && resolved_actual != nullptr &&
+               resolved_expected->matches_method(*resolved_actual);
     }
 
     bool validate_function_declaration(FunctionDeclaration& node, const FunctionSymbol* symbol) {
@@ -611,7 +562,7 @@ export class FunctionDeclarationChecker {
                 const auto* parent_symbol = sema.env.current_scope->lookup_type(node.parent);
                 self_type = parent_symbol != nullptr ? parent_symbol->type : nullptr;
                 const auto* nominal = self_type != nullptr ? self_type->as_nominal() : nullptr;
-                if (nominal != nullptr && node.prototype->generic_parameters.empty()) {
+                if (nominal != nullptr) {
                     parent_generics = nominal->generic_parameters;
                 }
             }

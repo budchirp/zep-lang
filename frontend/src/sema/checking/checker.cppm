@@ -91,25 +91,6 @@ export class SemanticChecker : public Visitor<void> {
                          EvaluationPolicy::Type::Dependent);
     }
 
-    CallExpression* memory_call(const std::string& name, Expression* value, Span span) {
-        if (sema.env.current_scope->lookup_type("Memory") == nullptr) {
-            context.diagnostics.add_error(span, "heap operations require 'import std.memory.Memory'");
-
-            return nullptr;
-        }
-
-        auto* callee = sema.nodes.create<QualifiedAccessExpression>(
-            span, "Memory", std::vector<GenericArgument*>(), name);
-        std::vector<Argument*> arguments;
-        arguments.reserve(1);
-        arguments.push_back(sema.nodes.create<Argument>(span, std::string(), value));
-        auto* call = sema.nodes.create<CallExpression>(
-            span, callee, std::vector<GenericArgument*>(), std::move(arguments));
-        visit(*call);
-
-        return call;
-    }
-
     void define_scope_var(const std::string& name, Span span, Visibility::Type visibility,
                           StorageKind::Type storage_kind, const Type* type) {
         if (!sema.env.current_scope->has_local_var(name)) {
@@ -152,7 +133,9 @@ export class SemanticChecker : public Visitor<void> {
             base = sema.types.create<NamedType>(base->as<NamedType>()->name, std::move(*resolved));
         }
 
-        auto* type = resolver.resolve_type(base);
+        const auto* named = base->as<NamedType>();
+        auto* type = named != nullptr && named->declaration != nullptr && !resolver.is_concrete(base)
+            ? base : resolver.resolve_type(base);
         for (auto* expression : node.array_sizes) {
             if (expression == nullptr) {
                 type = sema.types.create<ArrayType>(type, UnsizedArrayExtent());
@@ -206,14 +189,16 @@ export class SemanticChecker : public Visitor<void> {
         }
 
         const auto* struct_type = enclosing_type->as<StructType>();
-        const auto* field = struct_type != nullptr ? struct_type->find_field(node.name) : nullptr;
+        const auto* enum_type = enclosing_type->as<EnumType>();
+        const auto* field = struct_type != nullptr ? struct_type->find_field(node.name)
+            : enum_type != nullptr ? enum_type->find_field(node.name) : nullptr;
 
         if (field == nullptr) {
             return false;
         }
 
         node.implicit_self_field = true;
-        node.type = resolver.resolve_type(field->type);
+        node.type = field->type;
         return true;
     }
 
@@ -284,6 +269,10 @@ export class SemanticChecker : public Visitor<void> {
 
         if (node.type != nullptr) {
             visit(*node.type);
+
+            if (node.type->type != nullptr && node.type->type->is<VoidType>()) {
+                context.diagnostics.add_error(node.span, "stored fields cannot explicitly have type void");
+            }
         }
 
         if (node.default_value != nullptr) {
@@ -330,7 +319,9 @@ export class SemanticChecker : public Visitor<void> {
     }
 
     void visit(NumberLiteral& node) override {
-        if (target_type != nullptr && target_type->is_numeric()) {
+        const auto* resolved = resolver.constraint_type(target_type);
+
+        if (resolved != nullptr && resolved->is_numeric()) {
             node.type = target_type;
         } else {
             node.type = sema.primitives.entries.at("i32");
@@ -338,7 +329,9 @@ export class SemanticChecker : public Visitor<void> {
     }
 
     void visit(FloatLiteral& node) override {
-        if (target_type != nullptr && target_type->is<FloatType>()) {
+        const auto* resolved = resolver.constraint_type(target_type);
+
+        if (resolved != nullptr && resolved->is<FloatType>()) {
             node.type = target_type;
         } else {
             node.type = sema.primitives.entries.at("f64");
@@ -409,8 +402,17 @@ export class SemanticChecker : public Visitor<void> {
                 }
                 return;
             }
-            node.type = resolver.resolve_type(
-                sema.types.create<NamedType>(node.name, std::vector<GenericArgumentType>{}));
+            const void* declaration = nullptr;
+
+            if (current_function != nullptr) {
+                for (const auto& parameter : current_function->signature()->generic_parameters) {
+                    if (parameter.name == node.name) {
+                        declaration = parameter.declaration;
+                    }
+                }
+            }
+
+            node.type = sema.types.create<NamedType>(node.name, std::vector<GenericArgumentType>{}, declaration);
             return;
         }
 
@@ -446,6 +448,12 @@ export class SemanticChecker : public Visitor<void> {
     }
 
     void visit(QualifiedAccessExpression& node) override {
+        LiteralChecker literals(context, sema, resolver, *this, target_type);
+
+        if (literals.resolve_variant(node)) {
+            return;
+        }
+
         MemberResolver member_resolver(context, sema, resolver, facades, enclosing_type);
         member_resolver.resolve_qualified(node);
     }
@@ -489,7 +497,7 @@ export class SemanticChecker : public Visitor<void> {
         switch (node.op) {
         case Operator::Plus:
         case Operator::Minus: {
-            if (!operand_type->is_numeric()) {
+            if (!resolver.constraint_type(operand_type)->is_numeric()) {
                 context.diagnostics.add_error(node.span,
                                               "operand of unary +/- must be numeric, got '" +
                                                   operand_type->to_string() + "'");
@@ -500,7 +508,7 @@ export class SemanticChecker : public Visitor<void> {
             break;
         }
         case Operator::Not: {
-            if (!operand_type->is<BooleanType>()) {
+            if (!resolver.constraint_type(operand_type)->is<BooleanType>()) {
                 context.diagnostics.add_error(node.span, "operand of '!' must be boolean, got '" +
                                                              operand_type->to_string() + "'");
                 return;
@@ -719,8 +727,12 @@ export class SemanticChecker : public Visitor<void> {
 
     void visit(NewExpression& node) override {
         const Type* hint = nullptr;
+        const auto* address = node.storage->as<UnaryExpression>();
+        const auto* local = address != nullptr && address->op == UnaryOperator::Type::AddressOfMut
+            ? address->operand->as<IdentifierExpression>() : nullptr;
 
         if (node.storage != nullptr) {
+            StateGuard storage_guard(checking_assignment_target, local != nullptr);
             visit_expression(*node.storage);
             const auto* type = resolver.resolve_type(node.storage->type);
             const auto* pointer = type != nullptr ? type->as<PointerType>() : nullptr;
@@ -748,53 +760,19 @@ export class SemanticChecker : public Visitor<void> {
             return;
         }
 
-        node.value = sema.binding.construct(node.value, type, resolver, context.diagnostics);
-        node.type = sema.types.create<PointerType>(type, true);
-
-        if (node.storage == nullptr) {
-            auto* argument = sema.nodes.create<TypeExpression>(node.span, type);
-            auto* size = sema.nodes.create<BuiltinCall>(
-                node.span, "sizeof", argument, std::vector<Expression*>());
-            node.allocation = memory_call("allocate_bytes", size, node.span);
-        }
-    }
-
-    void visit(DeleteExpression& node) override {
-        visit_expression(*node.value);
-        node.type = sema.primitives.entries.at("void");
-
-        if (node.value->as<NullLiteral>() != nullptr) {
+        if (hint != nullptr && !hint->same(type)) {
+            context.diagnostics.add_error(node.span, "placement value does not match the storage type");
             return;
         }
 
-        const auto* type = resolver.resolve_type(node.value->type);
-        const auto* pointer = type != nullptr ? type->as<PointerType>() : nullptr;
+        const auto* stored = hint != nullptr ? hint : type;
+        node.value = sema.binding.construct(node.value, stored, resolver, context.diagnostics);
+        node.type = sema.types.create<PointerType>(stored, true);
 
-        if (pointer == nullptr || pointer->reference_kind != PointerType::ReferenceKind::Type::None) {
-            context.diagnostics.add_error(node.span, "delete requires a raw pointer");
-
-            return;
+        if (local != nullptr && local->var_symbol != nullptr) {
+            destroyed.erase(local->var_symbol);
         }
 
-        if (TypeLayout().resolve(pointer->element).state == TypeLayout::Result::State::Invalid) {
-            context.diagnostics.add_error(node.span, "delete requires a pointer to a sized value");
-
-            return;
-        }
-
-        node.operation = sema.lifecycle.resolve(pointer->element, Operation::Type::Destroy, resolver);
-
-        if (node.operation->action == LifecyclePlan::Action::Type::Deleted) {
-            context.diagnostics.add_error(node.span, "use of deleted destructor");
-
-            return;
-        }
-
-        const auto* erased = sema.types.create<PointerType>(sema.primitives.entries.at("void"), true);
-        auto* null = sema.nodes.create<NullLiteral>(node.span);
-        auto* argument = sema.nodes.create<CoerceExpression>(
-            node.span, null, erased, Coercion::Type::None, erased);
-        node.release = memory_call("free", argument, node.span);
     }
 
     void visit(AssignExpression& node) override {
@@ -846,26 +824,16 @@ export class SemanticChecker : public Visitor<void> {
     }
 
     void visit(StructLiteralExpression& node) override {
-        if (auto* qualified = node.name->as<QualifiedAccessExpression>()) {
-            const auto* type_symbol = sema.env.current_scope->lookup_type(qualified->parent);
-            if (type_symbol != nullptr && type_symbol->type->is<EnumType>()) {
-                auto* enum_name =
-                    sema.nodes.create<IdentifierExpression>(qualified->span, qualified->parent);
-                EnumVariantExpression enum_variant(
-                    qualified->span, enum_name, qualified->parent_generic_arguments,
-                    qualified->member, !node.fields.empty(), node.fields);
-                LiteralChecker literal_checker(context, sema, resolver, *this, target_type);
-                literal_checker.resolve_enum_literal(enum_variant);
+        LiteralChecker literals(context, sema, resolver, *this, target_type);
 
-                node.type = enum_variant.type;
-                qualified->enum_type = enum_variant.enum_type;
-                qualified->variant_type = enum_variant.variant_type;
+        if (auto* qualified = node.name->as<QualifiedAccessExpression>(); qualified != nullptr) {
+            if (literals.resolve_variant(*qualified, node.fields)) {
+                node.type = qualified->type;
                 return;
             }
         }
 
-        LiteralChecker(context, sema, resolver, *this, target_type)
-            .resolve_struct_literal(node, enclosing_type);
+        literals.resolve_struct_literal(node, enclosing_type);
     }
 
     void visit(EnumVariantExpression& node) override {
@@ -929,7 +897,7 @@ export class SemanticChecker : public Visitor<void> {
                                    "' and '" + else_type->to_string() + "'");
             }
 
-            node.type = then_type;
+            node.type = then_type->is<NeverType>() ? else_type : then_type;
         } else {
             merge_destroyed(entry_state);
             node.type = sema.primitives.entries.at("void");
@@ -980,8 +948,7 @@ export class SemanticChecker : public Visitor<void> {
     }
 
     void visit(WhenExpression& node) override {
-        WhenChecker when_checker(context, sema, resolver, *this,
-            current_function != nullptr && current_function->has_attribute(".move_receiver"));
+        WhenChecker when_checker(context, sema, resolver, *this, target_type);
         when_checker.resolve(node);
     }
 
@@ -992,7 +959,7 @@ export class SemanticChecker : public Visitor<void> {
         }
 
         const auto* return_type =
-            resolver.resolve_type(current_function->signature()->return_type);
+            current_function->signature()->return_type;
         if (return_type == nullptr) {
             return;
         }
@@ -1046,7 +1013,7 @@ export class SemanticChecker : public Visitor<void> {
             }
         }
 
-        node.type = return_type;
+        node.type = sema.primitives.entries.at("never");
     }
 
     void visit(InterfaceDeclaration& node) override {
@@ -1092,7 +1059,7 @@ export class SemanticChecker : public Visitor<void> {
 
         const Type* var_type = nullptr;
         if (node.annotation != nullptr) {
-            var_type = resolver.resolve_type(node.annotation->type);
+            var_type = node.annotation->type;
         }
 
         if (var_type != nullptr && !sema.env.current_scope->has_local_var(node.name)) {
@@ -1103,7 +1070,7 @@ export class SemanticChecker : public Visitor<void> {
             visit_expression_with_target(*node.initializer, var_type);
 
             if (var_type == nullptr) {
-                var_type = resolver.resolve_type(node.initializer->type);
+                var_type = node.initializer->type;
             } else {
                 const auto* init_type = node.initializer->type;
                 if (init_type != nullptr && !compatibility.accepts(var_type, init_type)) {
@@ -1122,6 +1089,8 @@ export class SemanticChecker : public Visitor<void> {
         if (var_type == nullptr) {
             context.diagnostics.add_error(node.span,
                                           "cannot determine type of variable '" + node.name + "'");
+        } else if (var_type->is<VoidType>()) {
+            context.diagnostics.add_error(node.span, "variables cannot have type void");
         } else if (!sema.env.current_scope->has_local_var(node.name)) {
             define_scope_var(node.name, node.span, node.visibility, node.storage_kind, var_type);
         }
@@ -1139,6 +1108,11 @@ export class SemanticChecker : public Visitor<void> {
         if (node.variable_symbol != nullptr) {
             node.variable_symbol->type = var_type;
         }
+    }
+
+    void visit(TestDeclaration& node) override {
+        visit(*node.function);
+        node.type = node.function->type;
     }
 
     void visit(FunctionDeclaration& node) override {
@@ -1192,14 +1166,14 @@ export class SemanticChecker : public Visitor<void> {
                 const auto* nominal = parent_symbol->type->as_nominal();
                 function_owner = nominal;
                 if (nominal != nullptr) {
-                    resolver.bind_generic_parameters(nominal->generic_parameters, false);
+                    resolver.bind_generic_parameters(nominal->generic_parameters);
                 }
                 resolver.bind_type_parameter("Self", parent_symbol->type);
             }
         }
 
         StateGuard enclosing_guard(enclosing_type, function_owner);
-        resolver.bind_generic_parameters(symbol->signature()->generic_parameters, false);
+        resolver.bind_generic_parameters(symbol->signature()->generic_parameters);
 
         ScopeGuard scope(sema.env.current_scope, sema.env.scopes, Scope::Kind::Type::Function,
                          node.prototype->name);
@@ -1214,7 +1188,7 @@ export class SemanticChecker : public Visitor<void> {
             sema.env.current_scope->define_var(
                 parameter.name, sema.env.symbols.create<VariableSymbol>(
                                     parameter.name, node.span, Visibility::Type::Private,
-                                    StorageKind::Type::Var, parameter_type));
+                                    StorageKind::Type::Var, parameter.type));
         }
 
         if (node.is_defaulted) {
@@ -1408,6 +1382,16 @@ export class SemanticChecker : public Visitor<void> {
 
     void check(Program& program) {
         declarations.declare_program_symbols(program);
+
+        std::unordered_set<std::string> tests;
+        tests.reserve(program.statements.size());
+
+        for (auto* statement : program.statements) {
+            if (const auto* test = statement->as<TestDeclaration>(); test != nullptr &&
+                !tests.insert(test->name).second) {
+                context.diagnostics.add_error(test->name_span, "duplicate test name '" + test->name + "'");
+            }
+        }
 
         for (auto* statement : program.statements) {
             if (statement->as<VarDeclaration>() != nullptr) {

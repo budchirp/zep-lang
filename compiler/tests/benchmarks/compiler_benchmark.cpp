@@ -1,8 +1,7 @@
 #include <benchmark/benchmark.h>
 #include <string>
 
-import zep.frontend.test.harness;
-import zep.compiler.lowering;
+import zep.compiler.test.harness;
 
 static void BM_lower_sample(benchmark::State& state) {
     std::string source_text = "fn identity<T>(value: T) -> T { return value }\n"
@@ -10,13 +9,24 @@ static void BM_lower_sample(benchmark::State& state) {
                               "for (var mut i: i32 = 0; i < 100; i = i + 1) { total = total + "
                               "identity<i32>(i) } return total }\n";
 
-    FrontendHarness harness(source_text);
-    harness.type_check();
+    HirHarness harness(source_text);
+
+    if (!harness.succeeded()) {
+        state.SkipWithError("semantic checking failed");
+
+        return;
+    }
 
     for (auto _ : state) {
-        Lowerer lowerer(harness.context, harness.sema);
-        auto hir_program = lowerer.lower(harness.program);
-        benchmark::DoNotOptimize(hir_program.statements.size());
+        const auto program = harness.lower();
+
+        if (program == nullptr) {
+            state.SkipWithError("lowering failed");
+
+            break;
+        }
+
+        benchmark::DoNotOptimize(program->statements.size());
     }
 }
 

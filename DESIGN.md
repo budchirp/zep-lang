@@ -7,6 +7,7 @@
 | Keyword | Usage |
 |---------|-------|
 | `fn` | Function declaration |
+| `test` | Named module-level test declaration |
 | `static` | Static struct method modifier |
 | `override` | Instance method override marker |
 | `struct` | Struct type declaration |
@@ -83,7 +84,7 @@ Escape sequences in strings: `\n`, `\r`, `\t`, `\\`, `\"`
 
 | Type | Description |
 |------|-------------|
-| `void` | Unit type |
+| `void` | No returned value |
 | `boolean` | Boolean |
 | `char` | C character |
 | `cstr` | C string |
@@ -146,6 +147,14 @@ Pointer rules:
 - `*void` accepts any pointer type, mutable or immutable.
 - `*mut void` accepts only mutable pointers (`*mut T`).
 - `*void` and `*mut void` do not implicitly convert back to `*T` or `*mut T`; use `as`.
+- Array pointees are compared with their complete shape before considering decay. Array aliases
+  follow the same rules as their underlying types, including in generic and indirect calls.
+- A source pointer to an array can decay by one array dimension to a compatible element pointer.
+  The reverse conversion requires `as`; a pointer to one element does not establish array storage.
+- Pointer overloads prefer matching pointees over decay or void-pointer conversion. Among matches
+  with the same pointee type, matching qualifiers beat adding immutability to a mutable pointer.
+- Implicit C-string conversion accepts byte pointers and pointers to character or `u8` arrays,
+  not pointers to arrays of other element types. The caller supplies null-terminated storage.
 
 Structural rules (both sides must have the same kind):
 - Integers: same signedness and same size.
@@ -170,6 +179,56 @@ A concrete numeric expected type contextualizes the literal; already-typed numer
 implicitly widen. Use `as` for explicit numeric conversions.
 
 ## Declarations
+
+### Named tests
+
+```zep
+import std.testing.Test
+
+fn add(left: i32, right: i32) -> i32 {
+    return left + right
+}
+
+test "addition preserves the result" {
+    Test::expect(add(2, 3) == 5)
+    Test::expect(add(-1, 1) == 0, "opposite values should cancel")
+}
+```
+
+Test declarations require `.test.zep` files and are module-level, order-independent declarations
+with a nonempty string name.
+Names must be unique within a module; separate modules may use the same name. Tests have access
+to private declarations in their own module and its production sibling. `src/math.test.zep` and
+`tests/math.test.zep` both borrow the declaration scope of `src/math.zep`; test declarations and
+imports remain in their own scope and do not modify the production module. Mirrored nested paths
+follow the same rule, including `index.test.zep` paired with `index.zep`. A file without a production
+sibling is an independent test module. Their bodies follow ordinary zero-argument `void` function rules,
+including scope cleanup and bare `return`. Visibility modifiers, attributes, parameters, value-bearing
+returns, and tests inside functions or types are invalid. Test names do not create callable bindings.
+
+All loaded test bodies are type-checked, including explicitly compiled files and language-server
+analysis. Ordinary builds do not discover test files and omit test functions if explicitly loaded.
+`zep test` loads root-package source modules and discovers `.test.zep` files under `src/` and `tests/`.
+The `tests/fixtures/` directories contain specialized subprocess inputs and are not discovered.
+Production module imports retain the existing file/index resolution rules. Dependencies' test files
+are not discovered. `--input` restricts discovery to the selected file and its imports and sibling,
+using its enclosing project when present and standalone resolution otherwise.
+Standard-library scenarios live under `std/tests/` and run with `zep test --project std`.
+
+Tests are ordered by module path and source declaration order. `--filter` matches a substring of
+the qualified display name; `--list` checks and lists tests without generating objects. An empty
+selection is an error. The command generates one host executable under `build/tests/`, invokes it
+separately for each selected test, prints results and totals, and fails if any test fails.
+
+Each test starts with fresh process globals and uses the project directory as its working directory.
+Filesystem state is shared. Ordinary scope and global cleanup run on normal completion.
+`Test::expect(condition)` and `Test::expect(condition, message)` fail through `Test::fail(message)`,
+which calls the allocation-free panic implementation. Messages are C strings. Assertion failures
+terminate the child process without unwinding; the runner continues with the remaining tests and
+reports nonzero exits and signals. Application entry points remain callable under generated names.
+
+The first implementation runs sequentially on Linux x86_64 hosts. It does not add test hooks,
+timeouts, skipping, parallel execution, or automatic assertion-expression locations.
 
 ### Variables
 
@@ -333,6 +392,24 @@ required method.
 
 ### Enums
 
+Shared fields can be declared once in an enum header:
+
+```zep
+enum FileError(error: IoError) {
+    Open
+    Read
+    Write
+}
+
+var error = FileError::Read { error: IoError::NotFound }
+var cause = error.error
+```
+
+Shared fields are public and exist in every variant. They can coexist with variant payloads and
+generic parameters. Patterns may bind shared fields or omit them. Shared fields initialize before
+the active payload and are destroyed after it, in reverse declaration order. Backed enums cannot
+have shared fields.
+
 ```
 enum Color {
     Red
@@ -440,25 +517,82 @@ provides the `panic` function, while `std.io.format` provides `format`, `FormatA
 `FormatError`. Formatting uses sequential `{}` placeholders, `{{` and `}}` for literal braces, and
 a concrete argument container that accepts strings, integers, floating-point values, booleans, and
 characters. Argument containers own their text values. `format` returns a `Result` for missing or
-extra arguments and unmatched braces. `print` and `eprint` return `Result<i64, PrintError>`, reporting
-the byte count or a formatting/write failure. Panic writes directly to standard error without
-formatting or allocation.
+extra arguments, unmatched braces, and numeric conversion failures. It requires an explicit argument
+container. `print(value)` and `eprint(value)` write plain text, including literal braces;
+`print(pattern, arguments)` and `eprint(pattern, arguments)` format it. Both forms return
+`Result<i64, PrintError>`. Patterns and text accept `cstr`, `String`, and `StringView`; bounded forms
+preserve embedded zero bytes. Panic writes directly to standard error without formatting or
+allocation, with its low-level write loop inline in `panic`.
 
-Canonical exports are available from `std.core`, `std.collections`, `std.text`, `std.io`,
+Canonical exports are available from `std.core`, `std.collections`, `std.text`, `std.io`, `std.fs`,
 `std.net.socket`, and `std.net.http`. Collections, strings, views, and array facades use `length()`
 with `i64` counts and indices. String capacity counts usable bytes and excludes its zero terminator.
 
-`String`, `Vector<T>`, and `Bytes` own their storage and copy it deeply. `StringView` borrows a
+`String` and `Vector<T>` own their storage and copy it deeply. `StringView` borrows a
 bounded byte sequence; constructing a `String` from a view preserves embedded zero bytes. `Box<T>`
-and socket handles are move-only. Std's `move(box).into_inner()` extracts the initialized boxed value.
-Vectors destroy removed elements and move initialized elements during growth. `Map<K, V>` stores
+and resource handles are move-only. `Memory::move(box).into_inner()` extracts the initialized boxed value.
+`Box::from_raw` adopts compatible allocated storage; `into_raw()` transfers it to the caller.
+Vectors destroy removed elements and move initialized elements during growth. `truncate()` destroys
+the removed tail; `resize()` copies a fill value into newly initialized elements. Public `reserve()`,
+`resize()`, `truncate()`, and string `repeat()` return results for invalid sizes and overflow.
+`Vector::with_capacity()` replaces the capacity constructor and returns a result.
+`Map<K, V>` stores
 pairs in one vector and uses its supplied equality function for linear lookup; it is not a hash map.
+Map keys and algorithm inputs use references; comparison callbacks also receive references.
 
-Operational failures use `Result`, absence uses `Option`, and success-only results use `Unit`.
+String/view arguments and formatting containers use references, for example `text.append(view)`
+and `format("{}", arguments)`. Construct C-string copies with `String(value)`; numeric conversions
+use `String::from(value)`. Integer conversion uses one stack buffer and one owned allocation;
+floating-point conversion returns `Result<String, ConversionError>`. Formatting arguments store owned
+text or a conversion error when added; formatting reports errors with their argument index.
+`arguments.append_to(index, output)` appends a stored argument directly and returns a result.
+Generic calls use their arguments and expected result type for inference:
+`var values: Vector<String> = Vector()` and `return Result::Ok { value: value }`.
+An unconstrained local factory call still needs a type annotation. Typed argument bindings take
+precedence over result context.
+
+`std.ffi.handle.Handle`, `std.ffi.pipe.Pipe`, and `std.ffi.directory.DirectoryHandle` own OS resources
+and close them on destruction. Moving transfers ownership and leaves the source closed. Explicit
+`close()` reports failures and is safe to repeat. `File` owns a handle, and `Directory` owns a directory
+handle. `File::borrow(descriptor)` borrows an existing descriptor; `File::socket(descriptor)` owns a
+socket and uses a socket-safe write operation. `TcpStream` exposes its `file` for ordinary I/O.
+`File::write()` owns the full-write policy, while the FFI handle owns interrupted-operation retry.
+Console, file, socket, HTTP, and process code reuse these operations.
+
+`std.fs` exports `File`, `FileMode`, `SeekOrigin`, `Directory`, `DirectoryEntry`, `Path`, and `FileError`.
+File byte reads return `Vector<u8>` and stream until EOF without requiring a
+seekable input. `Directory::open` supports incremental `next()` reads; `Directory::list` collects
+owned names. Directory creation lives on `Directory::create` and `create_all`; existence checks live
+on `Path::exists`. `IoError` has named OS error values and preserves unknown numeric codes through
+its backing value. `FileError` and `ProcessError` are payload enums identifying the failed operation
+and its I/O error. Typed path and command overloads reject embedded zero bytes at the C boundary.
+`std.io.console.StandardFile` borrows standard output/error descriptors without closing them.
+`Process::capture` reads through a borrowed `File` and uses the pipe owner to close and wait. It
+preserves binary output. Process exit codes,
+including nonzero codes, are successful operation results; start/read/wait failures use `ProcessError`.
+
+Operational failures use `Result`, absence uses `Option`, and success-only results use `Result<void, E>`.
+`Result::Ok` carries no payload when its success type is `void`. Generic void enum fields have no storage;
+supplied void initializers still execute. Void callback parameters have no runtime argument, so
+mapping a void success invokes a no-argument callback. Void unwrap operations return `void`.
 Allocation failure and explicit failed unwrapping panic. File and standard-output writes handle
 partial writes and interrupted operations. HTTP clients accept an explicit IPv4 connection address
 separately from the Host header. Servers expose `serve_one()` and a looping `serve(on_start)`.
-The HTTP subset and deferred features are described in [ROADMAP.md](ROADMAP.md).
+HTTP uses explicit connection addresses and connection-close responses with optional Content-Length
+framing. Headers are limited to 64 KiB and bodies to 8 MiB. DNS, TLS, chunked transfer, and persistent
+connections are unsupported. Prioritized language work is tracked in [TODO.md](TODO.md).
+
+```zep
+var path = String("output.bin")
+var mut file = File::open(path, FileMode::Write).unwrap()
+file.write(StringView::from_cstr("hello")).unwrap()
+file.close().unwrap()
+
+var mut arguments = FormatArguments()
+arguments.add(42)
+var text = format(String("value: {}"), arguments).unwrap()
+print(text).unwrap()
+```
 
 ## Expressions
 
@@ -474,6 +608,10 @@ var total = do {
 
 A `do { ... }` block expression evaluates a block of statements in a local lexical scope and
 produces the value of the final statement or expression.
+
+A `return` statement has type `never`: that branch exits the function and does not determine the
+value type of a surrounding `if` or `when` expression. A `when` subject and its patterns use their own
+type context, independently of the arm results.
 
 ### When Expressions
 
@@ -504,6 +642,10 @@ V1 supports numeric, boolean, pointer-compatible subject matching, and enum vari
 named payload bindings. Enum patterns must refer to the subject's enum declaration; a specialized
 enum alias must also match its generic arguments. String subject matching, ranges, deeper
 destructuring, and numeric range exhaustiveness are deferred.
+
+Payload bindings borrow the subject's fields and preserve its mutability. Reading into a new owner
+copies; explicitly moving a binding operates on the original field. Bindings have no independent
+destruction. Temporary subjects live through the full expression and are destroyed once.
 
 ### Loop Statements
 
@@ -610,11 +752,9 @@ Assignment requires a mutable lvalue: `var mut` variable, `*mut` dereference, or
 an aligned, valid mutable pointer to uninitialized storage. The pointer is evaluated once, before
 the value. The expression returns a mutable pointer to the initialized value.
 
-`new value` allocates storage through `Memory::allocate_bytes` and initializes it. `delete pointer`
-destroys the pointee recursively and releases its allocation through `Memory::free`. Deleting null
-does nothing. Heap operations require `import std.memory.Memory`. Array allocation and deletion
-syntax are not supported. Placement storage must come from the same allocator before passing its
-pointer to `delete`.
+Allocate storage explicitly through `Memory`, construct its value with placement `new`, invoke its
+destructor, and release its storage with the matching allocator. There is no allocating-new or
+delete expression. The compiler does not look up allocation functions implicitly.
 
 `new` and `delete` are reserved keywords. The HTTP client request and server route helpers for
 the DELETE method are named `remove`.
@@ -628,8 +768,10 @@ The move helper is an ordinary generic static method in std:
 ```zep
 import std.memory.Memory
 
-var ptr = new Memory::move(value)
-delete ptr
+var ptr: *mut String = Memory::allocate()
+new (ptr) Memory::move(value)
+ptr[0].~String()
+Memory::free(ptr as *mut void)
 
 new (storage) Memory::move(other)
 storage->~Type()
@@ -683,6 +825,14 @@ struct Container<T> {
 ```
 
 Generic constraints: `<T: Constraint>` — argument must be compatible with constraint type.
+
+Integer and floating-point constraints accept their respective numeric families. Specialization
+preserves the concrete argument's width and signedness throughout operators, conversions, and
+nested generic calls; the constraint does not become the runtime type.
+
+Typed arguments determine numeric generic bindings before default literal types. Numeric literals
+can adopt the expected result's width within their numeric family. Instantiated receiver parameters
+also provide context for arguments such as `Result::Ok { value: text }`.
 
 Generic instantiation: `identity<i32>(42)`, `Container<i32> { value: 42 }`
 

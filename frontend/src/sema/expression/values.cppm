@@ -13,6 +13,18 @@ import zep.frontend.sema.types;
 
 export class Values {
   public:
+    static bool numeric_literal(const Expression& expression) {
+        if (expression.is<NumberLiteral>() || expression.is<FloatLiteral>()) {
+            return true;
+        }
+
+        const auto* unary = expression.as<UnaryExpression>();
+
+        return unary != nullptr &&
+               (unary->op == UnaryOperator::Type::Plus || unary->op == UnaryOperator::Type::Minus) &&
+               numeric_literal(*unary->operand);
+    }
+
     static bool moving(const Expression& expression) {
         if (const auto* coercion = expression.as<CoerceExpression>(); coercion != nullptr) {
             return coercion->coercion == Coercion::Type::MoveValue;

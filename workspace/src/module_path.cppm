@@ -1,6 +1,7 @@
 module;
 
 #include <filesystem>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -14,6 +15,32 @@ export class ModulePath {
 
     explicit ModulePath(std::vector<std::string> segments) : segments(std::move(segments)) {
         validate();
+    }
+
+    static bool is_test(const std::filesystem::path& path) {
+        return path.filename().string().ends_with(".test.zep");
+    }
+
+    static ModulePath from_file(std::filesystem::path path) {
+        const auto test = is_test(path);
+        path.replace_extension();
+
+        if (test) {
+            path.replace_extension();
+        }
+
+        std::vector<std::string> segments;
+        segments.reserve(static_cast<std::size_t>(std::distance(path.begin(), path.end())) + 1);
+
+        for (const auto& part : path) {
+            segments.push_back(part.string());
+        }
+
+        if (test) {
+            segments.push_back("test");
+        }
+
+        return ModulePath(std::move(segments));
     }
 
     static ModulePath from_string(const std::string& value) {

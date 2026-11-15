@@ -1,6 +1,7 @@
 import std.text.string.String
+import std.text.view.StringView
 import std.net.socket.stream.TcpStream
-import std.net.socket.error.SocketError
+import std.io.error.IoError
 import std.core.result.Result
 
 public enum Method {
@@ -11,15 +12,19 @@ public enum Method {
     Unknown
 
     public:
-        static fn parse(buffer: cstr) -> Method {
-            if (buffer.starts_with("GET ")) { return Method::Get }
-            if (buffer.starts_with("POST ")) { return Method::Post }
-            if (buffer.starts_with("PUT ")) { return Method::Put }
-            if (buffer.starts_with("DELETE ")) { return Method::Delete }
-            return Method::Unknown
+        static fn parse(buffer: &StringView) -> Method {
+            return when {
+                buffer.starts_with("GET ") -> Method::Get,
+                buffer.starts_with("POST ") -> Method::Post,
+                buffer.starts_with("PUT ") -> Method::Put,
+                buffer.starts_with("DELETE ") -> Method::Delete,
+                else -> Method::Unknown,
+            }
         }
 
-        fn matches(other: Method) -> boolean { return (*self).value == other.value }
+        fn matches(other: Method) -> boolean {
+            return (*self).value == other.value
+        }
 
         fn path_start() -> i32 {
             return when (*self) {
@@ -81,27 +86,24 @@ public struct Response {
             return self
         }
 
-        fn send_to(stream: *mut TcpStream) mut -> Result<i32, SocketError> {
-            var body_length = body.length()
+        fn send_to(stream: *mut TcpStream) -> Result<i32, IoError> {
             var mut header = String("HTTP/1.1 ")
-            var status_text = String::from(status.value)
-            header.append(&status_text)
+            header.append(String::from(status.value))
             header.append(" ")
             header.append(status.text())
             header.append("\r\nContent-Type: ")
-            header.append(&content_type)
+            header.append(content_type)
             header.append("\r\nContent-Length: ")
-            var length_text = String::from(body_length)
-            header.append(&length_text)
+            header.append(String::from(body.length()))
             header.append("\r\nConnection: close\r\n\r\n")
-            var header_result = stream->write_all(header.as_cstr(), header.length())
-            if (header_result.is_error()) {
-                return Result<i32, SocketError>::Error { error: header_result.unwrap_error() }
+            when (stream->file.write(header)) {
+                Result::Error { error } -> { return Result::Error { error: error } },
+                Result::Ok { value } -> {},
             }
-            var body_result = stream->write_all(body.as_cstr(), body_length as i64)
-            if (body_result.is_error()) {
-                return Result<i32, SocketError>::Error { error: body_result.unwrap_error() }
+
+            return when (stream->file.write(body)) {
+                Result::Error { error } -> Result::Error { error: error },
+                Result::Ok { value } -> Result::Ok { value: status.value },
             }
-            return Result<i32, SocketError>::Ok { value: status.value }
         }
 }

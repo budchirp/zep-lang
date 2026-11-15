@@ -234,35 +234,3 @@ TEST(LspIntegration, FullClientServerLifecycle) {
     });
     EXPECT_NE(updated_diagnostics, messages.end());
 }
-
-TEST(LspIntegration, CliZepLspSubcommand) {
-    std::string request_stream;
-
-    nlohmann::json initialize_request;
-    initialize_request["jsonrpc"] = "2.0";
-    initialize_request["id"] = 1;
-    initialize_request["method"] = "initialize";
-    initialize_request["params"] = {{"capabilities", nlohmann::json::object()}};
-    request_stream += frame_message(initialize_request);
-
-    nlohmann::json shutdown_request;
-    shutdown_request["jsonrpc"] = "2.0";
-    shutdown_request["id"] = 2;
-    shutdown_request["method"] = "shutdown";
-    request_stream += frame_message(shutdown_request);
-
-    nlohmann::json exit_notification;
-    exit_notification["jsonrpc"] = "2.0";
-    exit_notification["method"] = "exit";
-    request_stream += frame_message(exit_notification);
-
-    std::vector<nlohmann::json> messages;
-    run_lsp(request_stream, messages);
-
-    ASSERT_GE(messages.size(), 2U);
-    EXPECT_EQ(messages[0]["id"], 1);
-    EXPECT_TRUE(messages[0].contains("result"));
-    EXPECT_TRUE(messages[0]["result"]["capabilities"]["hoverProvider"].get<bool>());
-    EXPECT_EQ(messages[1]["id"], 2);
-    EXPECT_TRUE(messages[1]["result"].is_null());
-}

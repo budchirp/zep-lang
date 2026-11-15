@@ -230,6 +230,15 @@ export class HIRUnaryExpression : public HIRExpression {
         : HIRExpression(static_kind, span, type), op(op), operand(operand) {}
 };
 
+export class HIRDispatchMethod {
+  public:
+    std::string name;
+    const FunctionType* type;
+
+    HIRDispatchMethod(std::string name, const FunctionType* type)
+        : name(std::move(name)), type(type) {}
+};
+
 export class HIRCoerceExpression : public HIRExpression {
   public:
     static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::CoerceExpression;
@@ -237,11 +246,12 @@ export class HIRCoerceExpression : public HIRExpression {
     HIRExpression* value;
     Coercion::Type coercion;
     const Type* source_type;
+    std::vector<HIRDispatchMethod> implementations;
 
     HIRCoerceExpression(Span span, HIRExpression* value, const Type* type, Coercion::Type coercion,
                         const Type* source_type)
         : HIRExpression(static_kind, span, type), value(value), coercion(coercion),
-          source_type(source_type) {}
+          source_type(source_type), implementations() {}
 };
 
 export class HIRCallTarget : public Tagged {
@@ -287,9 +297,12 @@ export class HIRInterfaceCallTarget final : public HIRCallTarget {
     static constexpr Kind::Type static_kind = Kind::Type::Interface;
     const FunctionSymbol* method_symbol;
     std::size_t slot;
+    const FunctionType* function_type;
 
-    HIRInterfaceCallTarget(const FunctionSymbol& method_symbol, std::size_t slot)
-        : HIRCallTarget(static_kind), method_symbol(&method_symbol), slot(slot) {}
+    HIRInterfaceCallTarget(const FunctionSymbol& method_symbol, std::size_t slot,
+                          const FunctionType* function_type)
+        : HIRCallTarget(static_kind), method_symbol(&method_symbol), slot(slot),
+          function_type(function_type) {}
 };
 
 export class HIRAssemblyExpression : public HIRExpression {
@@ -465,7 +478,6 @@ export class HIRWhenExpression : public HIRExpression {
     HIRExpression* subject;
     std::vector<HIRWhenArm> arms;
     bool is_exhaustive;
-    bool borrow_payloads = false;
 
     HIRWhenExpression(Span span, HIRExpression* subject, std::vector<HIRWhenArm> arms,
                       bool is_exhaustive, const Type* type = nullptr)
@@ -540,6 +552,7 @@ export class HIRVarDeclaration : public HIRStatement {
     std::string name;
     HIRExpression* initializer;
     bool is_global;
+    bool is_definition;
     std::vector<AttributeInfo> attributes;
 
     HIRVarDeclaration(Span span, Visibility::Type visibility, Linkage::Type linkage,
@@ -548,7 +561,9 @@ export class HIRVarDeclaration : public HIRStatement {
                       std::vector<AttributeInfo> attributes = {})
         : HIRStatement(static_kind, span, type), visibility(visibility), linkage(linkage),
           storage_kind(storage_kind), name(std::move(name)), initializer(initializer),
-          is_global(is_global), attributes(std::move(attributes)) {}
+          is_global(is_global),
+          is_definition(linkage != Linkage::Type::External || initializer != nullptr),
+          attributes(std::move(attributes)) {}
 };
 
 export class HIRFunctionDeclaration : public HIRStatement {

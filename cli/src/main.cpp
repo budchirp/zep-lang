@@ -11,6 +11,7 @@ import zep.cli.commands.compile;
 import zep.cli.commands.fetch;
 import zep.cli.commands.install;
 import zep.cli.commands.lsp;
+import zep.cli.commands.test;
 import zep.common.logger;
 
 class RootCommand : public argman::Command {
@@ -20,18 +21,19 @@ class RootCommand : public argman::Command {
     FetchCommand fetch_command;
     InstallCommand install_command;
     LspCommand lsp_command;
+    TestCommand test_command;
 
   public:
     explicit RootCommand(Builder& builder, ProcessRunner& process_runner)
         : build_command(builder), compile_command(builder), fetch_command(process_runner),
-          install_command(ZEP_STD_SOURCE_DIR), lsp_command(ZEP_STD_SOURCE_DIR) {}
+          install_command(ZEP_STD_SOURCE_DIR), lsp_command(ZEP_STD_SOURCE_DIR), test_command(builder) {}
 
   private:
     argman::Command::Info info() override {
         return {.name = "zep",
                 .description = "The Zep programming language project builder",
                 .commands = {&build_command, &compile_command, &fetch_command, &install_command,
-                             &lsp_command}};
+                             &lsp_command, &test_command}};
     }
 
     int execute() override {

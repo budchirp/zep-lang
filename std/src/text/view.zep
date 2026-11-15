@@ -9,16 +9,13 @@ public struct StringView {
 
     public:
         fn StringView(ptr: cstr, length: i64) -> StringView {
-            var mut safe_length = length
-            var mut source = ptr
-            if (safe_length < 0) {
-                safe_length = 0
+            return when (ptr as *void) {
+                null -> StringView { ptr: "", length: 0 },
+                else -> StringView { ptr: ptr, length: when {
+                    (length < 0) -> 0 as i64,
+                    else -> length,
+                } },
             }
-            if ((source as *void) == null) {
-                source = ""
-                safe_length = 0
-            }
-            return StringView { ptr: source, length: safe_length }
         }
 
         static fn from_cstr(ptr: cstr) -> StringView {
@@ -42,10 +39,10 @@ public struct StringView {
 
         fn get(index: i64) -> Option<char> {
             if (index < 0 || index >= length) {
-                return Option<char>::None
+                return Option::None
             }
 
-            return Option<char>::Some { value: ptr[index] }
+            return Option::Some { value: ptr[index] }
         }
 
         fn equals(other: cstr) -> boolean {
@@ -53,11 +50,11 @@ public struct StringView {
                 return false
             }
 
-            return ByteText::equal(ptr, length, other, c_strlen(other))
+            return self->equals(StringView::from_cstr(other))
         }
 
-        fn equals(other: *StringView) -> boolean {
-            return ByteText::equal(ptr, length, other->as_ptr() as cstr, other->length())
+        fn equals(other: &StringView) -> boolean {
+            return ByteText::equal(ptr, length, other.as_ptr() as cstr, other.length())
         }
 
         fn starts_with(prefix: cstr) -> boolean {
@@ -65,7 +62,11 @@ public struct StringView {
                 return false
             }
 
-            return ByteText::prefix(ptr, length, prefix, c_strlen(prefix))
+            return self->starts_with(StringView::from_cstr(prefix))
+        }
+
+        fn starts_with(prefix: &StringView) -> boolean {
+            return ByteText::prefix(ptr, length, prefix.as_ptr() as cstr, prefix.length())
         }
 
         fn ends_with(suffix: cstr) -> boolean {
@@ -73,28 +74,49 @@ public struct StringView {
                 return false
             }
 
-            return ByteText::suffix(ptr, length, suffix, c_strlen(suffix))
+            return self->ends_with(StringView::from_cstr(suffix))
+        }
+
+        fn ends_with(suffix: &StringView) -> boolean {
+            return ByteText::suffix(ptr, length, suffix.as_ptr() as cstr, suffix.length())
         }
 
         fn index_of(needle: cstr, from_index: i64) -> Option<i64> {
             if ((needle as *void) == null) {
-                return Option<i64>::None
+                return Option::None
             }
 
-            var index = ByteText::find(ptr, length, needle, c_strlen(needle), from_index)
+            return self->index_of(StringView::from_cstr(needle), from_index)
+        }
+
+        fn index_of(needle: &StringView, from_index: i64) -> Option<i64> {
+            var index = ByteText::find(ptr, length, needle.as_ptr() as cstr, needle.length(), from_index)
 
             if (index < 0) {
-                return Option<i64>::None
+                return Option::None
             }
 
-            return Option<i64>::Some { value: index }
+            return Option::Some { value: index }
+        }
+
+        fn contains(character: char) -> boolean {
+            return ByteText::find(ptr, length, (&character) as cstr, 1, 0) >= 0
+        }
+
+        fn contains(needle: &StringView) -> boolean {
+            return self->index_of(needle, 0).is_some()
+        }
+
+        fn contains(needle: cstr) -> boolean {
+            return self->index_of(needle, 0).is_some()
         }
 
         fn substring(start_index: i64, end_index: i64) -> Option<StringView> {
             if (start_index < 0 || end_index < start_index || end_index > length) {
-                return Option<StringView>::None
+                return Option::None
             }
-            return Option<StringView>::Some {
+
+            return Option::Some {
                 value: StringView((&ptr[start_index]) as cstr, end_index - start_index)
             }
         }

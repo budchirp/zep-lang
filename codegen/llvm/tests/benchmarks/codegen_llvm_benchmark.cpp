@@ -1,6 +1,5 @@
 #include <benchmark/benchmark.h>
 #include <filesystem>
-#include <string>
 
 import zep.codegen.llvm.backend;
 import zep.codegen.api;
@@ -10,14 +9,20 @@ import zep.test.support;
 
 static void BM_emit_empty_object(benchmark::State& state) {
     TestWorkspace workspace("benchmark_codegen_llvm");
-    auto index = std::size_t(0);
+    const auto output = workspace.file("empty.o");
 
     for (auto _ : state) {
         HIRProgram program;
         LLVMBackend codegen;
-        auto output = workspace.file("empty_" + std::to_string(index++) + ".o");
-        codegen.generate(static_cast<const HIRProgram&>(program), output,
-                         EmitOptions(TargetInfo(), OptimizationLevel::Type::O0));
+        const auto result = codegen.generate(program, output,
+            EmitOptions(TargetInfo(), OptimizationLevel::Type::O0));
+
+        if (!result.has_value()) {
+            state.SkipWithError(result.error().c_str());
+
+            break;
+        }
+
         benchmark::DoNotOptimize(std::filesystem::file_size(output));
     }
 }

@@ -10,7 +10,8 @@ import zep.frontend.token;
 export const std::unordered_map<std::string_view, Token::Type> keywords = {
     {"import", Token::Type::Import}, {"interface", Token::Type::Interface},
     {"struct", Token::Type::Struct}, {"enum", Token::Type::Enum},
-    {"fn", Token::Type::Fn},         {"private", Token::Type::Private},
+    {"fn", Token::Type::Fn},         {"test", Token::Type::Test},
+    {"private", Token::Type::Private},
     {"public", Token::Type::Public}, {"return", Token::Type::Return},
     {"var", Token::Type::Var},       {"const", Token::Type::Const},
     {"if", Token::Type::If},         {"else", Token::Type::Else},

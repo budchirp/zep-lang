@@ -15,5 +15,5 @@ zep_add_fuzzer(zep_frontend_parser_fuzzer
 )
 
 zep_add_benchmark(zep_frontend_benchmarks
-    DEPENDS zep_frontend zep_common
+    DEPENDS zep_frontend_test_support
 )

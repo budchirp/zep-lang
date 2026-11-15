@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <string_view>
 
 import zep.frontend.test.harness;

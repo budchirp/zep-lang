@@ -65,7 +65,7 @@ TEST(FrontendGenerics, PreservesLiteralArgumentDiagnosticOrderAndLocations) {
     FrontendHarness harness(
         "struct Pair<A, B> { public: var first: A var second: B }\n"
         "fn first<A, B>(left: A, right: B) -> A { return left }\n"
-        "fn test() -> void { var value = Pair<A: i32, A: i32> { first: 1, second: 2 } }\n");
+        "fn work() -> void { var value = Pair<A: i32, A: i32> { first: 1, second: 2 } }\n");
     harness.type_check();
 
     const auto& diagnostics = harness.context.diagnostics.entries;

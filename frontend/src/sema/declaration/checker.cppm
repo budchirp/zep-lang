@@ -58,7 +58,7 @@ export class DeclarationChecker {
             builder.build_generic_parameter_types(node.generic_parameters);
 
         auto substitution_scope = resolver.create_substitution_scope();
-        resolver.bind_generic_parameters(generic_parameter_types, true);
+        resolver.bind_generic_parameters(generic_parameter_types);
 
         visitor.visit(*node.target);
 

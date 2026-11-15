@@ -34,14 +34,24 @@ export class Compiler {
 
     Module* analyze(Package& package, ModulePath entry, Diagnostics& diagnostics,
                     std::filesystem::path source_path = {}) {
-        auto* module = graph.load(package, std::move(entry), diagnostics, std::move(source_path));
+        auto* module = load(package, std::move(entry), diagnostics, std::move(source_path));
         if (module == nullptr || diagnostics.has_errors()) {
             return module;
         }
 
-        CompilerChecker checker(sema);
-        checker.check(graph, diagnostics);
+        check(diagnostics);
         return module;
+    }
+
+    Module* load(Package& package, ModulePath entry, Diagnostics& diagnostics,
+                 std::filesystem::path source_path = {}) {
+        return graph.load(package, std::move(entry), diagnostics, std::move(source_path));
+    }
+
+    bool check(Diagnostics& diagnostics) {
+        CompilerChecker checker(sema);
+
+        return checker.check(graph, diagnostics);
     }
 
     std::shared_ptr<HIRProgram> lower(Module& module, Diagnostics& diagnostics) {

@@ -56,7 +56,21 @@ export class ModuleGraph {
 
     Module* load_module(Package& package, ModulePath path, const std::filesystem::path& source_path,
                         Diagnostics& diagnostics) {
-        auto module_identity = identity(package, path);
+        if (source_path.filename() == "index.zep" && path.segments.size() > 1 &&
+            path.segments.back() == "index") {
+            auto segments = path.segments;
+            segments.pop_back();
+            ModulePath parent(std::move(segments));
+            const auto resolved = resolver.resolve(package, parent);
+
+            if (resolved.has_value() && resolved->owner == &package &&
+                Paths::identity(resolved->source_path) == Paths::identity(source_path)) {
+                path = std::move(parent);
+            }
+        }
+
+        const auto test = ModulePath::is_test(source_path);
+        auto module_identity = identity(package, path) + (test ? "$test" : "");
         if (auto existing = identities.find(module_identity); existing != identities.end()) {
             return existing->second;
         }
@@ -98,8 +112,30 @@ export class ModuleGraph {
             }
         }
 
-        auto* scope = sema.env.scopes.create<Scope>(Scope::Kind::Type::Module, path.string(),
-                                                    sema.env.root_scope);
+        auto* parent = sema.env.root_scope;
+
+        if (test) {
+            auto relative = source_path.lexically_relative(package.root / "tests");
+            auto sibling = !relative.empty() && !relative.string().starts_with("..")
+                ? package.source_directory / relative : source_path;
+            sibling.replace_extension();
+            sibling.replace_extension(".zep");
+
+            if (std::filesystem::is_regular_file(sibling)) {
+                auto* module = load_module(package, ModulePath::from_file(
+                    sibling.lexically_relative(package.source_directory)), sibling, diagnostics);
+
+                if (module == nullptr) {
+                    return nullptr;
+                }
+
+                visit(*module, diagnostics);
+                parent = module->scope;
+            }
+        }
+
+        auto* scope = sema.env.scopes.create<Scope>(Scope::Kind::Type::Module,
+            path.string() + (test ? "$test" : ""), parent);
         auto module =
             std::make_unique<Module>(&package, std::move(path), *loaded, std::move(syntax), scope);
         auto* result = module.get();

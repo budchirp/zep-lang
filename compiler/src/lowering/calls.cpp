@@ -63,7 +63,8 @@ HIRCallExpression* Lowerer::bind_call(CallExpression& node, HIRExpression* calle
 
     if (const auto* dispatch = node.resolved_target->as<InterfaceCallTarget>(); dispatch != nullptr) {
         return make_call(node, std::make_unique<HIRInterfaceCallTarget>(
-            *dispatch->method_symbol, dispatch->slot), std::move(arguments));
+            *dispatch->method_symbol, dispatch->slot, lower_function_type(dispatch->signature, node.span)),
+            std::move(arguments));
     }
 
     throw LoweringFailure(node.span, "call has no resolved semantic target");
@@ -222,6 +223,11 @@ HIRCallExpression* Lowerer::lower_call(CallExpression& node,
     }
 
     const auto* target = node.resolved_target->as<DirectCallTarget>();
+
+    if (node.resolved_target->as<InterfaceCallTarget>() != nullptr) {
+        return bind_call(node, nullptr, std::move(arguments));
+    }
+
     const auto* function = target != nullptr ? target->function_symbol : nullptr;
 
     if (function == nullptr) {
@@ -241,25 +247,16 @@ HIRCallExpression* Lowerer::lower_call(CallExpression& node,
         return nullptr;
     }
 
-    const auto* owner = node.type != nullptr ? node.type->as_nominal() : nullptr;
-    const auto construction = function->constructor();
     std::vector<GenericBinding> bindings;
+    bindings.reserve(node.bindings.size());
 
-    if (construction && owner != nullptr && !owner->generic_arguments.empty()) {
-        bindings = lower_generic_arguments(owner->generic_arguments, node.span);
-    } else if (!node.generic_arguments.empty()) {
-        bindings = lower_generic_arguments(node.generic_arguments, node.span);
-    } else if (!node.arguments.empty() && !signature->generic_parameters.empty()) {
-        const auto* receiver = node.arguments.front()->value->type;
+    for (const auto& binding : node.bindings) {
+        const auto resolved = resolver.resolve_binding(binding);
 
-        if (const auto* pointer = receiver != nullptr ? receiver->as<PointerType>() : nullptr;
-            pointer != nullptr) {
-            receiver = pointer->element;
-        }
-
-        if (const auto* nominal = receiver != nullptr ? receiver->as_nominal() : nullptr;
-            nominal != nullptr) {
-            bindings = lower_generic_arguments(nominal->generic_arguments, node.span);
+        if (const auto* type = std::get_if<TypeBinding>(&resolved); type != nullptr) {
+            bindings.emplace_back(TypeBinding(lower_type(type->type, node.span)));
+        } else {
+            bindings.push_back(resolved);
         }
     }
 

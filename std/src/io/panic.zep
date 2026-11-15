@@ -3,22 +3,23 @@ import std.ffi.c_write
 import std.ffi.c_strlen
 import std.ffi.zep_errno
 
-fn write_error(message: cstr) -> void {
+public fn panic(message: cstr) -> never {
     var length = c_strlen(message)
     var mut written: i64 = 0
-    while (written < length) {
-        var result = c_write(2, &message[written], length - written)
-        if (result > 0) {
-            written = written + result
+
+    while (written <= length) {
+        var count = when {
+            (written < length) -> c_write(2, &message[written], length - written),
+            else -> c_write(2, "\n", 1),
         }
-        if (result == 0 || (result < 0 && *zep_errno() != 4)) {
-            return
+
+        written = when {
+            (count > 0) -> written + count,
+            (count < 0 && *zep_errno() == 4) -> written,
+            (written < length) -> length,
+            else -> length + 1,
         }
     }
-}
 
-public fn panic(message: cstr) -> never {
-    write_error(message)
-    write_error("\n")
     c_exit(1)
 }

@@ -3,7 +3,8 @@ import std.ffi.c_memcmp
 public struct ByteText {
     public:
         static fn equal(left: cstr, left_length: i64, right: cstr, right_length: i64) -> boolean {
-            return left_length == right_length && c_memcmp(left, right, left_length) == 0
+            return left_length == right_length &&
+                (left_length == 0 || c_memcmp(left, right, left_length) == 0)
         }
 
         static fn prefix(source: cstr, length: i64, value: cstr, value_length: i64) -> boolean {
@@ -19,11 +20,7 @@ public struct ByteText {
         }
 
         static fn find(source: cstr, length: i64, needle: cstr, needle_length: i64, start: i64) -> i64 {
-            var mut index = start
-
-            if (index < 0) {
-                index = 0
-            }
+            var mut index = when { (start < 0) -> 0 as i64, else -> start, }
 
             if (needle_length == 0 && index <= length) {
                 return index

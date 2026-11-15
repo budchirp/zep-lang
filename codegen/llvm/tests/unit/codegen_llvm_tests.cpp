@@ -10,7 +10,6 @@ import zep.codegen.llvm.backend;
 import zep.codegen.llvm.target_context;
 import zep.codegen.llvm.types;
 import zep.codegen.api;
-import zep.codegen.test.support;
 import zep.common.target;
 import zep.hir.program;
 import zep.test.support;
@@ -43,8 +42,8 @@ TEST(CodegenLlvm, LowersEvaluatedFloatPayloadWithoutReinterpretingBitsAsDigits) 
     EXPECT_NE(ir.find("ret double -1.250000e+00"), std::string::npos) << ir;
 }
 
-TEST(CodegenLlvm, EmitsReleaseAfterDeletingThePointee) {
-    TestWorkspace workspace("llvm_delete_release");
+TEST(CodegenLlvm, EmitsReleaseAfterExplicitDestruction) {
+    TestWorkspace workspace("llvm_release");
     HirHarness harness(R"zep(
 struct Memory {
     public:
@@ -55,7 +54,12 @@ struct Record {
         var value: i32
         fn ~Record() -> void {}
 }
-public fn release(ptr: *mut Record) -> void { delete ptr }
+public fn release(ptr: *mut Record) -> void {
+    if (ptr != null) {
+        ptr[0].~Record()
+        Memory::free(ptr as *mut void)
+    }
+}
 )zep");
     ASSERT_TRUE(harness.succeeded());
     const auto program = harness.lower();
@@ -63,7 +67,7 @@ public fn release(ptr: *mut Record) -> void { delete ptr }
     LLVMBackend backend;
 
     const auto ir = capture_stderr([&] {
-        const auto result = backend.generate(*program, workspace.file("delete.o"),
+        const auto result = backend.generate(*program, workspace.file("release.o"),
             EmitOptions(TargetInfo(), OptimizationLevel::Type::O0, DebugOutput::Type::IR));
         EXPECT_TRUE(result.has_value());
     });
@@ -87,14 +91,6 @@ TEST(CodegenLlvm, InitializesTargetContext) {
     EXPECT_EQ(context.module->getTargetTriple().str(), target.triple);
 }
 
-TEST(CodegenLlvm, EmitsObjectForEmptyProgram) {
-    TestWorkspace workspace("llvm_empty_program");
-    HIRProgram program;
-    LLVMBackend codegen;
-
-    assert_emits_object(codegen, program, workspace, "empty.o", OptimizationLevel::Type::O0);
-}
-
 TEST(CodegenLlvm, IrSnapshotForEmptyProgramIsStable) {
     TestWorkspace workspace("llvm_ir_snapshot");
     HIRProgram program;
@@ -110,28 +106,19 @@ TEST(CodegenLlvm, IrSnapshotForEmptyProgramIsStable) {
     EXPECT_TRUE(Snapshot::matches("fixtures/snapshots/empty_ir.txt", ir));
 }
 
-TEST(CodegenLlvm, EmitsObjectWithDifferentOptimizationLevels) {
+TEST(CodegenLlvm, EmitsIndependentProgramsAtDifferentOptimizationLevels) {
     TestWorkspace workspace("llvm_opt_levels");
-    HIRProgram program;
     LLVMBackend codegen;
 
-    assert_emits_object(codegen, program, workspace, "empty_o0.o", OptimizationLevel::Type::O0);
-    assert_emits_object(codegen, program, workspace, "empty_o3.o", OptimizationLevel::Type::O3);
-}
+    for (const auto level : {OptimizationLevel::Type::O0, OptimizationLevel::Type::O3}) {
+        HIRProgram program;
+        const auto output = workspace.file(level == OptimizationLevel::Type::O0 ? "empty_o0.o" : "empty_o3.o");
+        const auto result = codegen.generate(program, output, EmitOptions(TargetInfo(), level));
 
-TEST(CodegenLlvm, BackendDoesNotLeakBetweenPrograms) {
-    TestWorkspace workspace("llvm_backend_isolation");
-    HIRProgram first;
-    HIRProgram second;
-    LLVMBackend backend;
-
-    auto first_result = backend.generate(first, workspace.file("first.o"), EmitOptions());
-    auto second_result = backend.generate(second, workspace.file("second.o"), EmitOptions());
-
-    ASSERT_TRUE(first_result.has_value());
-    ASSERT_TRUE(second_result.has_value());
-    EXPECT_TRUE(std::filesystem::exists(workspace.file("first.o")));
-    EXPECT_TRUE(std::filesystem::exists(workspace.file("second.o")));
+        ASSERT_TRUE(result.has_value()) << result.error();
+        EXPECT_TRUE(std::filesystem::is_regular_file(output));
+        EXPECT_GT(std::filesystem::file_size(output), 0U);
+    }
 }
 
 TEST(CodegenLlvm, EmitsExternVarWithName) {

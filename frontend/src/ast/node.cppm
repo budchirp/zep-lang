@@ -61,7 +61,6 @@ export class Node : public Tagged {
             QualifiedAccessExpression,
             AssignExpression,
             NewExpression,
-            DeleteExpression,
             StructLiteralExpression,
             EnumVariantExpression,
             IfExpression,
@@ -82,6 +81,7 @@ export class Node : public Tagged {
             EnumDeclaration,
             VarDeclaration,
             FunctionDeclaration,
+            TestDeclaration,
             ExternFunctionDeclaration,
             ExternVarDeclaration,
             ImportStatement,
@@ -147,9 +147,10 @@ export class InterfaceCallTarget final : public CallTarget {
     static constexpr Kind::Type static_kind = Kind::Type::Interface;
     const FunctionSymbol* method_symbol;
     std::size_t slot;
+    const FunctionType* signature;
 
-    InterfaceCallTarget(const FunctionSymbol& method, std::size_t slot)
-        : CallTarget(static_kind), method_symbol(&method), slot(slot) {}
+    InterfaceCallTarget(const FunctionSymbol& method, std::size_t slot, const FunctionType* signature)
+        : CallTarget(static_kind), method_symbol(&method), slot(slot), signature(signature) {}
 };
 
 export class Expression : public Node {
@@ -548,11 +549,12 @@ export class CoerceExpression : public Expression {
     Coercion::Type coercion;
     const Type* source_type;
     std::shared_ptr<const LifecyclePlan> operation;
+    std::vector<DirectCallTarget> implementations;
 
     CoerceExpression(Span span, Expression* value, const Type* target_type, Coercion::Type coercion,
                      const Type* source_type)
         : Expression(static_kind, span), value(value), coercion(coercion),
-          source_type(source_type), operation(nullptr) {
+          source_type(source_type), operation(nullptr), implementations() {
         type = target_type;
     }
 };
@@ -569,6 +571,7 @@ export class CallExpression : public Expression {
     std::vector<Argument*> arguments;
 
     std::unique_ptr<CallTarget> resolved_target;
+    std::vector<GenericBinding> bindings;
     std::shared_ptr<const LifecyclePlan> destruction;
     const Type* reference_result = nullptr;
 
@@ -576,7 +579,7 @@ export class CallExpression : public Expression {
                    std::vector<Argument*> arguments)
         : Expression(static_kind, span), callee(callee),
           generic_arguments(std::move(generic_arguments)), arguments(std::move(arguments)),
-          resolved_target(nullptr), destruction() {}
+          resolved_target(nullptr), bindings(), destruction() {}
 };
 
 export class IndexExpression : public Expression {
@@ -643,22 +646,9 @@ export class NewExpression : public Expression {
 
     Expression* storage;
     Expression* value;
-    CallExpression* allocation;
 
     NewExpression(Span span, Expression* storage, Expression* value)
-        : Expression(static_kind, span), storage(storage), value(value), allocation(nullptr) {}
-};
-
-export class DeleteExpression : public Expression {
-  public:
-    static constexpr Kind::Type static_kind = Kind::Type::DeleteExpression;
-
-    Expression* value;
-    CallExpression* release;
-    std::shared_ptr<const LifecyclePlan> operation;
-
-    DeleteExpression(Span span, Expression* value)
-        : Expression(static_kind, span), value(value), release(nullptr), operation() {}
+        : Expression(static_kind, span), storage(storage), value(value) {}
 };
 
 export class StructLiteralExpression : public Expression {
@@ -922,6 +912,20 @@ export class FunctionDeclaration : public Statement {
     bool is_member() const { return !parent.empty(); }
 };
 
+export class TestDeclaration : public Statement {
+  public:
+    static constexpr Kind::Type static_kind = Kind::Type::TestDeclaration;
+
+    std::string name;
+    Span name_span;
+    FunctionDeclaration* function;
+    bool enabled;
+
+    TestDeclaration(Span span, std::string name, Span name_span, FunctionDeclaration* function)
+        : Statement(static_kind, span), name(std::move(name)), name_span(name_span),
+          function(function), enabled(false) {}
+};
+
 export class InterfaceDeclaration;
 export class StructDeclaration;
 export class EnumDeclaration;
@@ -1001,16 +1005,17 @@ export class EnumDeclaration : public Statement {
     std::vector<TypeExpression*> inheritance;
     std::vector<EnumVariant*> variants;
     std::vector<FunctionDeclaration*> methods;
+    std::vector<Field*> fields;
 
     EnumDeclaration(Span span, Visibility::Type visibility, std::string name,
                     std::vector<Attribute*> attributes,
                     std::vector<GenericParameter*> generic_parameters, TypeExpression* backing_type,
                     std::vector<TypeExpression*> inheritance, std::vector<EnumVariant*> variants,
-                    std::vector<FunctionDeclaration*> methods = {})
+                    std::vector<FunctionDeclaration*> methods = {}, std::vector<Field*> fields = {})
         : Statement(static_kind, span), visibility(visibility), name(std::move(name)),
           attributes(std::move(attributes)), generic_parameters(std::move(generic_parameters)),
           backing_type(backing_type), inheritance(std::move(inheritance)),
-          variants(std::move(variants)), methods(std::move(methods)) {}
+          variants(std::move(variants)), methods(std::move(methods)), fields(std::move(fields)) {}
 };
 
 export class VarDeclaration : public Statement {
@@ -1128,7 +1133,6 @@ class ExpressionVisitor {
     virtual T visit(QualifiedAccessExpression& node) = 0;
     virtual T visit(AssignExpression& node) = 0;
     virtual T visit(NewExpression& node) = 0;
-    virtual T visit(DeleteExpression& node) = 0;
     virtual T visit(StructLiteralExpression& node) = 0;
     virtual T visit(EnumVariantExpression& node) = 0;
     virtual T visit(WhenExpression& node) = 0;
@@ -1211,9 +1215,6 @@ class ExpressionVisitor {
         if (auto* allocation = expression.as<NewExpression>(); allocation != nullptr) {
             return visit(*allocation);
         }
-        if (auto* deletion = expression.as<DeleteExpression>(); deletion != nullptr) {
-            return visit(*deletion);
-        }
         if (auto* assembly = expression.as<AssemblyExpression>(); assembly != nullptr) {
             return visit(*assembly);
         }
@@ -1259,12 +1260,17 @@ class Visitor : public ExpressionVisitor<T> {
     virtual T visit(EnumDeclaration& node) = 0;
     virtual T visit(VarDeclaration& node) = 0;
     virtual T visit(FunctionDeclaration& node) = 0;
+    virtual T visit(TestDeclaration& node) { return visit(*node.function); }
     virtual T visit(ExternFunctionDeclaration& node) = 0;
     virtual T visit(ExternVarDeclaration& node) = 0;
     virtual T visit(ImportStatement& node) = 0;
     virtual T visit(TypeAliasDeclaration& node) = 0;
 
     T visit_statement(Statement& statement) {
+        if (auto* test = statement.as<TestDeclaration>(); test != nullptr) {
+            return visit(*test);
+        }
+
         if (auto* block = statement.as<BlockStatement>(); block != nullptr) {
             return visit(*block);
         }
@@ -1320,6 +1326,10 @@ class Visitor : public ExpressionVisitor<T> {
     }
 
     T visit_node(Node& node) {
+        if (auto* test = node.as<TestDeclaration>(); test != nullptr) {
+            return visit(*test);
+        }
+
         if (auto* type_expression = node.as<TypeExpression>(); type_expression != nullptr) {
             return visit(*type_expression);
         }
@@ -1424,9 +1434,6 @@ class Visitor : public ExpressionVisitor<T> {
         }
         if (auto* allocation = node.as<NewExpression>(); allocation != nullptr) {
             return visit(*allocation);
-        }
-        if (auto* deletion = node.as<DeleteExpression>(); deletion != nullptr) {
-            return visit(*deletion);
         }
         if (auto* assembly = node.as<AssemblyExpression>(); assembly != nullptr) {
             return visit(*assembly);

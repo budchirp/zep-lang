@@ -5,5 +5,5 @@ zep_add_test(zep_compiler_tests
 )
 
 zep_add_benchmark(zep_compiler_benchmarks
-    DEPENDS zep_compiler zep_frontend zep_hir zep_common
+    DEPENDS zep_compiler_test_support
 )

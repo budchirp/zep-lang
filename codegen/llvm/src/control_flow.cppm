@@ -71,6 +71,12 @@ export class ControlFlow {
         function->insert(function->end(), merge_block);
         builder.SetInsertPoint(merge_block);
 
+        if (!then_reaches_merge && !else_reaches_merge) {
+            builder.CreateUnreachable();
+
+            return nullptr;
+        }
+
         if (expression.type == nullptr || expression.type->is<VoidType>()) {
             return nullptr;
         }

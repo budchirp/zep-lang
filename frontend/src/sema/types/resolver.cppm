@@ -31,6 +31,7 @@ export class TypeResolver {
     TypeArena& type_arena;
     SymbolEnvironment& env;
     Diagnostics& diagnostics;
+    std::unordered_map<const void*, const Type*> constraints;
 
   public:
     CompileTimeEnvironment substitutions;
@@ -204,7 +205,9 @@ export class TypeResolver {
         result.reserve(parameters.size());
 
         for (const auto& parameter : parameters) {
-            if (substitutions.contains(parameter)) {
+            const auto* binding = substitutions.lookup(parameter);
+
+            if (binding != nullptr) {
                 changed = true;
                 continue;
             }
@@ -276,21 +279,24 @@ export class TypeResolver {
         return result;
     }
 
-    struct ResolvedNominalGenerics {
+    class ResolvedNominalGenerics {
+      public:
         bool changed;
         std::vector<GenericParameterType> parameters;
         std::vector<GenericArgumentType> arguments;
+
+        ResolvedNominalGenerics() : changed(false), parameters(), arguments() {}
     };
 
     ResolvedNominalGenerics
     resolve_nominal_generics(const std::vector<GenericParameterType>& generic_parameters,
                              const std::vector<GenericArgumentType>& generic_arguments) {
         ResolvedNominalGenerics result;
-        result.changed = false;
 
         result.arguments =
             substitute_generic_arguments(generic_arguments, substitutions, result.changed);
         result.parameters = resolve_generic_parameters(generic_parameters, result.changed);
+        result.arguments.reserve(generic_arguments.size() + generic_parameters.size());
 
         for (const auto& parameter : generic_parameters) {
             if (const auto* substitution = substitutions.lookup(parameter);
@@ -579,7 +585,8 @@ export class TypeResolver {
             result = type_arena.create<EnumType>(
                 resolved_nominal->name, std::vector<GenericParameterType>(),
                 resolved_nominal->variants, resolved_nominal->backing_type, std::move(arguments),
-                resolved_nominal->interfaces, resolved_nominal->methods, nominal_type.definition);
+                resolved_nominal->interfaces, resolved_nominal->methods, nominal_type.definition,
+                resolved_nominal->fields);
         }
 
         cache.insert_or_assign(std::move(cache_key), result);
@@ -588,7 +595,7 @@ export class TypeResolver {
 
   public:
     TypeResolver(TypeArena& type_arena, SymbolEnvironment& env, Diagnostics& diagnostics)
-        : type_arena(type_arena), env(env), diagnostics(diagnostics) {}
+        : type_arena(type_arena), env(env), diagnostics(diagnostics), constraints() {}
 
     [[nodiscard]] CompileTimeEnvironment::Scope create_substitution_scope() {
         return substitutions.enter_scope();
@@ -633,7 +640,11 @@ export class TypeResolver {
             if (const auto* type_binding =
                     binding != nullptr ? std::get_if<TypeBinding>(binding) : nullptr;
                 type_binding != nullptr) {
-                return type_binding->type;
+                return substitute(type_binding->type, substitution_map);
+            }
+
+            if (named->declaration != nullptr) {
+                return type;
             }
 
             bool changed = false;
@@ -759,6 +770,7 @@ export class TypeResolver {
             }
 
             auto methods = substitute_methods(enum_type->methods, substitution_map, changed);
+            auto fields = substitute_fields(enum_type->fields, substitution_map, changed);
 
             if (!changed) {
                 return type;
@@ -767,7 +779,7 @@ export class TypeResolver {
             return type_arena.create<EnumType>(enum_type->name, std::move(parameters),
                                                std::move(variants), backing_type,
                                                std::move(arguments), std::move(interfaces),
-                                               std::move(methods), enum_type->definition);
+                                               std::move(methods), enum_type->definition, std::move(fields));
         }
 
         case Type::Kind::Type::Interface: {
@@ -939,7 +951,7 @@ export class TypeResolver {
         substitutions = environment;
     }
 
-    void bind_generic_parameter(const GenericParameterType& parameter, bool as_self = false) {
+    void bind_generic_parameter(const GenericParameterType& parameter) {
         if (parameter.is_const()) {
             if (parameter.declaration == nullptr) {
                 diagnostics.add_error(Span(), "const parameter has no defining declaration");
@@ -951,19 +963,81 @@ export class TypeResolver {
             return;
         }
 
-        const auto* type =
-            as_self || parameter.type == nullptr
-                ? type_arena.create<NamedType>(parameter.name, std::vector<GenericArgumentType>{},
-                                               parameter.declaration)
-                : parameter.type;
+        if (parameter.declaration != nullptr && parameter.type != nullptr) {
+            constraints.insert_or_assign(parameter.declaration, parameter.type);
+        }
+
+        const auto* type = type_arena.create<NamedType>(parameter.name,
+            std::vector<GenericArgumentType>{}, parameter.declaration);
         bind_type_parameter(parameter.name, type, parameter.declaration);
     }
 
-    void bind_generic_parameters(const std::vector<GenericParameterType>& parameters,
-                                 bool as_self = false) {
+    void bind_generic_parameters(const std::vector<GenericParameterType>& parameters) {
         for (const auto& parameter : parameters) {
-            bind_generic_parameter(parameter, as_self);
+            bind_generic_parameter(parameter);
         }
+    }
+
+    const FunctionType* method_type(const FunctionType* function, const Type* self_type) {
+        if (function == nullptr || self_type == nullptr) {
+            return nullptr;
+        }
+
+        auto scope = create_substitution_scope();
+        const auto* nominal = self_type->as_nominal();
+
+        if (nominal != nullptr) {
+            if (nominal->generic_arguments.empty()) {
+                bind_generic_parameters(nominal->generic_parameters);
+            } else {
+                for (auto index = std::size_t{0}; index < nominal->generic_arguments.size(); ++index) {
+                    const auto& parameter = nominal->definition->generic_parameters[index];
+
+                    bind_generic_binding(parameter.name, nominal->generic_arguments[index].binding(),
+                                         parameter.declaration);
+                }
+            }
+        }
+
+        bind_type_parameter("Self", self_type);
+
+        const auto* resolved = resolve_type(function)->as<FunctionType>();
+        auto parameters = resolved->parameters;
+
+        if (!parameters.empty() && parameters.front().name == "self") {
+            const auto* pointer = parameters.front().type->as<PointerType>();
+
+            if (pointer != nullptr) {
+                parameters.front().type = type_arena.create<PointerType>(
+                    self_type, pointer->is_mutable, pointer->reference_kind);
+            }
+        }
+
+        return type_arena.create<FunctionType>(resolved->name, resolved->return_type,
+            std::move(parameters), resolved->generic_parameters, resolved->variadic);
+    }
+
+    const Type* constraint_type(const Type* type) {
+        std::unordered_set<const Type*> seen;
+        type = resolve_type(type);
+
+        while (type != nullptr && seen.insert(type).second) {
+            const auto* named = type->as<NamedType>();
+
+            if (named == nullptr) {
+                break;
+            }
+
+            const auto constraint = constraints.find(named->declaration);
+
+            if (constraint == constraints.end()) {
+                break;
+            }
+
+            type = resolve_type(constraint->second);
+        }
+
+        return type;
     }
 
     bool has_type_parameter(const std::string& name) const {
@@ -976,8 +1050,8 @@ export class TypeResolver {
     }
 
     bool satisfies_constraint(const Type* argument, const Type* constraint) {
-        const auto* resolved_argument = resolve_type(argument);
-        const auto* resolved_constraint = resolve_type(constraint);
+        const auto* resolved_argument = constraint_type(argument);
+        const auto* resolved_constraint = constraint_type(constraint);
 
         if (resolved_argument == nullptr || resolved_constraint == nullptr) {
             return false;
@@ -988,6 +1062,10 @@ export class TypeResolver {
         }
 
         if (resolved_argument->is<IntegerType>() && resolved_constraint->is<IntegerType>()) {
+            return true;
+        }
+
+        if (resolved_argument->is<FloatType>() && resolved_constraint->is<FloatType>()) {
             return true;
         }
 
@@ -1042,7 +1120,11 @@ export class TypeResolver {
             if (const auto* type_binding =
                     binding != nullptr ? std::get_if<TypeBinding>(binding) : nullptr;
                 type_binding != nullptr) {
-                return type_binding->type;
+                return resolve_type(type_binding->type);
+            }
+
+            if (named->declaration != nullptr) {
+                return type;
             }
 
             auto* symbol = env.current_scope->lookup_type(named->name);
@@ -1155,6 +1237,9 @@ export class TypeResolver {
             auto [changed, parameters, arguments] = resolve_nominal_generics(
                 enum_type->generic_parameters, enum_type->generic_arguments);
 
+            auto fields = resolve_fields_internal(enum_type->fields);
+            changed = changed || fields.has_value();
+
             std::optional<std::vector<EnumVariantType>> resolved_variants;
 
             for (std::size_t index = 0; index < enum_type->variants.size(); ++index) {
@@ -1195,7 +1280,8 @@ export class TypeResolver {
             return type_arena.create<EnumType>(enum_type->name, std::move(parameters),
                                                std::move(variants), backing_type,
                                                std::move(arguments), enum_type->interfaces,
-                                               enum_type->methods, enum_type->definition);
+                                               enum_type->methods, enum_type->definition,
+                                               fields.has_value() ? std::move(*fields) : enum_type->fields);
         }
 
         case Type::Kind::Type::Interface: {

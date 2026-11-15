@@ -1,5 +1,6 @@
 module;
 
+#include <algorithm>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -8,6 +9,7 @@ module;
 export module zep.frontend.sema.expression.when;
 
 import zep.common.context;
+import zep.common.state;
 import zep.frontend.node;
 import zep.frontend.sema.context;
 import zep.frontend.sema.scopes.environment;
@@ -16,6 +18,7 @@ import zep.frontend.sema.symbols;
 import zep.frontend.sema.scopes.scope;
 import zep.frontend.sema.types;
 import zep.frontend.sema.types.resolver;
+import zep.frontend.sema.expression.values;
 
 export class WhenChecker {
   private:
@@ -23,6 +26,7 @@ export class WhenChecker {
     SemaContext& sema;
     TypeResolver& type_resolver;
     Visitor<void>& visitor;
+    const Type*& target_type;
     bool mutable_bindings;
 
     static bool is_comparable(const Type* type) {
@@ -44,6 +48,8 @@ export class WhenChecker {
         }
 
         auto& expression = *pattern.expression;
+        StateGuard target_guard(target_type,
+            has_subject ? subject_type : sema.primitives.entries.at("boolean"));
 
         if (!has_subject) {
             visitor.visit_expression(expression);
@@ -155,7 +161,7 @@ export class WhenChecker {
                                 const EnumVariantType& variant, bool multiple_patterns) {
         const auto label = subject_enum.name + "::" + variant.name;
 
-        if (variant.fields.empty()) {
+        if (variant.fields.empty() && subject_enum.fields.empty()) {
             if (!pattern.fields.empty()) {
                 context.diagnostics.add_error(pattern.span,
                                               "enum variant '" + label + "' has no payload");
@@ -163,7 +169,11 @@ export class WhenChecker {
             return;
         }
 
-        if (pattern.fields.empty()) {
+        const auto requires_payload = std::ranges::any_of(variant.fields, [&](const FieldType& field) -> bool {
+            return !type_resolver.resolve_type(field.type)->is<VoidType>();
+        });
+
+        if (pattern.fields.empty() && requires_payload) {
             context.diagnostics.add_error(pattern.span,
                                           "enum variant '" + label + "' requires payload pattern");
             return;
@@ -194,7 +204,11 @@ export class WhenChecker {
                 continue;
             }
 
-            const auto* declared_field = variant.find_field(field->field_name);
+            const auto* declared_field = subject_enum.find_field(field->field_name);
+
+            if (declared_field == nullptr) {
+                declared_field = variant.find_field(field->field_name);
+            }
 
             if (declared_field == nullptr) {
                 context.diagnostics.add_error(field->span, "enum variant '" + label +
@@ -212,7 +226,7 @@ export class WhenChecker {
         }
 
         for (const auto& field : variant.fields) {
-            if (!seen_fields.contains(field.name)) {
+            if (!seen_fields.contains(field.name) && !type_resolver.resolve_type(field.type)->is<VoidType>()) {
                 context.diagnostics.add_error(pattern.span, "missing field '" + field.name +
                                                                 "' in enum pattern '" + label +
                                                                 "'");
@@ -222,16 +236,22 @@ export class WhenChecker {
 
   public:
     explicit WhenChecker(Context& context, SemaContext& sema, TypeResolver& type_resolver,
-                         Visitor<void>& visitor, bool mutable_bindings = false)
-        : context(context), sema(sema), type_resolver(type_resolver), visitor(visitor), mutable_bindings(mutable_bindings) {}
+                         Visitor<void>& visitor, const Type*& target_type)
+        : context(context), sema(sema), type_resolver(type_resolver), visitor(visitor),
+          target_type(target_type), mutable_bindings(false) {}
 
     void resolve(WhenExpression& node) {
         const Type* subject_type = nullptr;
         auto subject_comparable = true;
 
         if (node.subject != nullptr) {
-            visitor.visit_expression(*node.subject);
-            subject_type = node.subject->type;
+            {
+                StateGuard target_guard(target_type, static_cast<const Type*>(nullptr));
+                visitor.visit_expression(*node.subject);
+            }
+            subject_type = type_resolver.resolve_type(node.subject->type);
+            mutable_bindings = mutable_bindings || !Values::place(*node.subject) ||
+                               Values::mutable_place(*node.subject, sema.env);
 
             if (subject_type != nullptr && !subject_type->is<EnumType>()) {
                 subject_comparable = is_comparable(subject_type);
@@ -352,7 +372,7 @@ export class WhenChecker {
                 continue;
             }
 
-            if (result_type == nullptr) {
+            if (result_type == nullptr || result_type->is<NeverType>()) {
                 result_type = body_type;
                 continue;
             }

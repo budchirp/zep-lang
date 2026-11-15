@@ -6,6 +6,7 @@ module;
 #include <functional>
 #include <limits>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <unordered_set>
 #include <unordered_map>
@@ -459,16 +460,6 @@ export class InterfaceType : public NominalType {
                       std::move(generic_arguments), definition),
           methods(std::move(methods)), interfaces(std::move(interfaces)) {}
 
-    const MethodType* find_method(const std::string& method_name) const {
-        for (const auto& method : methods) {
-            if (method.name == method_name) {
-                return &method;
-            }
-        }
-
-        return nullptr;
-    }
-
     bool inherits_from(const InterfaceType* target) const {
         for (const auto* interface_type : interfaces) {
             if (interface_type == nullptr) {
@@ -569,16 +560,32 @@ export class EnumType : public NominalType {
     std::vector<EnumVariantType> variants;
     std::vector<const InterfaceType*> interfaces;
     std::vector<MethodType> methods;
+    std::vector<FieldType> fields;
 
     EnumType(std::string name, std::vector<GenericParameterType> generic_parameters,
              std::vector<EnumVariantType> variants, const Type* backing_type = nullptr,
              std::vector<GenericArgumentType> generic_arguments = {},
              std::vector<const InterfaceType*> interfaces = {},
-             std::vector<MethodType> methods = {}, const NominalType* definition = nullptr)
+             std::vector<MethodType> methods = {}, const NominalType* definition = nullptr,
+             std::vector<FieldType> fields = {})
         : NominalType(static_kind, "enum", std::move(name), std::move(generic_parameters),
                       std::move(generic_arguments), definition),
           backing_type(backing_type), variants(std::move(variants)),
-          interfaces(std::move(interfaces)), methods(std::move(methods)) {}
+          interfaces(std::move(interfaces)), methods(std::move(methods)), fields(std::move(fields)) {}
+
+    using FieldRange = std::ranges::concat_view<
+        std::ranges::ref_view<const std::vector<FieldType>>,
+        std::ranges::ref_view<const std::vector<FieldType>>>;
+
+    FieldRange fields_for(const EnumVariantType& variant) const {
+        return std::views::concat(fields, variant.fields);
+    }
+
+    const FieldType* find_field(const std::string& name) const {
+        const auto field = std::ranges::find(fields, name, &FieldType::name);
+
+        return field != fields.end() ? &*field : nullptr;
+    }
 
     const EnumVariantType* find_variant(const std::string& variant_name) const {
         for (const auto& variant : variants) {
@@ -594,8 +601,23 @@ export class EnumType : public NominalType {
                                              const std::string& field_name) const {
         auto index = std::size_t{1};
 
+        for (const auto& field : fields) {
+            if (field.type->is<VoidType>()) {
+                continue;
+            }
+
+            if (field.name == field_name) {
+                return index;
+            }
+
+            ++index;
+        }
+
         for (const auto& variant : variants) {
             for (const auto& field : variant.fields) {
+                if (field.type->is<VoidType>()) {
+                    continue;
+                }
                 if (variant.name == variant_name && field.name == field_name) {
                     return index;
                 }
@@ -655,9 +677,69 @@ export class FunctionType : public Type {
     std::size_t byte_size() const override { return 8; }
     std::size_t alignment() const override { return 8; }
 
-    bool conflicts_with(const FunctionType& other) const {
-        if (parameters.size() != other.parameters.size()) {
+    std::vector<ParameterType> value_parameters() const {
+        std::vector<ParameterType> result;
+        result.reserve(parameters.size());
+
+        for (const auto& parameter : parameters) {
+            if (parameter.type == nullptr || !parameter.type->is<VoidType>()) {
+                result.push_back(parameter);
+            }
+        }
+
+        return result;
+    }
+
+    bool matches_method(const FunctionType& actual) const {
+        if (return_type == nullptr || actual.return_type == nullptr ||
+            !return_type->accepts(actual.return_type) || variadic != actual.variadic ||
+            parameters.size() != actual.parameters.size()) {
             return false;
+        }
+
+        for (auto index = std::size_t{0}; index < parameters.size(); ++index) {
+            const auto* expected_type = parameters[index].type;
+            const auto* actual_type = actual.parameters[index].type;
+
+            if (expected_type == nullptr || actual_type == nullptr) {
+                return false;
+            }
+
+            if (index == 0 && parameters[index].name == "self" && actual.parameters[index].name == "self") {
+                const auto* expected_pointer = expected_type->as<PointerType>();
+                const auto* actual_pointer = actual_type->as<PointerType>();
+
+                if (expected_pointer == nullptr || actual_pointer == nullptr ||
+                    expected_pointer->is_mutable != actual_pointer->is_mutable) {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (!expected_type->same(actual_type)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    bool conflicts_with(const FunctionType& other) const {
+        if (parameters.size() != other.parameters.size() ||
+            generic_parameters.size() != other.generic_parameters.size()) {
+            return false;
+        }
+
+        for (auto index = std::size_t{0}; index < generic_parameters.size(); ++index) {
+            const auto& left = generic_parameters[index];
+            const auto& right = other.generic_parameters[index];
+
+            if (left.kind != right.kind ||
+                (left.type == nullptr) != (right.type == nullptr) ||
+                (left.type != nullptr && !left.type->same(right.type))) {
+                return false;
+            }
         }
 
         for (std::size_t i = 0; i < parameters.size(); ++i) {
@@ -889,19 +971,21 @@ bool Type::accepts(const Type* other) const {
             return false;
         }
 
-        if (left_element->is<VoidType>() || right_element->is<VoidType>()) {
+        if (left_element->is<VoidType>()) {
             return true;
         }
 
-        if (const auto* right_array = right_element->as<ArrayType>(); right_array != nullptr) {
-            return left_element->accepts(right_array->element);
+        if (right_element->is<VoidType>()) {
+            return false;
         }
 
-        if (const auto* left_array = left_element->as<ArrayType>(); left_array != nullptr) {
-            return left_array->element->accepts(right_element);
+        if (left_element->accepts(right_element)) {
+            return true;
         }
 
-        return left_element->accepts(right_element);
+        const auto* array = right_element->as<ArrayType>();
+
+        return array != nullptr && left_element->accepts(array->element);
     }
 
     const auto* left_interface = as<InterfaceType>();
@@ -1027,17 +1111,19 @@ bool Type::accepts(const Type* other) const {
             return false;
         }
 
-        if (left_function->parameters.size() != right_function->parameters.size()) {
+        const auto left_parameters = left_function->value_parameters();
+        const auto right_parameters = right_function->value_parameters();
+
+        if (left_parameters.size() != right_parameters.size()) {
             return false;
         }
 
-        for (std::size_t i = 0; i < left_function->parameters.size(); ++i) {
-            if (left_function->parameters[i].type == nullptr ||
-                right_function->parameters[i].type == nullptr) {
+        for (std::size_t i = 0; i < left_parameters.size(); ++i) {
+            if (left_parameters[i].type == nullptr || right_parameters[i].type == nullptr) {
                 return false;
             }
 
-            if (!left_function->parameters[i].type->accepts(right_function->parameters[i].type)) {
+            if (!left_parameters[i].type->accepts(right_parameters[i].type)) {
                 return false;
             }
         }
@@ -1162,6 +1248,11 @@ export class TypeLayout {
             }
 
             result = Result(4, 4);
+
+            if (!append_fields(result, enumeration->fields)) {
+                return result;
+            }
+
             for (const auto& variant : enumeration->variants) {
                 if (!append_fields(result, variant.fields)) {
                     return result;
@@ -1185,6 +1276,10 @@ export class TypeLayout {
 
     bool append_fields(Result& result, const std::vector<FieldType>& fields) {
         for (const auto& field : fields) {
+            if (field.type->is<VoidType>()) {
+                continue;
+            }
+
             if (!result.append(resolve(field.type))) {
                 return false;
             }

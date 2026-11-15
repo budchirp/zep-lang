@@ -8,6 +8,7 @@ export module zep.build;
 
 import zep.build.objects;
 import zep.build.linker;
+import zep.build.tests;
 import zep.codegen.api;
 import zep.common.diagnostic.collection;
 import zep.common.logger;
@@ -25,11 +26,19 @@ export class Builder {
     Toolchain toolchain;
     Objects objects;
     Linker linker;
+    ProcessRunner& process_runner;
 
   public:
     Builder(Backend& backend, Toolchain toolchain, ProcessRunner& process_runner)
         : toolchain(std::move(toolchain)), objects(backend),
-          linker(this->toolchain.compiler, process_runner) {}
+          linker(this->toolchain.compiler, process_runner), process_runner(process_runner) {}
+
+    bool test(const std::filesystem::path& path, const std::filesystem::path& input,
+               const std::string& filter, bool list, const EmitOptions& options) {
+        TestRunner runner(toolchain, objects, linker, process_runner);
+
+        return runner.run(path, input, filter, list, options);
+    }
 
     bool compile(const std::filesystem::path& input, const std::filesystem::path& output,
                  const EmitOptions& options) {

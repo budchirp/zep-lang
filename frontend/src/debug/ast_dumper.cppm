@@ -534,20 +534,6 @@ export class AstDumper : public Visitor<void> {
         end_node();
     }
 
-    void visit(DeleteExpression& node) override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("DeleteExpression(\n");
-        Logger::print_indent(depth + 1);
-        Logger::print("value: ");
-        visit_child(*node.value, depth + 1, false, false);
-        Logger::print("\n");
-
-        end_node();
-    }
-
     void visit(AssignExpression& node) override {
         if (with_indent) {
             Logger::print_indent(depth);
@@ -983,7 +969,11 @@ export class AstDumper : public Visitor<void> {
         Logger::print("name: \"", node.name, "\",\n");
 
         print_children("generic_parameters", node.generic_parameters, true);
-        print_children("variants", node.variants, false);
+        print_children("variants", node.variants, !node.fields.empty());
+
+        if (!node.fields.empty()) {
+            print_children("fields", node.fields, false);
+        }
 
         end_node();
     }
@@ -1022,6 +1012,21 @@ export class AstDumper : public Visitor<void> {
         }
         Logger::print("\n");
 
+        end_node();
+    }
+
+    void visit(TestDeclaration& node) override {
+        if (with_indent) {
+            Logger::print_indent(depth);
+        }
+
+        Logger::print("TestDeclaration(\n");
+        Logger::print_indent(depth + 1);
+        Logger::print("name: \"", node.name, "\",\n");
+        Logger::print_indent(depth + 1);
+        Logger::print("body: ");
+        visit_child(*node.function->body, depth + 1, false, false);
+        Logger::print("\n");
         end_node();
     }
 
