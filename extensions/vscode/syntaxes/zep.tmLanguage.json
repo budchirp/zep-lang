@@ -1,0 +1,151 @@
+
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Zep",
+  "scopeName": "source.zep",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#attributes" },
+    { "include": "#builtins" },
+    { "include": "#declarations" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#constants" },
+    { "include": "#numbers" },
+    { "include": "#functions" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.zep",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.zep",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.zep",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.zep",
+              "match": "\\\\(?:[nrt\"\\\\])"
+            }
+          ]
+        }
+      ]
+    },
+    "attributes": {
+      "patterns": [
+        {
+          "name": "entity.name.function.attribute.zep",
+          "match": "@[A-Za-z_][A-Za-z0-9_]*\\b"
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.zep",
+          "match": "#(?:sizeof|length)\\b"
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(fn)\\s+(~?[A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.function.zep" },
+            "2": { "name": "entity.name.function.zep" }
+          }
+        },
+        {
+          "match": "\\b(struct|interface|enum|type)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.zep" },
+            "2": { "name": "entity.name.type.zep" }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.zep",
+          "match": "\\b(?:if|else|when|while|for|in|return|defer|do)\\b"
+        },
+        {
+          "name": "storage.modifier.zep",
+          "match": "\\b(?:public|private|static|override|extern|mut|const|move)\\b"
+        },
+        {
+          "name": "storage.type.zep",
+          "match": "\\b(?:fn|struct|interface|enum|type|var|test)\\b"
+        },
+        {
+          "name": "keyword.control.import.zep",
+          "match": "\\bimport\\b"
+        },
+        {
+          "name": "keyword.operator.word.zep",
+          "match": "\\b(?:as|is)\\b"
+        },
+        {
+          "name": "keyword.other.zep",
+          "match": "\\b(?:new|delete|asm|inout|out|clobber|options)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.primitive.zep",
+          "match": "\\b(?:void|never|boolean|char|cstr|any|i8|i16|i32|i64|u8|u16|u32|u64|f32|f64)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.zep",
+          "match": "\\b(?:true|false|null)\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.zep",
+          "match": "\\b(?:[0-9]+\\.[0-9]+|[0-9]+)\\b"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.call.zep",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\\s*\\()"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.zep",
+          "match": "->|::|==|!=|<=|>=|&&|\\|\\||[+*/%=&|!<>-]"
+        }
+      ]
+    }
+  }
+}

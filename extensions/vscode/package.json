@@ -1,0 +1,81 @@
+
+{
+  "name": "zep-lsp",
+  "displayName": "Zep",
+  "description": "Language support for Zep, including syntax highlighting, diagnostics, autocompletion, navigation, and semantic highlighting.",
+  "version": "0.0.1",
+  "publisher": "budchirp",
+  "license": "GPL-3.0-or-later",
+  "engines": {
+    "vscode": "^1.116.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "zep",
+    "language",
+    "lsp",
+    "syntax highlighting",
+    "language server"
+  ],
+  "activationEvents": [
+    "onLanguage:zep"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "zep",
+        "aliases": [
+          "Zep",
+          "zep"
+        ],
+        "extensions": [
+          ".zep"
+        ]
+      }
+    ],
+    "grammars": [
+      {
+        "language": "zep",
+        "scopeName": "source.zep",
+        "path": "./syntaxes/zep.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Zep",
+      "properties": {
+        "zep.server.path": {
+          "type": "string",
+          "default": "zep",
+          "description": "Path to the Zep executable used to launch the language server."
+        },
+        "zep.server.arguments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "lsp"
+          ],
+          "description": "Arguments passed to the Zep language server executable."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p .",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.x",
+    "@types/vscode": "^1.116.0",
+    "@vscode/vsce": "^4.1.1",
+    "typescript": "^6.0.3"
+  }
+}

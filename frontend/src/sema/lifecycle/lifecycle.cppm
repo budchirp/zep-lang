@@ -16,7 +16,6 @@ export import zep.frontend.sema.lifecycle.operation;
 
 import zep.frontend.sema.types;
 import zep.frontend.sema.symbols;
-import zep.frontend.sema.scopes.scope;
 import zep.frontend.sema.types.resolver;
 
 export class Lifecycle {
@@ -71,37 +70,9 @@ export class Lifecycle {
     const FunctionSymbol* function(const NominalType* type, Operation::Type operation) const {
         const auto* definition = identity(type);
 
-        if (const auto found = members.find(definition); found != members.end()) {
-            if (const auto* result = found->second[static_cast<std::size_t>(operation)]; result != nullptr) {
-                return result;
-            }
-        }
+        const auto found = members.find(definition);
 
-        if (operation != Operation::Type::Assign && operation != Operation::Type::MoveAssign) {
-            return nullptr;
-        }
-
-        auto* scope = Scope::members(definition);
-
-        if (scope == nullptr) {
-            return nullptr;
-        }
-
-        for (const auto* candidate : scope->lookup_function_overloads("operator=")) {
-            if (candidate->signature()->parameters.size() != 2) {
-                continue;
-            }
-
-            const auto* source = candidate->signature()->parameters.back().type->as<PointerType>();
-            const auto moving = source != nullptr &&
-                source->reference_kind == PointerType::ReferenceKind::Type::Move;
-
-            if (source != nullptr && moving == (operation == Operation::Type::MoveAssign)) {
-                return candidate;
-            }
-        }
-
-        return nullptr;
+        return found != members.end() ? found->second[static_cast<std::size_t>(operation)] : nullptr;
     }
 
     std::shared_ptr<const LifecyclePlan> resolve(const Type* type, Operation::Type operation,

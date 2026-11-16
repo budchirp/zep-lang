@@ -426,6 +426,7 @@ export class WhenArm : public Node {
     std::vector<WhenPattern*> patterns;
     Expression* guard;
     Statement* body;
+    Scope* scope = nullptr;
 
     WhenArm(Span span, bool is_else, std::vector<WhenPattern*> patterns, Expression* guard,
             Statement* body)
@@ -753,7 +754,7 @@ export class ClosureExpression : public Expression {
 
     std::vector<Parameter*> parameters;
     BlockStatement* body;
-    std::vector<std::string> captures;
+    std::vector<const VariableSymbol*> captures;
 
     ClosureExpression(Span span, std::vector<Parameter*> parameters, BlockStatement* body)
         : Expression(static_kind, span), parameters(std::move(parameters)), body(body) {}
@@ -838,6 +839,7 @@ export class ForStatement : public Statement {
     Expression* condition;
     Expression* step;
     BlockStatement* body;
+    Scope* scope = nullptr;
 
     ForStatement(Span span, Statement* initializer, Expression* condition, Expression* step,
                  BlockStatement* body)
@@ -858,6 +860,7 @@ export class DeferStatement : public Statement {
 export class FunctionDeclaration : public Statement {
 
   public:
+    Scope* scope = nullptr;
     static constexpr Node::Kind::Type static_kind = Node::Kind::Type::FunctionDeclaration;
 
     class MemberModifiers {

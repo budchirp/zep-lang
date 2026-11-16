@@ -627,6 +627,18 @@ export class FunctionDeclarationChecker {
             } else if (nominal != nullptr &&
                        role == FunctionSymbol::Role(CallableKind::Type::Destructor)) {
                 sema.lifecycle.register_function(nominal, Operation::Type::Destroy, symbol);
+            } else if (nominal != nullptr && node.prototype->name == "operator=" &&
+                       type->parameters.size() == 2) {
+                const auto* source = type->parameters.back().type->as<PointerType>();
+
+                if (source != nullptr) {
+                    const auto operation = source->reference_kind == PointerType::ReferenceKind::Type::Move
+                        ? Operation::Type::MoveAssign : Operation::Type::Assign;
+
+                    if (sema.lifecycle.function(nominal, operation) == nullptr) {
+                        sema.lifecycle.register_function(nominal, operation, symbol);
+                    }
+                }
             }
         }
 

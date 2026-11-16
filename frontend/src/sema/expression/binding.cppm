@@ -9,9 +9,11 @@ import zep.frontend.node;
 import zep.frontend.kind;
 import zep.frontend.sema.types;
 import zep.frontend.sema.types.resolver;
+import zep.frontend.sema.types.compatibility;
 import zep.frontend.sema.lifecycle;
 import zep.frontend.sema.expression.values;
 import zep.frontend.sema.scopes.environment;
+import zep.frontend.sema.scopes.scope;
 import zep.common.diagnostic.collection;
 
 export class Binding {
@@ -21,6 +23,87 @@ export class Binding {
 
   public:
     Binding(NodeArena& nodes, Lifecycle& lifecycle) : nodes(nodes), lifecycle(lifecycle) {}
+
+    Expression* convert(Expression* value, const Type* target, TypeResolver& resolver) {
+        if (value == nullptr || value->type == nullptr || target == nullptr) {
+            return value;
+        }
+
+        const auto* resolved = resolver.resolve_type(target);
+        const auto* source = resolver.resolve_type(value->type);
+        const auto* reference = resolved != nullptr ? resolved->as<PointerType>() : nullptr;
+
+        if (reference != nullptr &&
+            reference->reference_kind != PointerType::ReferenceKind::Type::None &&
+            !Type::same(value->type, resolved)) {
+            const auto* pointer = value->type->as<PointerType>();
+
+            if (pointer != nullptr && pointer->reference_kind != PointerType::ReferenceKind::Type::None) {
+                return value;
+            }
+
+            auto* address = nodes.create<UnaryExpression>(value->span,
+                reference->is_mutable ? UnaryOperator::Type::AddressOfMut : UnaryOperator::Type::AddressOf,
+                value);
+            address->type = resolved;
+
+            return address;
+        }
+
+        const auto conversion = Compatibility::coercion(resolved, source);
+
+        if (conversion == Coercion::Type::None) {
+            return value;
+        }
+
+        auto* result = nodes.create<CoerceExpression>(value->span, value, target, conversion, value->type);
+
+        if (conversion != Coercion::Type::InterfaceValue) {
+            return result;
+        }
+
+        if (const auto* pointer = source->as<PointerType>(); pointer != nullptr) {
+            source = resolver.resolve_type(pointer->element);
+        }
+
+        const auto* structure = source->as<StructType>();
+        const auto* interface = resolved->as<InterfaceType>();
+        result->implementations.reserve(interface->methods.size());
+
+        for (const auto& method : interface->methods) {
+            const auto* expected = resolver.method_type(method.type, structure);
+
+            for (const auto* owner = structure; owner != nullptr; owner = owner->base_type) {
+                const auto* members = Scope::members(owner);
+                const auto* overloads = members != nullptr
+                    ? members->find_local_function_overloads(method.name) : nullptr;
+
+                if (overloads == nullptr) {
+                    continue;
+                }
+
+                for (const auto* function : *overloads) {
+                    const auto* signature = resolver.method_type(function->signature(), owner);
+
+                    if (expected->matches_method(*signature)) {
+                        result->implementations.emplace_back(*function, signature);
+                        break;
+                    }
+                }
+
+                if (result->implementations.size() == method.index + 1) {
+                    break;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    Expression* initialize(Expression* value, const Type* target, TypeResolver& resolver,
+                           Diagnostics& diagnostics) {
+        return construct(convert(value, target, resolver), target, resolver, diagnostics);
+    }
 
     void reference(const Expression& value, const Type* target, const SymbolEnvironment& environment,
                    Diagnostics& diagnostics) const {

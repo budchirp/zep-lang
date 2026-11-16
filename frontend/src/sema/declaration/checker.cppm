@@ -2,6 +2,7 @@ module;
 
 #include <functional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 export module zep.frontend.sema.declaration;
@@ -73,7 +74,8 @@ export class DeclarationChecker {
         }
     }
 
-    void declare_variable(VarDeclaration& node) {
+    template <typename Declaration>
+    void declare_variable(Declaration& node) {
         if (node.type != nullptr) {
             return;
         }
@@ -82,41 +84,19 @@ export class DeclarationChecker {
             visitor.visit(*node.annotation);
         }
 
-        const Type* type = nullptr;
-        if (node.annotation != nullptr) {
-            type = resolver.resolve_type(node.annotation->type);
+        node.type = node.annotation != nullptr ? resolver.resolve_type(node.annotation->type) : nullptr;
+
+        auto storage = StorageKind::Type::Var;
+
+        if constexpr (std::is_same_v<Declaration, VarDeclaration>) {
+            storage = node.storage_kind;
         }
-        node.type = type;
-
-        auto attribute_infos = AttributeResolver::convert(node.attributes);
-        AttributeResolver::validate(attribute_infos, {sema, context, node.span, node.name, {}});
-
-        auto* symbol = sema.env.symbols.create<VariableSymbol>(node.name, node.span,
-                                                               node.visibility, node.storage_kind,
-                                                               type, std::move(attribute_infos));
-        node.variable_symbol = symbol;
-
-        if (!sema.env.current_scope->define_var(node.name, symbol)) {
-            context.diagnostics.add_error(node.span,
-                                          "redefinition of variable '" + node.name + "'");
-        }
-    }
-
-    void declare_extern_variable(ExternVarDeclaration& node) {
-        if (node.type != nullptr) {
-            return;
-        }
-
-        visitor.visit(*node.annotation);
-
-        const auto* type = resolver.resolve_type(node.annotation->type);
-        node.type = type;
 
         auto attribute_infos = AttributeResolver::convert(node.attributes);
         AttributeResolver::validate(attribute_infos, {sema, context, node.span, node.name, {}});
 
         auto* symbol = sema.env.symbols.create<VariableSymbol>(
-            node.name, node.span, node.visibility, StorageKind::Type::Var, type,
+            node.name, node.span, node.visibility, storage, node.type,
             std::move(attribute_infos));
         node.variable_symbol = symbol;
 
@@ -160,7 +140,7 @@ export class DeclarationChecker {
 
             if (auto* extern_var_declaration = statement->as<ExternVarDeclaration>();
                 extern_var_declaration != nullptr) {
-                declare_extern_variable(*extern_var_declaration);
+                declare_variable(*extern_var_declaration);
             }
 
             if (auto* type_alias = statement->as<TypeAliasDeclaration>(); type_alias != nullptr) {

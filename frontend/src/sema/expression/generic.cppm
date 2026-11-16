@@ -2,6 +2,7 @@ module;
 
 #include <algorithm>
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -22,7 +23,6 @@ import zep.frontend.sema.expression.values;
 
 export class GenericInference {
   private:
-    Context& context;
     SemaContext& sema;
     TypeResolver& resolver;
     const std::vector<GenericParameterType>& parameters;
@@ -36,9 +36,9 @@ export class GenericInference {
         enum class Type : std::uint8_t { Argument, Expected, Literal };
     };
 
-    GenericInference(Context& context, SemaContext& sema, TypeResolver& resolver,
+    GenericInference(SemaContext& sema, TypeResolver& resolver,
                      const std::vector<GenericParameterType>& parameters)
-        : context(context), sema(sema), resolver(resolver), parameters(parameters),
+        : sema(sema), resolver(resolver), parameters(parameters),
           inferred(parameters.size(), nullptr), literals(), failure() {
         literals.reserve(parameters.size());
     }
@@ -151,24 +151,17 @@ export class GenericInference {
         }
     }
 
-    std::vector<GenericArgument*> arguments(Span span, bool emit_errors) {
+    std::expected<std::vector<GenericArgument*>, std::string> arguments(Span span) {
         if (!failure.empty()) {
-            if (emit_errors) {
-                context.diagnostics.add_error(span, failure);
-            }
-            return {};
+            return std::unexpected(failure);
         }
 
         std::vector<GenericArgument*> result;
         result.reserve(parameters.size());
         for (auto index = std::size_t{0}; index < parameters.size(); ++index) {
             if (inferred[index] == nullptr) {
-                if (emit_errors) {
-                    context.diagnostics.add_error(
-                        span, "cannot infer generic parameter '" + parameters[index].name +
-                                  "'; specify generic arguments explicitly");
-                }
-                return {};
+                return std::unexpected("cannot infer generic parameter '" + parameters[index].name +
+                                       "'; specify generic arguments explicitly");
             }
 
             auto* expression = sema.nodes.create<TypeExpression>(span, inferred[index]);

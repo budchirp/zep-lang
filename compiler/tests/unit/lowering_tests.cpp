@@ -22,6 +22,44 @@ TEST(HirBuilder, OmitsTestsFromOrdinaryPrograms) {
     ASSERT_NE(HirHarness::function(*program, "main"), nullptr);
 }
 
+TEST(HirBuilder, PreservesCheckedScopesAndSymbols) {
+    FrontendHarness harness(R"zep(
+struct Item { public: var value: i32 }
+fn read(item: &Item) -> i32 { return item.value }
+fn main() -> i32 {
+    var item = Item { value: 42 }
+    return read(item)
+}
+)zep");
+    ASSERT_TRUE(harness.type_check_succeeded());
+
+    auto* scope = harness.sema.env.current_scope;
+    const auto types = scope->local_types();
+    const auto functions = scope->local_functions();
+    const auto variables = scope->local_variables();
+    auto* function = harness.program.statements.back()->as<FunctionDeclaration>();
+    const auto parameters = function->scope->local_variables();
+    const auto locals = function->body->scope->local_variables();
+
+    Lowerer lowerer(harness.context, harness.sema);
+
+    ASSERT_NE(lowerer.lower(harness.program), nullptr);
+    EXPECT_EQ(harness.sema.env.current_scope, scope);
+    EXPECT_EQ(scope->local_types(), types);
+    EXPECT_EQ(scope->local_functions(), functions);
+    EXPECT_EQ(scope->local_variables(), variables);
+    EXPECT_EQ(function->scope->local_variables(), parameters);
+    EXPECT_EQ(function->body->scope->local_variables(), locals);
+
+    function->scope = nullptr;
+    Lowerer unchecked(harness.context, harness.sema);
+
+    EXPECT_EQ(unchecked.lower(harness.program), nullptr);
+    ASSERT_EQ(unchecked.diagnostics.entries.size(), 1U);
+    EXPECT_EQ(unchecked.diagnostics.entries.front().message, "node has no checked semantic scope");
+    EXPECT_EQ(harness.sema.env.current_scope, scope);
+}
+
 TEST(HirBuilder, RejectsCallsWithoutResolvedSemanticTargets) {
     FrontendHarness harness(R"zep(
 fn answer() -> i32 { return 42 }

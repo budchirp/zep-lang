@@ -65,7 +65,7 @@ export class LiteralChecker {
                       const Fields& declared_fields,
                       const std::vector<StructLiteralField*>& literal_fields, Span span,
                       bool emit_errors) {
-        GenericInference inference(context, sema, resolver, parameters);
+        GenericInference inference(sema, resolver, parameters);
 
         for (const auto* literal_field : literal_fields) {
             if (literal_field->value == nullptr || literal_field->value->type == nullptr) {
@@ -80,7 +80,17 @@ export class LiteralChecker {
             }
         }
 
-        return inference.arguments(span, emit_errors);
+        auto result = inference.arguments(span);
+
+        if (result.has_value()) {
+            return std::move(*result);
+        }
+
+        if (emit_errors) {
+            context.diagnostics.add_error(span, result.error());
+        }
+
+        return {};
     }
 
     template <typename Fields>

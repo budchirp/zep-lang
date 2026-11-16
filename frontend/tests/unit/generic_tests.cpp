@@ -135,7 +135,16 @@ struct Buffer<const N: i32> { public: var values: i32[N] }
 }
 
 TEST(FrontendConstGenerics, RejectsRuntimeAndNegativeArrayExtents) {
-    EXPECT_TRUE(assert_type_check_error("fn main(size: i32) -> void { var values: i32[size] }\n"));
+    FrontendHarness harness("fn main(size: i32) -> void { var values: i32[size] }\n");
+    EXPECT_FALSE(harness.type_check_succeeded());
+
+    const auto* variable = harness.variable("values", "main");
+    ASSERT_NE(variable, nullptr);
+
+    const auto* array = variable->type->as<ArrayType>();
+    ASSERT_NE(array, nullptr);
+    EXPECT_TRUE(std::holds_alternative<UnsizedArrayExtent>(array->extent));
+
     EXPECT_TRUE(assert_type_check_error(R"zep(
 struct Buffer<const N: i32> { public: var values: i32[N - 1] }
 type Invalid = Buffer<0>

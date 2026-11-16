@@ -373,7 +373,7 @@ export class TypeResolver {
             if (parameters[index].is_const()) {
                 const auto* named =
                     argument.type != nullptr ? argument.type->as<NamedType>() : nullptr;
-                auto binding = named != nullptr ? const_parameter(named->name) : std::nullopt;
+                auto binding = named != nullptr ? const_parameter(named->name, named->declaration) : std::nullopt;
                 if (binding.has_value()) {
                     const auto normalized =
                         normalize_const_binding(*binding, parameters[index].type, Span());
@@ -519,14 +519,23 @@ export class TypeResolver {
         Evaluator evaluator(diagnostics, &env, &bindings,
                             EvaluationPolicy::Type::Dependent);
         auto* expression = static_cast<Expression*>(dependent->expression);
-        const auto value = evaluator.evaluate(*expression).value;
-        const auto size = value.has_value() ? value->try_as_unsigned_integer() : std::nullopt;
-        if (!size.has_value()) {
-            if (value.has_value()) {
-                diagnostics.add_error(expression->span,
-                                      "array size must be a non-negative constant integer");
-            }
+        const auto result = evaluator.evaluate(*expression);
+
+        if (result.state == EvaluationResult::State::Dependent) {
             return extent;
+        }
+
+        if (result.state == EvaluationResult::State::Invalid) {
+            return UnsizedArrayExtent();
+        }
+
+        const auto size = result.value->try_as_unsigned_integer();
+
+        if (!size.has_value()) {
+            diagnostics.add_error(expression->span,
+                                  "array size must be a non-negative constant integer");
+
+            return UnsizedArrayExtent();
         }
 
         return ConcreteArrayExtent(static_cast<std::size_t>(*size));
@@ -939,8 +948,8 @@ export class TypeResolver {
         substitutions.bind(name, resolved, declaration);
     }
 
-    std::optional<ConstBinding> const_parameter(const std::string& name) {
-        const auto* entry = substitutions.lookup(name);
+    std::optional<ConstBinding> const_parameter(const std::string& name, const void* declaration = nullptr) {
+        const auto* entry = declaration != nullptr ? substitutions.lookup(declaration) : substitutions.lookup(name);
         const auto* binding = entry != nullptr ? std::get_if<ConstBinding>(entry) : nullptr;
         return binding != nullptr
                    ? std::optional<ConstBinding>(substitute_const_binding(*binding, substitutions))

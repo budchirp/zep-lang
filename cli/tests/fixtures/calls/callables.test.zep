@@ -48,3 +48,22 @@ test "callable fields preserve signatures and evaluate receivers once" {
         callable.apply_with(decrement, 43) == 42 as i64 &&
         make().function(41) == 42 as i64 && evaluations == 2)
 }
+
+test "captured locals retain their identity through shadowing" {
+    var value: i64 = 40
+
+    Test::expect({ amount: i64 -> value + amount }(2) == 42 as i64)
+
+    do {
+        var value: i64 = 7
+
+        Test::expect({ -> value }() == 7 as i64)
+        0
+    }
+
+    Test::expect({ -> value }() == 40 as i64)
+
+    var reference: &i64 = value
+
+    Test::expect({ -> reference }() == 40 as i64)
+}

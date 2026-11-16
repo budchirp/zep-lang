@@ -1,17 +1,27 @@
 module;
 
 #include <vector>
+#include <string>
+#include <utility>
 
 export module zep.hir.program;
 
 import zep.hir.node;
-import zep.frontend.sema.symbols;
+import zep.frontend.sema.types;
+
+export class HIRType {
+  public:
+    std::string name;
+    const Type* type;
+
+    HIRType(std::string name, const Type* type) : name(std::move(name)), type(type) {}
+};
 
 export class HIRProgram {
   public:
     HIRNodeArena nodes;
 
-    std::vector<const TypeSymbol*> referenced_types;
+    std::vector<HIRType> referenced_types;
 
     std::vector<HIRStatement*> statements;
 

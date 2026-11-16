@@ -313,6 +313,7 @@ export class WhenChecker {
             {
                 ScopeGuard arm_scope(sema.env.current_scope, sema.env.scopes,
                                      Scope::Kind::Type::Block, "when_arm");
+                arm->scope = sema.env.current_scope;
 
                 if (!arm->is_else) {
                     const auto multiple_patterns = arm->patterns.size() > 1;

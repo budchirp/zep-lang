@@ -1022,7 +1022,7 @@ filenames. Dependency modules cannot overwrite root-package objects with the sam
 
 Lowering's `lifetime.cppm` groups construction, cleanup registration, full-expression temporaries,
 and their shared `TemporaryNames` generator. Names are internal and do not change source-level
-symbol identity. The main lowerer is the module interface, with call and type implementation units.
+symbol identity. Lowering implementations live inside the `Lowerer` class in `lowerer.cppm`.
 
 LLVM's `values.cppm` groups value scopes, places, casts, ABI conversions, and aggregate values.
 Interface dispatch lives beside call emission. Assembly, control flow, declarations, types, target
@@ -1040,16 +1040,23 @@ without offering symbols inside comments or strings.
 
 Call argument normalization and inference share the `resolution.arguments` module. Candidate
 matching retains the winning argument order, generic arguments, signature, and substitution
-environment. HIR call lowering has a focused `calls.cpp` implementation unit for direct calls, indirect
-calls, captured closures, and specialization requests. It consumes recorded signatures instead of
+environment. Failed inference retains its diagnostic instead of repeating inference to explain a
+rejected call. `Lowerer` handles direct calls, indirect calls, captured closures, and specialization
+requests inside its class definition. It consumes recorded signatures instead of
 repeating receiver substitutions. Specializations use declaration identity and semantic binding equality,
 with structural type hashes and canonical generated names; lifecycle
 calls use the same specialization cache. The LLVM `calls` module shares argument evaluation, ABI
 conversion, call creation, and return handling across direct, indirect, and interface calls.
 
-The `types.cpp` implementation unit finalizes concrete HIR types and registers their canonical names.
+`Lowerer` finalizes concrete HIR types and registers their canonical names.
 The public lowering module exports its coordinator without compatibility aliases. Missing semantic
 call targets or construction plans are compiler errors rather than triggers for another resolution pass.
+
+Semantic checking records function, block, loop, and pattern-arm scopes. Lowering visits these scopes
+without registering replacement symbols or scopes. Captures retain variable declaration identities,
+including references and shadowed locals. HIR keeps named runtime types directly rather than creating
+semantic type symbols to describe backend representations. Control-flow implementations live inside
+`SemanticChecker` and `Lowerer` in their `.cppm` modules.
 
 LLVM place emission owns address calculation and entry-block allocation. Value conversions own
 scalar casts and C ABI representation changes. Calls, assembly, aggregate initialization, and control

@@ -3,6 +3,7 @@ module;
 export module zep.frontend.sema.types.compatibility;
 
 import zep.frontend.sema.types;
+import zep.frontend.kind;
 import zep.frontend.sema.types.resolver;
 import zep.frontend.sema.resolution.facades;
 
@@ -27,6 +28,30 @@ export class Compatibility {
   public:
     Compatibility(TypeArena& types, TypeResolver& resolver, const Facades& facades)
         : types(types), resolver(resolver), facades(facades) {}
+
+    static Coercion::Type coercion(const Type* target, const Type* source) {
+        if (target == nullptr || source == nullptr) {
+            return Coercion::Type::None;
+        }
+
+        const auto* interface = target->as<InterfaceType>();
+        const auto* pointer = source->as<PointerType>();
+        const auto* structure = pointer != nullptr
+            ? pointer->element->as<StructType>() : source->as<StructType>();
+
+        if (interface != nullptr && structure != nullptr && structure->implements(interface)) {
+            return Coercion::Type::InterfaceValue;
+        }
+
+        const auto* base = target->as<StructType>();
+        const auto* derived = source->as<StructType>();
+
+        if (base != nullptr && derived != nullptr && derived->inherits_from(base)) {
+            return Coercion::Type::BaseSlice;
+        }
+
+        return Coercion::Type::None;
+    }
 
     bool accepts(const Type* expected, const Type* actual) const {
         expected = resolver.constraint_type(expected);

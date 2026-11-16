@@ -87,12 +87,8 @@ export class Calls {
         auto abi = Abi::Type::Language;
 
         if (const auto* direct = node.target->as<HIRDirectCallTarget>(); direct != nullptr) {
-            if (direct->function_symbol == nullptr) {
-                return nullptr;
-            }
-
             signature = direct->function_type;
-            abi = direct->function_symbol->abi;
+            abi = direct->abi;
             callee = declarations.find_function(direct->emitted_name);
 
             if (callee == nullptr && !direct->emitted_name.empty()) {

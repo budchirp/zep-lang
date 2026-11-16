@@ -14,6 +14,7 @@ export module zep.codegen.llvm.types;
 import zep.frontend.sema.types;
 import zep.frontend.sema.symbols;
 import zep.frontend.kind;
+import zep.hir.program;
 
 export class Types {
   private:
@@ -306,28 +307,27 @@ export class Types {
         return llvm::FunctionType::get(return_type, llvm_parameter_types, function_type->variadic);
     }
 
-    void declare(const std::vector<const TypeSymbol*>& types) {
-        for (const auto* type_symbol : types) {
-            if (type_symbol == nullptr || type_symbol->type == nullptr ||
-                type_symbol->type->as_nominal() == nullptr) {
+    void declare(const std::vector<HIRType>& types) {
+        for (const auto& entry : types) {
+            if (entry.type == nullptr || entry.type->as_nominal() == nullptr) {
                 continue;
             }
 
-            auto type_key = type_symbol->type->to_string();
+            auto type_key = entry.type->to_string();
             if (!type_cache.contains(type_key)) {
-                auto* llvm_struct = llvm::StructType::create(context, type_symbol->name);
+                auto* llvm_struct = llvm::StructType::create(context, entry.name);
                 type_cache[std::move(type_key)] = llvm_struct;
             }
         }
 
-        for (const auto* type_symbol : types) {
-            if (type_symbol == nullptr || type_symbol->type == nullptr) {
+        for (const auto& entry : types) {
+            if (entry.type == nullptr) {
                 continue;
             }
 
-            auto type_key = type_symbol->type->to_string();
+            auto type_key = entry.type->to_string();
             if (auto iterator = type_cache.find(type_key); iterator != type_cache.end()) {
-                populate_type_body(iterator->second, type_symbol->type);
+                populate_type_body(iterator->second, entry.type);
             }
         }
     }

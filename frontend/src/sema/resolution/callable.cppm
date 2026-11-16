@@ -27,7 +27,6 @@ import zep.frontend.sema.expression.generic;
 import zep.frontend.sema.symbols;
 import zep.frontend.sema.scopes.scope;
 import zep.frontend.sema.types;
-import zep.frontend.sema.expression.coercion;
 import zep.frontend.sema.types.resolver;
 import zep.frontend.sema.resolution.arguments;
 import zep.frontend.sema.generics.environment;
@@ -738,7 +737,8 @@ export class CallResolver {
     }
 
     std::optional<Match> match_candidate(const ResolvedCallable& candidate, const std::vector<Argument*>& arguments,
-                        std::vector<GenericArgument*>& generic_arguments, Span span) {
+                        std::vector<GenericArgument*>& generic_arguments, Span span,
+                        std::string& failure) {
         if (candidate.symbol == nullptr || candidate.symbol->signature() == nullptr) {
             return std::nullopt;
         }
@@ -766,8 +766,15 @@ export class CallResolver {
 
         if (!call_generic_parameters.empty()) {
             if (call_generics.empty()) {
-                call_generics = Arguments::infer(context, sema, resolver, call_generic_parameters, effective_parameters,
-                                                     *normalized, span, function_type->return_type, target_type);
+                auto inferred = Arguments::infer(sema, resolver, call_generic_parameters, effective_parameters,
+                                                 *normalized, span, function_type->return_type, target_type);
+
+                if (!inferred.has_value()) {
+                    failure = std::move(inferred.error());
+                    return std::nullopt;
+                }
+
+                call_generics = std::move(*inferred);
             }
 
             if (call_generics.size() == call_generic_parameters.size()) {
@@ -835,7 +842,7 @@ export class CallResolver {
                 score += 1;
             } else if (compatibility.accepts(parameter_type, argument_type)) {
                 score += 1;
-            } else if (TypeCoercion::classify(resolver, parameter_type, argument_type) !=
+            } else if (Compatibility::coercion(parameter_type, argument_type) !=
                        Coercion::Type::None) {
                 score += 1;
             } else {
@@ -867,9 +874,9 @@ export class CallResolver {
                 ? argument->value->as<UnaryExpression>() : nullptr;
             const auto temporary_receiver = receiver_borrow != nullptr && !Values::place(*receiver_borrow->operand);
             if (temporary_receiver && receiver_borrow->op == UnaryOperator::Type::AddressOfMut) {
-                visitor.visit_expression(*receiver_borrow->operand);
                 receiver_borrow->type = expected_type;
-            } else {
+            } else if (receiver_borrow != nullptr || argument->value->type == nullptr ||
+                       (expected_type != nullptr && !Type::same(expected_type, argument->value->type))) {
                 visitor.visit_expression(*argument->value);
             }
             target_type = saved_target;
@@ -884,10 +891,8 @@ export class CallResolver {
                 }
 
                 sema.binding.reference(*argument->value, expected_type, sema.env, context.diagnostics);
-                argument->value =
-                    TypeCoercion::apply(sema, resolver, argument->value, expected_type);
-                argument->value =
-                    sema.binding.construct(argument->value, expected_type, resolver, context.diagnostics);
+                argument->value = sema.binding.initialize(
+                    argument->value, expected_type, resolver, context.diagnostics);
             }
         }
     }
@@ -1083,10 +1088,11 @@ export class CallResolver {
         }
 
         std::optional<Match> best;
+        std::string failure;
         auto ambiguous = false;
 
         for (const auto& candidate : candidates) {
-            auto match = match_candidate(candidate, node.arguments, node.generic_arguments, node.span);
+            auto match = match_candidate(candidate, node.arguments, node.generic_arguments, node.span, failure);
 
             if (!match.has_value()) {
                 continue;
@@ -1101,26 +1107,9 @@ export class CallResolver {
         }
 
         if (!best.has_value()) {
-            if (candidates.size() == 1 && node.generic_arguments.empty()) {
-                const auto& candidate = candidates.front();
-                auto scope = resolver.create_substitution_scope();
-                apply_candidate_parent_bindings(candidate);
-                const auto parameters = get_call_generic_parameters(candidate);
-                std::span<const ParameterType> effective_parameters(
-                    candidate.symbol->signature()->parameters);
-                if (candidate.receiver != nullptr && !effective_parameters.empty() &&
-                    effective_parameters.front().name == "self") {
-                    effective_parameters = effective_parameters.subspan(1);
-                }
-                auto normalized = Arguments::normalize(context,
-                    node.arguments, effective_parameters, node.span,
-                    candidate.symbol->signature()->variadic, false);
-                if (!parameters.empty() && normalized.has_value() &&
-                    Arguments::infer(context, sema, resolver, parameters, effective_parameters, *normalized,
-                                         node.span, candidate.symbol->signature()->return_type,
-                                         target_type, true).empty()) {
-                    return;
-                }
+            if (candidates.size() == 1 && !failure.empty()) {
+                context.diagnostics.add_error(node.span, failure);
+                return;
             }
 
             context.diagnostics.add_error(node.span, "no matching overload for call");

@@ -95,10 +95,8 @@ workspace/        Manifest, Project model, package graph, and environment discov
 compiler/         Module graph, parsing, semantic checking, and HIR lowering
   module/         Module metadata, graph loading, and import resolution
   lowering/       AST to HIR lowering, cleanup, specialization, and mangling
-    lowerer.cppm  Primary lowering interface and traversal
+    lowerer.cppm  Lowerer class, traversal, calls, types, control flow, and specialization
     lifetime.cppm Construction, cleanup, temporary storage, and shared names
-    calls.cpp     Call lowering implementation
-    types.cpp     Type lowering implementation
   tests/          Module resolution, lowering, and specialization tests
 builder/          Direct build, object generation, and linking
   src/

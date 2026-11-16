@@ -1,6 +1,7 @@
 module;
 
 #include <algorithm>
+#include <expected>
 #include <optional>
 #include <span>
 #include <string>
@@ -104,11 +105,11 @@ export class Arguments {
         return valid ? std::optional(std::move(normalized)) : std::nullopt;
     }
 
-    static std::vector<GenericArgument*> infer(Context& context, SemaContext& sema,
+    static std::expected<std::vector<GenericArgument*>, std::string> infer(SemaContext& sema,
         TypeResolver& resolver, const std::vector<GenericParameterType>& generics,
         std::span<const ParameterType> parameters, const std::vector<Argument*>& arguments,
-        Span span, const Type* result, const Type* expected, bool report = false) {
-        GenericInference inference(context, sema, resolver, generics);
+        Span span, const Type* result, const Type* expected) {
+        GenericInference inference(sema, resolver, generics);
         const auto count = std::min(parameters.size(), arguments.size());
 
         for (auto index = std::size_t{0}; index < count; ++index) {
@@ -129,6 +130,6 @@ export class Arguments {
 
         inference.match(result, expected, GenericInference::Source::Type::Expected);
 
-        return inference.arguments(span, report);
+        return inference.arguments(span);
     }
 };

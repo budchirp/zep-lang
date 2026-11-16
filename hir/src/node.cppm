@@ -274,12 +274,18 @@ export class HIRDirectCallTarget final : public HIRCallTarget {
     const FunctionSymbol* function_symbol;
     std::string emitted_name;
     const FunctionType* function_type;
+    Abi::Type abi;
 
     HIRDirectCallTarget(const FunctionSymbol& function_symbol, std::string emitted_name,
-                        const FunctionType* function_type = nullptr)
+                        const FunctionType* function_type)
         : HIRCallTarget(static_kind), function_symbol(&function_symbol),
           emitted_name(std::move(emitted_name)),
-          function_type(function_type != nullptr ? function_type : function_symbol.signature()) {}
+          function_type(function_type), abi(function_symbol.abi) {}
+
+    HIRDirectCallTarget(std::string emitted_name, const FunctionType* function_type,
+                        Abi::Type abi = Abi::Type::Language)
+        : HIRCallTarget(static_kind), function_symbol(nullptr), emitted_name(std::move(emitted_name)),
+          function_type(function_type), abi(abi) {}
 };
 
 export class HIRIndirectCallTarget final : public HIRCallTarget {

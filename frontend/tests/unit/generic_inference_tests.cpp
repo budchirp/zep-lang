@@ -218,13 +218,14 @@ TEST(FrontendInference, PreservesDeclarationIdentityAcrossSameNameParameters) {
     NamedType inner("T", {}, &inner_identity);
     std::vector<GenericParameterType> parameters{
         GenericParameterType("T", nullptr, &inner_identity)};
-    GenericInference inference(harness.context, harness.sema, resolver, parameters);
+    GenericInference inference(harness.sema, resolver, parameters);
     inference.match(&outer, harness.sema.primitives.entries.at("boolean"));
     inference.match(&inner, harness.sema.primitives.entries.at("i32"));
 
-    const auto arguments = inference.arguments(Span(), true);
-    ASSERT_EQ(arguments.size(), 1U);
-    EXPECT_TRUE(arguments.front()->type->source_type->same(harness.sema.primitives.entries.at("i32")));
+    const auto arguments = inference.arguments(Span());
+    ASSERT_TRUE(arguments.has_value()) << arguments.error();
+    ASSERT_EQ(arguments->size(), 1U);
+    EXPECT_TRUE(arguments->front()->type->source_type->same(harness.sema.primitives.entries.at("i32")));
     EXPECT_FALSE(harness.context.diagnostics.has_errors());
 }
 
@@ -237,13 +238,14 @@ TEST(FrontendInference, DoesNotMatchUnrelatedSameNameNominals) {
     StructType actual("Box", {}, {},
                       {GenericArgumentType("T", harness.sema.primitives.entries.at("boolean"))});
     std::vector<GenericParameterType> parameters{GenericParameterType("T", nullptr, &identity)};
-    GenericInference inference(harness.context, harness.sema, resolver, parameters);
+    GenericInference inference(harness.sema, resolver, parameters);
     inference.match(&declared, &actual);
     inference.match(&parameter, harness.sema.primitives.entries.at("i32"));
 
-    const auto arguments = inference.arguments(Span(), true);
-    ASSERT_EQ(arguments.size(), 1U);
-    EXPECT_TRUE(arguments.front()->type->source_type->same(harness.sema.primitives.entries.at("i32")));
+    const auto arguments = inference.arguments(Span());
+    ASSERT_TRUE(arguments.has_value()) << arguments.error();
+    ASSERT_EQ(arguments->size(), 1U);
+    EXPECT_TRUE(arguments->front()->type->source_type->same(harness.sema.primitives.entries.at("i32")));
 }
 
 TEST(FrontendInference, ChecksConstraintsAfterInference) {

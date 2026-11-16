@@ -18,7 +18,6 @@ import zep.frontend.node.program;
 import zep.common.source.span;
 import zep.common.diagnostic.diagnostic;
 import zep.frontend.sema.types.resolver;
-import zep.frontend.sema.expression.coercion;
 import zep.frontend.sema.declaration;
 import zep.frontend.sema.resolution.callable;
 import zep.frontend.sema.expression.generic;
@@ -62,6 +61,22 @@ export class SemanticChecker : public Visitor<void> {
     ClosureExpression* direct_closure_callee = nullptr;
     bool checking_assignment_target = false;
 
+    bool check_condition(Expression& expression, const std::string& statement) {
+        visit_expression(expression);
+        const auto* type = expression.type;
+
+        if (type == nullptr) {
+            return false;
+        }
+
+        if (!type->is<BooleanType>()) {
+            context.diagnostics.add_error(expression.span,
+                statement + " condition must be boolean, got '" + type->to_string() + "'");
+        }
+
+        return true;
+    }
+
     void merge_destroyed(const std::unordered_set<const VariableSymbol*>& branch) {
         destroyed.insert(branch.begin(), branch.end());
     }
@@ -77,9 +92,9 @@ export class SemanticChecker : public Visitor<void> {
                     return;
                 }
 
-                if (std::ranges::find(active_closure->captures, node.name) ==
+                if (std::ranges::find(active_closure->captures, symbol) ==
                     active_closure->captures.end()) {
-                    active_closure->captures.push_back(node.name);
+                    active_closure->captures.push_back(symbol);
                 }
                 return;
             }
@@ -145,8 +160,9 @@ export class SemanticChecker : public Visitor<void> {
             visit_expression(*expression);
             Evaluator evaluator(context.diagnostics, &sema.env, &resolver.substitutions,
                                 EvaluationPolicy::Type::Dependent);
-            const auto value = evaluator.evaluate(*expression).value;
-            if (!value.has_value()) {
+            const auto result = evaluator.evaluate(*expression);
+
+            if (result.state == EvaluationResult::State::Dependent) {
                 const auto* identifier = expression->as<IdentifierExpression>();
                 type = sema.types.create<ArrayType>(
                     type, DependentArrayExtent(expression, identifier != nullptr
@@ -155,7 +171,12 @@ export class SemanticChecker : public Visitor<void> {
                 continue;
             }
 
-            const auto size = value->try_as_unsigned_integer();
+            if (result.state == EvaluationResult::State::Invalid) {
+                type = sema.types.create<ArrayType>(type, UnsizedArrayExtent());
+                continue;
+            }
+
+            const auto size = result.value->try_as_unsigned_integer();
             if (!size.has_value()) {
                 context.diagnostics.add_error(expression->span,
                                               "array size must be a non-negative constant integer");
@@ -814,8 +835,7 @@ export class SemanticChecker : public Visitor<void> {
             return;
         }
 
-        node.value = TypeCoercion::apply(sema, resolver, node.value, assigned_type);
-        node.value = sema.binding.construct(node.value, assigned_type, resolver, context.diagnostics);
+        node.value = sema.binding.initialize(node.value, assigned_type, resolver, context.diagnostics);
         if (auto* identifier = node.target->as<IdentifierExpression>(); identifier != nullptr &&
             identifier->var_symbol != nullptr) {
             destroyed.erase(identifier->var_symbol);
@@ -862,57 +882,42 @@ export class SemanticChecker : public Visitor<void> {
     }
 
     void visit(IfExpression& node) override {
-        visit_expression(*node.condition);
-
-        const auto* condition_type = node.condition->type;
-        if (condition_type == nullptr) {
+        if (!check_condition(*node.condition, "if")) {
             return;
         }
 
-        if (!condition_type->is<BooleanType>()) {
-            context.diagnostics.add_error(node.condition->span,
-                                          "if condition must be boolean, got '" +
-                                              condition_type->to_string() + "'");
-        }
-
         const auto entry_state = destroyed;
-
         visit_statement(*node.then_branch);
-        auto then_state = destroyed;
+        const auto then_state = destroyed;
 
-        if (node.else_branch != nullptr) {
-            destroyed = entry_state;
-            visit_statement(*node.else_branch);
-            merge_destroyed(then_state);
-
-            const auto* then_type = node.then_branch->type;
-            const auto* else_type = node.else_branch->type;
-            if (then_type == nullptr || else_type == nullptr) {
-                return;
-            }
-
-            if (!compatibility.accepts(then_type, else_type)) {
-                context.diagnostics.add_error(
-                    node.span, "if/else branches have different types: '" + then_type->to_string() +
-                                   "' and '" + else_type->to_string() + "'");
-            }
-
-            node.type = then_type->is<NeverType>() ? else_type : then_type;
-        } else {
+        if (node.else_branch == nullptr) {
             merge_destroyed(entry_state);
             node.type = sema.primitives.entries.at("void");
+            return;
         }
+
+        destroyed = entry_state;
+        visit_statement(*node.else_branch);
+        merge_destroyed(then_state);
+
+        const auto* then_type = node.then_branch->type;
+        const auto* else_type = node.else_branch->type;
+
+        if (then_type == nullptr || else_type == nullptr) {
+            return;
+        }
+
+        if (!compatibility.accepts(then_type, else_type)) {
+            context.diagnostics.add_error(node.span,
+                "if/else branches have different types: '" + then_type->to_string() +
+                "' and '" + else_type->to_string() + "'");
+        }
+
+        node.type = then_type->is<NeverType>() ? else_type : then_type;
     }
 
     void visit(WhileStatement& node) override {
-        visit_expression(*node.condition);
-
-        const auto* condition_type = node.condition->type;
-        if (condition_type != nullptr && !condition_type->is<BooleanType>()) {
-            context.diagnostics.add_error(node.condition->span,
-                                          "while condition must be boolean, got '" +
-                                              condition_type->to_string() + "'");
-        }
+        check_condition(*node.condition, "while");
 
         const auto entry_state = destroyed;
         visit(*node.body);
@@ -923,16 +928,10 @@ export class SemanticChecker : public Visitor<void> {
 
     void visit(ForStatement& node) override {
         ScopeGuard scope(sema.env.current_scope, sema.env.scopes, Scope::Kind::Type::Block, "for");
+        node.scope = sema.env.current_scope;
 
         visit_statement(*node.initializer);
-        visit_expression(*node.condition);
-
-        const auto* condition_type = node.condition->type;
-        if (condition_type != nullptr && !condition_type->is<BooleanType>()) {
-            context.diagnostics.add_error(node.condition->span,
-                                          "for condition must be boolean, got '" +
-                                              condition_type->to_string() + "'");
-        }
+        check_condition(*node.condition, "for");
 
         const auto entry_state = destroyed;
         visit(*node.body);
@@ -1005,8 +1004,7 @@ export class SemanticChecker : public Visitor<void> {
                                                              value_type->to_string() + "'");
             }
 
-            node.value = TypeCoercion::apply(sema, resolver, node.value, return_type);
-            node.value = sema.binding.construct(node.value, return_type, resolver, context.diagnostics);
+            node.value = sema.binding.initialize(node.value, return_type, resolver, context.diagnostics);
         } else {
             if (!return_type->is<VoidType>()) {
                 context.diagnostics.add_error(node.span, "non-void function must return a value");
@@ -1080,7 +1078,7 @@ export class SemanticChecker : public Visitor<void> {
                                        init_type->to_string() + "'");
                 }
 
-                node.initializer = TypeCoercion::apply(sema, resolver, node.initializer, var_type);
+                node.initializer = sema.binding.convert(node.initializer, var_type, resolver);
             }
 
             node.initializer = sema.binding.construct(node.initializer, var_type, resolver, context.diagnostics);
@@ -1107,6 +1105,8 @@ export class SemanticChecker : public Visitor<void> {
 
         if (node.variable_symbol != nullptr) {
             node.variable_symbol->type = var_type;
+        } else if (sema.env.current_scope->has_local_var(node.name)) {
+            node.variable_symbol = sema.env.current_scope->local_variables().at(node.name);
         }
     }
 
@@ -1177,6 +1177,7 @@ export class SemanticChecker : public Visitor<void> {
 
         ScopeGuard scope(sema.env.current_scope, sema.env.scopes, Scope::Kind::Type::Function,
                          node.prototype->name);
+        node.scope = sema.env.current_scope;
 
         for (const auto& parameter : symbol->signature()->parameters) {
             const auto* parameter_type = resolver.resolve_type(parameter.type);
@@ -1274,7 +1275,7 @@ export class SemanticChecker : public Visitor<void> {
             visit(*attribute);
         }
 
-        declarations.declare_extern_variable(node);
+        declarations.declare_variable(node);
     }
 
     void visit(ImportStatement& node [[maybe_unused]]) override {}

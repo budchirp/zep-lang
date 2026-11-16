@@ -35,8 +35,8 @@ export class LLVMBackend : public Backend {
             Types type_lowerer(*context.llvm_context);
             type_lowerer.declare(program.referenced_types);
 
-            for (const auto* symbol : program.referenced_types) {
-                const auto* type = symbol != nullptr ? symbol->type : nullptr;
+            for (const auto& entry : program.referenced_types) {
+                const auto* type = entry.type;
 
                 if (type == nullptr || (type->as_nominal() == nullptr && !type->is<ArrayType>())) {
                     continue;
