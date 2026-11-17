@@ -1,179 +1,72 @@
-# Zep Language - Agent Guidelines
+# Zep agent guidelines
 
-## Building, Running, and Testing
+## Workflow
 
-**Prerequisites:** CMake 3.30+, Ninja, Clang with C++26 support
+- Ask questions before changes when requirements are unclear. Do not fix unrelated issues.
+- Follow the user's existing decisions; do not ask again for authorized work.
+- Preserve user changes and artifacts. Update `zep/TODO.md` as work progresses.
+- Make source edits manually through editing tools. Do not use Python or Bash refactoring scripts.
+- Include concrete code examples in implementation plans.
+- Use GDB or LLDB to investigate runtime failures.
 
-**Configure and build:**
-```bash
-cmake --preset debug
-cmake --build cmake-build-debug
+## Build and validation
+
+Requires Make, CMake 3.30+, Ninja, Clang with C++26 modules, and LLVM development packages.
+Run from the repository root:
+
+```sh
+make
+make test
+make test TEST_ARGS="-R CliHttp"
+make release
+make install
 ```
 
-**Run the default test suite:**
-```bash
-ctest --test-dir cmake-build-debug --output-on-failure
-ctest --test-dir cmake-build-debug -N
-```
+Builds use `zep/cmake-build-PRESET`, `nproc`, and RAM-bounded Ninja compilation pools. Run only
+one build per build tree. Use fresh trees after source relocation; preserve old root caches.
+Debug defaults to line-table symbols; use `CMAKE_ARGS="-DZEP_DEBUG_FULL_SYMBOLS=ON"` when needed.
+Full CMake presets remain available from `zep/`. Installation belongs to Make/CMake and defaults
+to `~/.local/share/zep/{bin,libs}`.
 
-**Test with the Pong example (multi-file project with imports and FFI):**
-```bash
-cd examples/pong
-../../cmake-build-debug/cli/zep build
-./build/pong
-```
+Run affected tests, then the full suite. Keep snapshots unchanged unless an intentional update is
+explicitly enabled with `ZEP_UPDATE_SNAPSHOTS=1`. Keep normal tests deterministic and fast.
+Fuzzing, benchmarks, and coverage are opt-in; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-**Release build:**
-```bash
-cmake --preset release
-cmake --build cmake-build-release
-```
+Build examples with `zep/cmake-build-debug/cli/zep build --project examples/hello` and similarly
+for notes client/server. Pong builds from `examples/pong/` with
+`../../zep/cmake-build-debug/cli/zep build`; use bounded startup/shutdown checks for interactive apps.
 
-**Opt-in heavy test tooling:**
-```bash
-cmake --preset debug -DZEP_BUILD_FUZZERS=ON -DZEP_BUILD_BENCHMARKS=ON -DZEP_ENABLE_COVERAGE=ON
-cmake --build cmake-build-debug --target zep_fuzz_smoke zep_benchmarks zep_coverage
-```
+## Architecture
 
-Fuzzers, benchmarks, and coverage are not part of normal `ctest`. Snapshot tests compare tracked
-snapshots by default; set `ZEP_UPDATE_SNAPSHOTS=1` only when intentionally updating snapshots.
+- Compiler components and CMake live in `zep/`; std, examples, extensions, and MDX docs stay at root.
+- C++ production implementations belong inside classes in `.cppm` modules.
+- Keep component-local `src/` and `tests/`; CMake discovers sources from each `src/` directory.
+- Keep semantic decisions in frontend checking/resolution and consume them during HIR lowering.
+- Keep LLVM isolated in `zep/codegen/llvm/`; retain public compiler/codegen module namespaces.
+- Keep scope/environment management separate from symbol definitions.
+- Give each policy one implementation. Prefer cohesive modules over tiny forwarding classes.
+- Use diagnostics and Logger for compiler failures, not C++ throws for source/pipeline errors.
+- Use shared test support, explicit fixture roots, and build-tree copies of mutable projects.
+- Put Zep tests in `.test.zep` files and std tests in `std/tests/`.
 
-**Compiler optimization levels:**
-```bash
-cmake-build-debug/cli/zep build -O 2
-cmake-build-debug/cli/zep compile --input file.zep -O 3
-```
+Pipeline: `Source → Lexer → Parser → AST → SemanticChecker → Lowerer → HIR → Codegen → LLVM IR`.
+See [architecture](docs/architecture.mdx) and [language documentation](docs/index.mdx).
 
-Valid optimization levels are `0`, `1`, `2`, and `3`. The selected level is passed through the
-driver to LLVM target-machine code generation and LLVM module optimization passes.
+## Naming and style
 
-## Project Structure
-
-- C++26 with modules (`.cppm` extension)
-- Build dir: `cmake-build-debug` (debug) or `cmake-build-release` (release)
-- CMake modules are auto-discovered via `GLOB_RECURSE` from each module's `src/` directory
-- CMake target modules own sibling `tests/` directories when they have tests
-
-### Module Layout
-
-```
-common/           Shared utilities (arena, logger, diagnostics, source, span)
-  tests/          Unit tests plus shared zep_test_support helpers
-frontend/         Compiler frontend
-  ast/            AST node definitions and program root
-  lexer/          Tokenizer
-  parser/         Recursive descent parser with precedence climbing
-  token/          Token types and keyword mappings
-  sema/           Semantic analysis
-    types/        Type definitions, compatibility, layout, and facade metadata
-    symbols/      Base, type, function, variable, and enum-variant definitions
-    scopes/       Scope storage and semantic environments
-    resolution/   Callable and member resolution
-    expressions/  Generic arguments, literals, operators, builtins, and when checking
-    constants/    Compile-time evaluation and checked arithmetic
-    generics/     Generic bindings and substitution environments
-    lifecycles/   Construction, assignment, and destruction plans
-    errors/       Checked error sets, semantic boundaries, and resolved routing
-    checking/     Expression validation and initialization state
-    declarations/ Declaration checking
-  debug/          AST and type dumpers
-  tests/          Lexer, parser, type compatibility, and semantic tests
-hir/              High-level IR node and program definitions
-  tests/          Node identity, ownership, and ordering tests
-codegen/          Code generation interfaces and implementations
-  api/            Backend interface and generation options
-  llvm/           LLVM backend (isolated; LLVM find_package lives here)
-    backend.cppm  LLVMBackend implementation of Backend
-    target_context.cppm  LLVM context, target setup, optimization, and object emission
-    types.cppm    Semantic type to LLVM type lowering
-    declarations.cppm  LLVM function and global declarations
-    functions.cppm  HIR traversal and function emission
-    values.cppm   Value scopes, places, casts, ABI conversion, and aggregate values
-    calls.cppm    Call emission and interface dispatch
-    control_flow.cppm  Branches, loops, and returns
-workspace/        Manifest, Project model, package graph, and environment discovery
-compiler/         Module graph, parsing, semantic checking, and HIR lowering
-  module/         Module metadata, graph loading, and import resolution
-  lowering/       AST to HIR lowering, cleanup, specialization, and mangling
-    lowerer.cppm  Lowerer class, traversal, calls, types, control flow, and specialization
-    lifetime.cppm Construction, cleanup, temporary storage, and shared names
-  tests/          Module resolution, lowering, and specialization tests
-builder/          Direct build, object generation, and linking
-  src/
-    builder.cppm  Project and single-file build coordination
-    objects.cppm  Shared HIR lowering and object emission
-    linker.cppm   Linker command construction and execution
-    fetch.cppm    Git dependency fetching
-    install.cppm  Compiler and standard-library installation
-  tests/          Backend and process orchestration tests
-lsp/              Modular Language Server Protocol boundary
-  analysis/       Project snapshots, syntax index, completion, and language queries
-  core/           Session, JSON-RPC dispatch, server lifecycle, and cache ownership
-  handlers/       Focused lifecycle, document, completion, navigation, symbol, and token handlers
-  protocol/       Versioned documents, UTF-16 conversion, JSON codecs, and transport framing
-  tests/          Protocol, transport, dispatch, and integration tests
-cli/              Command-line interface (zep build, compile, lsp, fetch, install)
-  tests/          CLI fixture and failure-mode tests
-cmake/            Build helpers for modules, tests, fuzzing, benchmarks, and coverage
-```
-
-### Test Layout
-
-Each CMake target module may contain:
-
-```
-module/
-  src/            Production module sources
-  tests/
-    CMakeLists.txt
-    unit/         Default GoogleTest/CTest tests
-    support/      Optional test-only modules linked only into tests
-    fixtures/     Input projects, source snippets, and snapshots
-    fuzz/         Opt-in libFuzzer targets
-    benchmarks/   Opt-in Google Benchmark targets
-```
-
-Default tests must stay fast and deterministic. Buildable project fixtures are copied into the
-CMake binary tree before mutation. Do not rewrite tracked snapshots unless
-`ZEP_UPDATE_SNAPSHOTS=1` is set.
-
-### Compiler Pipeline
-
-`Source → Lexer → Parser → AST → SemanticChecker → Lowerer → HIR → Codegen → LLVM IR`
-
-## Code Standards
-
-### Naming Conventions
-
-- **Files**: `snake_case`
-- **Classes**: `PascalCase`
-- **Enums**: Wrapper class with nested `enum class Type : std::uint8_t { ... }` (e.g., `Backend::Type::LLVM`, `Linkage::Type::External`)
-- **Enum Values**: `PascalCase`
-- **Functions/Methods**: `snake_case`
-- **Variables/Parameters/Fields**: `snake_case`
-
-### Code Style
-
-- DO NOT add comments to code. Keep code simple and clean.
-- DO NOT add explicit types when the type can be deduced; use `auto` whenever possible. Function return types MUST be explicit — no `auto` allowed there. DO NOT use `auto` when creating instances (e.g., `Parser parser`).
-- Class member order: 1. `private`, 2. `protected`, 3. `public`. DO NOT create getter/setter methods like `get_x` and `set_x`. If a field is used externally, make it `public`; if only within the class, make it `private`.
-- DO NOT use shortcut names (e.g., `ty` for type, `decl` for declaration). ONLY `ptr` for pointers is allowed.
-- DO NOT use underscore postfix on field names (e.g., `context` not `context_`). Use same names for member and constructor parameter (e.g., `Foo(Context& context) : context(context)`).
-- DO NOT use implicit conversions. Use explicit casts (e.g., `static_cast`, `explicit` constructors).
-- ALWAYS use classes (never structs); use explicit constructors to ensure all members are initialized.
-- ALWAYS check pointers explicitly with `== nullptr` or `!= nullptr`; do not rely on truthiness.
-- ALWAYS `reserve()` vectors before populating them in loops to avoid unnecessary reallocations.
-- KEEP CODE SPACIOUS: add blank lines between logical blocks.
-- Use modern C++ features (structured bindings, init-statements in `if`, `std::views`, etc.).
-- Use `Logger::print` / `Logger::print_stderr` for console output; do not use `std::print` or `std::println` outside the logger module.
-
-### Architecture Rules
-
-- ALWAYS ASK QUESTIONS before making changes. Do not change code for unrelated issues; ask and I will guide you.
-- Add code examples to the plans that you make for lower intelligence models to understand.
-- Use `lldb` or `gdb` to debug code.
-- DO NOT USE PYTHON OR BASH FOR REFACTORING. Make changes manually through code editing tools.
-
-## Language Design
-
-See [DESIGN.md](DESIGN.md) for the complete language specification including types, syntax, semantics, visibility, mutability, generics, and all language features.
+- Use `snake_case` for files, functions, variables, parameters, and fields; `PascalCase` for classes.
+- Use plural subsystem names and singular entity names. Keep names complete; only `ptr` may abbreviate.
+- Enums use a wrapper class with nested `enum class Type : std::uint8_t`; values use `PascalCase`.
+- Always use classes, never structs. Initialize members explicitly through constructors.
+- Order access sections `private`, `protected`, then `public`.
+- Make externally used fields public; do not add getter/setter wrappers.
+- Do not suffix fields with underscores. Match constructor parameter names to fields.
+- Use `auto` when deducible, except named class instances and function return types.
+- Use explicit casts and explicit constructors; do not rely on implicit conversions.
+- Check pointers with `== nullptr` or `!= nullptr`.
+- Reserve vectors before filling them in loops.
+- Add blank lines between logical steps. Expand cramped branches and keep code vertically spacious.
+- Remove dead code, redundant variables, repeated logic, and trivial single-use forwarding helpers.
+- Add no code comments. Use clear names and focused operations.
+- Use modern C++ features where they simplify code.
+- Use `Logger::print` and `Logger::print_stderr`; do not use `std::print` outside Logger.

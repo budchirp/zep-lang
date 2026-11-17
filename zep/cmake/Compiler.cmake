@@ -1,0 +1,55 @@
+set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_SCAN_FOR_MODULES ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+include(ProcessorCount)
+ProcessorCount(ZEP_PROCESSORS)
+cmake_host_system_information(RESULT ZEP_MEMORY QUERY TOTAL_PHYSICAL_MEMORY)
+math(EXPR ZEP_COMPILE_JOBS "${ZEP_MEMORY} / 4096")
+
+if(ZEP_COMPILE_JOBS LESS 1)
+    set(ZEP_COMPILE_JOBS 1)
+endif()
+
+if(ZEP_PROCESSORS GREATER 0 AND ZEP_COMPILE_JOBS GREATER ZEP_PROCESSORS)
+    set(ZEP_COMPILE_JOBS "${ZEP_PROCESSORS}")
+endif()
+
+set_property(GLOBAL APPEND PROPERTY JOB_POOLS "zep_compile=${ZEP_COMPILE_JOBS}" "zep_link=1")
+set(CMAKE_JOB_POOL_COMPILE zep_compile)
+set(CMAKE_JOB_POOL_LINK zep_link)
+
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build configuration" FORCE)
+endif()
+
+if(ZEP_USE_CCACHE)
+    find_program(ZEP_CCACHE_EXECUTABLE NAMES ccache)
+
+    if(ZEP_CCACHE_EXECUTABLE)
+        foreach(LANGUAGE IN ITEMS C CXX)
+            if(NOT DEFINED CMAKE_${LANGUAGE}_COMPILER_LAUNCHER)
+                set(CMAKE_${LANGUAGE}_COMPILER_LAUNCHER "${ZEP_CCACHE_EXECUTABLE}")
+            endif()
+        endforeach()
+    endif()
+endif()
+
+if(ZEP_USE_FAST_LINKER AND NOT DEFINED CMAKE_LINKER_TYPE)
+    find_program(ZEP_MOLD_EXECUTABLE NAMES mold)
+
+    if(ZEP_MOLD_EXECUTABLE)
+        set(CMAKE_LINKER_TYPE MOLD)
+    endif()
+endif()
+
+if(ZEP_ENABLE_IPO)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT ZEP_IPO_SUPPORTED OUTPUT ZEP_IPO_ERROR LANGUAGES CXX)
+
+    if(NOT ZEP_IPO_SUPPORTED)
+        message(FATAL_ERROR "Interprocedural optimization is unavailable: ${ZEP_IPO_ERROR}")
+    endif()
+endif()

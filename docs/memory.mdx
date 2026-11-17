@@ -1,0 +1,58 @@
+# Ownership and memory
+
+[Documentation](index.mdx)
+
+Values pass by value. Scalars and pointers copy directly; raw pointers never destroy pointees.
+Aggregate lvalues copy recursively, while temporaries may construct directly into destinations.
+`&T` and `&mut T` borrow storage without owning it. Local references can extend temporary lifetimes;
+obvious returns of references to locals are diagnosed. There is no borrow checker.
+
+`Memory::move(value)` returns a move reference. Construction/assignment performs the move;
+the source stays alive and destructible. Resource implementations reset moved-from owners.
+Move-qualified methods use `fn method() move -> T`.
+
+## Special members and cleanup
+
+```zep
+fn Record(source: &Record) -> Record = default
+fn Record(source: move Record) -> Record = default
+
+fn operator=(source: &Record) mut -> &mut Record = default
+fn operator=(source: move Record) mut -> &mut Record = default
+```
+
+`= default` requests recursive operations; `= delete` disables them. Unsupported members delete
+the corresponding aggregate operation. User copy operations/destructors suppress implicit moves.
+Copy/move special members and destructors cannot propagate checked errors.
+
+Destructors use `fn ~Record() -> void`. The body runs before fields in reverse order, then the base.
+Arrays destroy backward; enum cleanup visits the active payload and shared fields. Scope exits,
+returns, error propagation, discarded temporaries, and replacement run normal cleanup. Replacement
+evaluates first and captures its destination once, preserving the old owner on failure.
+
+`defer action()` or `defer { ... }` registers reverse-order scope cleanup. Deferred failures must
+be handled locally. Panic does not unwind.
+
+## Raw storage
+
+```zep
+import std.memory.Memory
+import std.text.String
+
+var storage: *mut String = Memory::allocate()
+new (storage) String("hello")
+
+storage[0].~String()
+Memory::free(storage as *mut void)
+```
+
+Placement `new (storage) value` initializes aligned mutable raw storage and returns its pointer.
+It evaluates storage once before the value; a failed initializer leaves it uninitialized.
+There is no allocating-new or delete expression.
+
+Explicit `value.~Type()` destroys without freeing storage. Named locals become uninitialized until
+assignment reconstructs them. Generic destruction uses `value.~T()`; matching scalar destruction is
+a no-op. Raw-storage users track initialization themselves.
+
+`#sizeof(T)` and `#length(array)` return compile-time `i64` sizes/counts. `sizeof` requires a sized
+non-void type; `length` requires a fixed array.

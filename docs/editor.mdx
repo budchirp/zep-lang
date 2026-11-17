@@ -1,0 +1,36 @@
+# Editor support
+
+[Documentation index](index.mdx)
+
+Start the server with `zep lsp`. The VS Code/VSCodium extension lives under `extensions/vscode/`.
+Configure its executable path when running a source build:
+
+```json
+{
+  "zep.server.path": "/absolute/path/to/zep-lang/zep/cmake-build-debug/cli/zep",
+  "zep.server.arguments": ["lsp"]
+}
+```
+
+Changing either setting restarts the server. After rebuilding, use **Zep: Restart Language Server**
+to load the new executable.
+
+The server supports incremental UTF-16 document edits, diagnostics, import-aware completion,
+hover, definitions, references, highlights, document/workspace symbols, signature help, and semantic
+tokens. Completion handles local/inherited members, static access, enum variants, type positions,
+named arguments, lexical visibility, and unfinished source. Named argument completion inserts
+`parameter: ` and excludes already supplied arguments. Comments and strings do not produce ordinary
+identifier completions.
+
+Checked-error support includes throwable completion in `@throws(...)` and catch headers,
+handler-local bindings in completion/navigation, checked signatures, and `try`/`catch`/`throw`
+highlighting. Handler scopes end at their arms. Test files support private production siblings and
+navigation inside test bodies.
+
+Outlines derive name selections from lexer tokens. Every symbol's full range contains its selection
+and children, including complete nominal bodies; document symbols use LSP symbol kinds independently
+of completion kinds.
+
+The server reuses normal compiler parsing, imports, semantic checking, and overlays instead of
+maintaining a separate compiler. Its internal organization is described in
+[architecture](architecture.mdx#language-server).

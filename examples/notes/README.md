@@ -7,8 +7,8 @@ the database.
 From the repository root, build both projects:
 
 ```sh
-cmake-build-debug/cli/zep build --project examples/notes/server
-cmake-build-debug/cli/zep build --project examples/notes/client
+zep/cmake-build-debug/cli/zep build --project examples/notes/server
+zep/cmake-build-debug/cli/zep build --project examples/notes/client
 ```
 
 Start the server in one terminal:
@@ -49,6 +49,6 @@ interface values pointing to that owner. `Api` handles HTTP behavior; `Database`
 Run the example tests:
 
 ```sh
-cmake-build-debug/cli/zep test --project examples/notes/server
-cmake-build-debug/cli/zep test --project examples/notes/client
+zep/cmake-build-debug/cli/zep test --project examples/notes/server
+zep/cmake-build-debug/cli/zep test --project examples/notes/client
 ```
