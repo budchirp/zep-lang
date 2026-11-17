@@ -26,11 +26,6 @@ import zep.frontend.sema.expression.builtin;
 
 export class Parser {
   private:
-    class ParseFailure {
-      public:
-        ParseFailure() = default;
-    };
-
     Context& context;
     SemaContext& sema;
 
@@ -40,6 +35,7 @@ export class Parser {
     Token peek_token;
     bool stop_expression_at_greater = false;
     std::size_t test_count = 0;
+    bool failed = false;
 
     class NominalHeader {
       public:
@@ -53,35 +49,25 @@ export class Parser {
         }
     };
 
-    [[noreturn]] void error(Span span, std::string message) {
-        context.diagnostics.add_error(span, std::move(message));
-        throw ParseFailure();
+    void error(Span span, std::string message) {
+        if (!failed) {
+            context.diagnostics.add_error(span, std::move(message));
+        }
+
+        failed = true;
     }
 
-    void synchronize() {
-        while (!check(Token::Type::Eof)) {
+    void recover(Token::Type boundary) {
+        while (!check(boundary) && !check(Token::Type::Eof)) {
             if (check(Token::Type::Semicolon) || check(Token::Type::RightBrace)) {
                 advance();
-                return;
+                break;
             }
 
             advance();
         }
-    }
 
-    void synchronize_statement() {
-        while (!check(Token::Type::Eof)) {
-            if (check(Token::Type::RightBrace)) {
-                return;
-            }
-
-            if (check(Token::Type::Semicolon)) {
-                advance();
-                return;
-            }
-
-            advance();
-        }
+        failed = false;
     }
 
     void advance() {
@@ -94,7 +80,7 @@ export class Parser {
     [[nodiscard]] bool peek(Token::Type type) const { return peek_token.type == type; }
 
     [[nodiscard]] bool match(Token::Type type) {
-        if (check(type)) {
+        if (!failed && check(type)) {
             advance();
 
             return true;
@@ -104,9 +90,15 @@ export class Parser {
     }
 
     Token expect(Token::Type type) {
+        if (failed) {
+            return current_token;
+        }
+
         if (!check(type)) {
             error(current_token.span,
                   "unexpected token '" + std::string(current_token.value) + "'");
+
+            return current_token;
         }
 
         auto token = current_token;
@@ -117,9 +109,15 @@ export class Parser {
     }
 
     Token expect_path_identifier() {
+        if (failed) {
+            return current_token;
+        }
+
         if (!check(Token::Type::Identifier) && !check(Token::Type::Type)) {
             error(current_token.span,
                   "unexpected token '" + std::string(current_token.value) + "'");
+
+            return current_token;
         }
 
         auto token = current_token;
@@ -144,10 +142,6 @@ export class Parser {
     BuiltinCall* parse_builtin_call(Span span) {
         advance();
 
-        if (check(Token::Type::Asm)) {
-            error(span, "'#asm(...)' was removed; use 'asm { ... }'");
-        }
-
         auto builtin_name = std::string(expect(Token::Type::Identifier).value);
 
         if (std::ranges::find(BuiltinChecker::names, builtin_name) == BuiltinChecker::names.end()) {
@@ -171,76 +165,6 @@ export class Parser {
                                               std::move(arguments));
     }
 
-    AssemblyExpression* parse_assembly() {
-        const auto span = current_token.span;
-        advance();
-        expect(Token::Type::LeftBrace);
-
-        auto text = std::string(expect(Token::Type::String).value);
-        static_cast<void>(match(Token::Type::Semicolon));
-
-        while (check(Token::Type::String)) {
-            text += '\n';
-            text += expect(Token::Type::String).value;
-            static_cast<void>(match(Token::Type::Semicolon));
-        }
-
-        InlineAssembly assembly;
-        assembly.operands.reserve(4);
-        assembly.clobbers.reserve(4);
-        assembly.options.reserve(4);
-
-        std::vector<Expression*> arguments;
-        arguments.reserve(4);
-
-        while (!check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
-            const auto clause = current_token;
-
-            if (check(Token::Type::In)) {
-                advance();
-            } else {
-                expect(Token::Type::Identifier);
-            }
-
-            expect(Token::Type::LeftParen);
-
-            if (clause.value == "clobber" || clause.value == "options") {
-                auto& values = clause.value == "clobber" ? assembly.clobbers : assembly.options;
-
-                do {
-                    values.emplace_back(expect(Token::Type::String).value);
-                } while (match(Token::Type::Comma) && !check(Token::Type::RightParen));
-            } else {
-                auto kind = AssemblyOperand::Kind::Type::Input;
-
-                if (clause.value == "out") {
-                    kind = AssemblyOperand::Kind::Type::Output;
-                } else if (clause.value == "inout") {
-                    kind = AssemblyOperand::Kind::Type::InputOutput;
-                } else if (clause.value != "in") {
-                    error(clause.span, "expected in, out, inout, clobber, or options in assembly");
-                }
-
-                auto name = std::string(expect(Token::Type::Identifier).value);
-                expect(Token::Type::Comma);
-                auto constraint = std::string(expect(Token::Type::String).value);
-                expect(Token::Type::Comma);
-
-                assembly.operands.emplace_back(kind, std::move(name), std::move(constraint),
-                                               arguments.size(), clause.span);
-                arguments.push_back(parse_expression());
-            }
-
-            expect(Token::Type::RightParen);
-            static_cast<void>(match(Token::Type::Semicolon));
-        }
-
-        expect(Token::Type::RightBrace);
-
-        return sema.nodes.create<AssemblyExpression>(span, std::move(text), std::move(assembly),
-                                                     std::move(arguments));
-    }
-
     Expression* parse_call_suffix_if_any(Expression* callee, bool allow_paren_without_generics) {
         if (check(Token::Type::LessThan) && is_generic_start()) {
             auto generic_arguments = parse_generic_arguments();
@@ -257,6 +181,11 @@ export class Parser {
 
     Statement* parse_statement(bool module_scope = false) {
         auto attributes = parse_attributes();
+
+        if (failed) {
+            return nullptr;
+        }
+
         const auto has_visibility = check(Token::Type::Public) || check(Token::Type::Private);
         auto visibility = parse_visibility();
 
@@ -276,6 +205,11 @@ export class Parser {
             }
 
             auto* body = parse_block_statement();
+
+            if (body == nullptr) {
+                return nullptr;
+            }
+
             auto* result = sema.nodes.create<TypeExpression>(span, sema.primitives.entries.at("void"));
             auto* prototype = sema.nodes.create<FunctionPrototype>(
                 name.span, false, "$test$" + std::to_string(test_count++),
@@ -313,7 +247,9 @@ export class Parser {
         case Token::Type::Defer:
             return parse_defer_statement();
         default: {
-            return sema.nodes.create<ExpressionStatement>(parse_expression());
+            auto* expression = parse_expression();
+
+            return expression != nullptr ? sema.nodes.create<ExpressionStatement>(expression) : nullptr;
         }
         }
     }
@@ -322,7 +258,7 @@ export class Parser {
                                  bool allow_arrow_access = true) {
         auto* left = parse_prefix();
 
-        while (!(check(Token::Type::Eof) || check(Token::Type::Semicolon) ||
+        while (!failed && left != nullptr && !(check(Token::Type::Eof) || check(Token::Type::Semicolon) ||
                  check(Token::Type::Comma) || check(Token::Type::RightParen) ||
                  check(Token::Type::RightBracket) || check(Token::Type::RightBrace) ||
                  check(Token::Type::Else) ||
@@ -340,7 +276,7 @@ export class Parser {
             left = parse_infix(left);
         }
 
-        return left;
+        return failed ? nullptr : left;
     }
 
     Expression* parse_primary() {
@@ -348,8 +284,37 @@ export class Parser {
 
         switch (current_token.type) {
 
-        case Token::Type::Asm:
-            return parse_assembly();
+        case Token::Type::Try: {
+            advance();
+            auto* value = check(Token::Type::LeftBrace)
+                ? sema.nodes.create<BlockExpression>(span, parse_block_statement())
+                : parse_expression(Precedence::Type::Assignment);
+
+            if (check(Token::Type::Catch)) {
+                value = parse_catch(value);
+            }
+
+            return sema.nodes.create<TryExpression>(span, value);
+        }
+
+        case Token::Type::Throw:
+            advance();
+            return sema.nodes.create<ThrowExpression>(span, parse_expression(Precedence::Type::Assignment));
+
+        case Token::Type::At: {
+            auto attributes = parse_attributes();
+            auto errors = take_errors(attributes);
+
+            if (!attributes.empty()) {
+                error(span, "only @throws is supported on a closure");
+            }
+
+            auto* closure = parse_closure_expression();
+            closure->errors = std::move(errors);
+            closure->declares_errors = true;
+
+            return closure;
+        }
 
         case Token::Type::New: {
             advance();
@@ -360,11 +325,6 @@ export class Parser {
             auto* value = parse_expression(Precedence::Type::Unary);
 
             return sema.nodes.create<NewExpression>(span, storage, value);
-        }
-
-        case Token::Type::Delete: {
-            error(span, "delete expressions are not supported; invoke the destructor and free storage explicitly");
-            return nullptr;
         }
 
         case Token::Type::String: {
@@ -474,10 +434,14 @@ export class Parser {
             error(span,
                   "unexpected token '" + std::string(current_token.value) + "' in expression");
         }
+
+        return nullptr;
     }
 
     Expression* parse_infix(Expression* left) {
         switch (current_token.type) {
+        case Token::Type::Catch:
+            return parse_catch(left);
         case Token::Type::Plus:
         case Token::Type::Minus:
         case Token::Type::Asterisk:
@@ -512,9 +476,15 @@ export class Parser {
             error(current_token.span,
                   "unexpected token '" + std::string(current_token.value) + "'");
         }
+
+        return nullptr;
     }
 
     Expression* parse_prefix() {
+        if (failed) {
+            return nullptr;
+        }
+
         switch (current_token.type) {
         case Token::Type::Minus:
         case Token::Type::Plus:
@@ -547,6 +517,8 @@ export class Parser {
             error(current_token.span,
                   "unexpected token '" + std::string(current_token.value) + "'");
         }
+
+        return nullptr;
     }
 
     template <typename Item, typename ParseItem>
@@ -555,8 +527,14 @@ export class Parser {
         std::vector<Item*> items;
         items.reserve(reserve_size);
 
-        while (!check(end) && !check(Token::Type::Eof)) {
-            items.push_back(parse_item());
+        while (!failed && !check(end) && !check(Token::Type::Eof)) {
+            auto* item = parse_item();
+
+            if (failed || item == nullptr) {
+                break;
+            }
+
+            items.push_back(item);
 
             if (!check(end)) {
                 expect(Token::Type::Comma);
@@ -599,7 +577,7 @@ export class Parser {
     FunctionDeclaration::MemberModifiers parse_member_modifiers() {
         auto modifiers = FunctionDeclaration::MemberModifiers(current_token.span);
 
-        while (check(Token::Type::Static) || check(Token::Type::Override)) {
+        while (!failed && (check(Token::Type::Static) || check(Token::Type::Override))) {
             if (match(Token::Type::Static)) {
                 modifiers.is_static = true;
                 modifiers.span = current_token.span;
@@ -655,7 +633,7 @@ export class Parser {
     std::vector<Attribute*> parse_attributes() {
         auto attributes = std::vector<Attribute*>{};
 
-        while (check(Token::Type::At)) {
+        while (!failed && check(Token::Type::At)) {
             auto span = current_token.span;
             advance();
 
@@ -664,7 +642,9 @@ export class Parser {
             auto arguments = std::vector<Expression*>{};
             if (match(Token::Type::LeftParen)) {
                 arguments = parse_comma_list<Expression>(Token::Type::RightParen, 0,
-                                                         [&]() { return parse_expression(); });
+                    [&]() -> Expression* {
+                        return name == "throws" ? parse_type_expression() : parse_expression();
+                    });
 
                 expect(Token::Type::RightParen);
             }
@@ -676,10 +656,44 @@ export class Parser {
         return attributes;
     }
 
+    std::vector<TypeExpression*> take_errors(std::vector<Attribute*>& attributes) {
+        std::vector<TypeExpression*> errors;
+        auto declared = false;
+
+        for (auto iterator = attributes.begin(); iterator != attributes.end();) {
+            auto* attribute = *iterator;
+
+            if (attribute->name != "throws") {
+                ++iterator;
+                continue;
+            }
+
+            if (declared) {
+                error(attribute->span, "duplicate @throws annotation");
+            }
+
+            declared = true;
+
+            if (attribute->arguments.empty()) {
+                error(attribute->span, "@throws requires at least one error type");
+            }
+
+            errors.reserve(errors.size() + attribute->arguments.size());
+
+            for (auto* argument : attribute->arguments) {
+                errors.push_back(argument->as<TypeExpression>());
+            }
+
+            iterator = attributes.erase(iterator);
+        }
+
+        return errors;
+    }
+
     std::vector<Parameter*> parse_parameters(bool& is_variadic) {
         std::vector<Parameter*> parameters;
         parameters.reserve(4);
-        while (!check(Token::Type::RightParen) && !check(Token::Type::Eof)) {
+        while (!failed && !check(Token::Type::RightParen) && !check(Token::Type::Eof)) {
             if (match(Token::Type::Ellipsis)) {
                 is_variadic = true;
                 break;
@@ -864,7 +878,27 @@ export class Parser {
     }
 
     TypeExpression* parse_type_expression() {
+        if (failed) {
+            return nullptr;
+        }
+
         auto span = current_token.span;
+
+        if (check(Token::Type::At)) {
+            auto attributes = parse_attributes();
+            auto errors = take_errors(attributes);
+            auto* expression = parse_type_expression();
+
+            if (!attributes.empty() || expression == nullptr || expression->return_type == nullptr) {
+                error(span, "@throws requires a function type");
+
+                return nullptr;
+            }
+
+            expression->errors = std::move(errors);
+
+            return expression;
+        }
 
         if (check(Token::Type::LeftParen)) {
             advance();
@@ -884,6 +918,10 @@ export class Parser {
             }
 
             auto* return_type_expression = parse_type_expression();
+
+            if (return_type_expression == nullptr) {
+                return nullptr;
+            }
 
             auto params = std::vector<ParameterType>{};
             params.reserve(parameter_types.size());
@@ -917,6 +955,10 @@ export class Parser {
 
             auto* element = parse_type_expression();
 
+            if (element == nullptr) {
+                return nullptr;
+            }
+
             const auto* pointer_type = sema.types.create<PointerType>(element->type, is_mutable, reference_kind);
             auto* expression = sema.nodes.create<TypeExpression>(span, pointer_type);
             expression->element = element;
@@ -924,7 +966,7 @@ export class Parser {
         }
 
         auto name = std::string(expect_path_identifier().value);
-        while (check(Token::Type::Dot) || check(Token::Type::DoubleColon)) {
+        while (!failed && (check(Token::Type::Dot) || check(Token::Type::DoubleColon))) {
             auto separator = std::string(current_token.value);
             advance();
 
@@ -943,7 +985,7 @@ export class Parser {
 
         std::vector<Expression*> array_sizes;
 
-        while (check(Token::Type::LeftBracket)) {
+        while (!failed && check(Token::Type::LeftBracket)) {
             advance();
 
             Expression* size_expression = nullptr;
@@ -969,6 +1011,8 @@ export class Parser {
         if (!op.has_value()) {
             error(span, "unexpected token '" + std::string(current_token.value) +
                             "' in unary expression");
+
+            return nullptr;
         }
 
         auto op_value = *op;
@@ -993,6 +1037,8 @@ export class Parser {
         if (!op.has_value()) {
             error(span, "unexpected token '" + std::string(current_token.value) +
                             "' in binary expression");
+
+            return nullptr;
         }
 
         auto op_value = *op;
@@ -1039,7 +1085,52 @@ export class Parser {
             return parse_block_statement();
         }
 
-        return sema.nodes.create<ExpressionStatement>(parse_expression());
+        if (check(Token::Type::Return)) {
+            return parse_return_statement();
+        }
+
+        auto* expression = parse_expression();
+
+        return expression != nullptr ? sema.nodes.create<ExpressionStatement>(expression) : nullptr;
+    }
+
+    CatchExpression* parse_catch(Expression* value) {
+        auto span = expect(Token::Type::Catch).span;
+        expect(Token::Type::LeftBrace);
+        std::vector<CatchArm> arms;
+        arms.reserve(4);
+
+        while (!failed && !check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
+            const auto binding = expect(Token::Type::Identifier);
+            expect(Token::Type::Colon);
+            auto* annotation = parse_type_expression();
+            expect(Token::Type::Arrow);
+            auto* statement = parse_when_arm_body();
+
+            if (statement == nullptr) {
+                return nullptr;
+            }
+
+            auto* body = statement->as<BlockStatement>();
+
+            if (body == nullptr) {
+                body = sema.nodes.create<BlockStatement>(binding.span, std::vector<Statement*>{statement});
+            }
+
+            arms.emplace_back(binding.span, std::string(binding.value), annotation, body);
+
+            if (!match(Token::Type::Comma) && !check(Token::Type::RightBrace)) {
+                error(current_token.span, "expected ',' between catch handlers");
+            }
+        }
+
+        expect(Token::Type::RightBrace);
+
+        if (arms.empty()) {
+            error(span, "catch requires at least one typed handler");
+        }
+
+        return sema.nodes.create<CatchExpression>(span, value, std::move(arms));
     }
 
     WhenPattern* parse_when_pattern() {
@@ -1280,8 +1371,9 @@ export class Parser {
         auto methods = std::vector<FunctionPrototype*>{};
         auto member_visibility = Visibility::Type::Private;
 
-        while (!check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
+        while (!failed && !check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
             auto member_attributes = parse_attributes();
+            auto errors = take_errors(member_attributes);
 
             if (parse_visibility_section(member_visibility)) {
                 continue;
@@ -1301,6 +1393,7 @@ export class Parser {
 
             expect(Token::Type::Fn);
             auto* prototype = parse_function_prototype();
+            prototype->errors = std::move(errors);
             if (prototype->receiver_kind == FunctionPrototype::ReceiverKind::Type::None) {
                 prototype->receiver_kind = FunctionPrototype::ReceiverKind::Type::Borrow;
             }
@@ -1319,7 +1412,7 @@ export class Parser {
                        ParseMember parse_member) {
         auto visibility = Visibility::Type::Private;
 
-        while (!check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
+        while (!failed && !check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
             auto attributes = parse_attributes();
 
             if (parse_visibility_section(visibility)) {
@@ -1389,7 +1482,7 @@ export class Parser {
         fields.reserve(4);
 
         if (match(Token::Type::LeftParen)) {
-            while (!check(Token::Type::RightParen) && !check(Token::Type::Eof)) {
+            while (!failed && !check(Token::Type::RightParen) && !check(Token::Type::Eof)) {
                 fields.push_back(parse_field(Visibility::Type::Public));
 
                 if (!match(Token::Type::Comma)) {
@@ -1428,7 +1521,7 @@ export class Parser {
             fields.reserve(4);
 
             if (match(Token::Type::LeftBrace)) {
-                while (!check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
+                while (!failed && !check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
                     auto field_attributes = parse_attributes();
                     fields.push_back(
                         parse_field(Visibility::Type::Public, std::move(field_attributes)));
@@ -1544,7 +1637,8 @@ export class Parser {
         }
 
         auto statements = std::vector<Statement*>{};
-        while (!check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
+        statements.reserve(8);
+        while (!failed && !check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
             statements.push_back(parse_statement());
 
             if (check(Token::Type::Semicolon)) {
@@ -1677,6 +1771,7 @@ export class Parser {
 
         auto extension_parent = std::string();
         auto* prototype = parse_function_prototype(parent.empty() ? &extension_parent : nullptr);
+        prototype->errors = take_errors(attributes);
         auto is_defaulted = false;
         auto is_deleted = false;
         BlockStatement* body = nullptr;
@@ -1829,10 +1924,20 @@ export class Parser {
         expect(Token::Type::For);
         expect(Token::Type::LeftParen);
 
-        auto* initializer = check(Token::Type::Var)
-                                ? static_cast<Statement*>(
-                                      parse_var_declaration(Visibility::Type::Private, {}))
-                                : sema.nodes.create<ExpressionStatement>(parse_expression());
+        Statement* initializer = nullptr;
+
+        if (check(Token::Type::Var)) {
+            initializer = parse_var_declaration(Visibility::Type::Private, {});
+        } else {
+            auto* expression = parse_expression();
+
+            if (expression == nullptr) {
+                return nullptr;
+            }
+
+            initializer = sema.nodes.create<ExpressionStatement>(expression);
+        }
+
         expect(Token::Type::Semicolon);
         auto* condition = parse_expression();
         expect(Token::Type::Semicolon);
@@ -1845,19 +1950,27 @@ export class Parser {
     }
 
     BlockStatement* parse_block_statement() {
+        if (failed) {
+            return nullptr;
+        }
+
         auto span = current_token.span;
 
         expect(Token::Type::LeftBrace);
 
+        if (failed) {
+            return nullptr;
+        }
+
         auto statements = std::vector<Statement*>{};
         statements.reserve(8);
         while (!check(Token::Type::RightBrace) && !check(Token::Type::Eof)) {
-            try {
-                if (auto* statement = parse_statement(); statement != nullptr) {
-                    statements.push_back(statement);
-                }
-            } catch (const ParseFailure&) {
-                synchronize_statement();
+            auto* statement = parse_statement();
+
+            if (failed) {
+                recover(Token::Type::RightBrace);
+            } else if (statement != nullptr) {
+                statements.push_back(statement);
             }
 
             if (check(Token::Type::Semicolon)) {
@@ -1882,6 +1995,7 @@ export class Parser {
             advance();
 
             auto* prototype = parse_function_prototype();
+            prototype->errors = take_errors(attributes);
             auto* declaration = sema.nodes.create<ExternFunctionDeclaration>(
                 span, visibility, std::move(attributes), prototype);
 
@@ -1915,14 +2029,15 @@ export class Parser {
 
     Program parse() {
         Program program;
+        program.statements.reserve(16);
 
         while (!check(Token::Type::Eof)) {
-            try {
-                if (auto* statement = parse_statement(true); statement != nullptr) {
-                    program.statements.push_back(statement);
-                }
-            } catch (const ParseFailure&) {
-                synchronize();
+            auto* statement = parse_statement(true);
+
+            if (failed) {
+                recover(Token::Type::Eof);
+            } else if (statement != nullptr) {
+                program.statements.push_back(statement);
             }
 
             if (check(Token::Type::Semicolon)) {

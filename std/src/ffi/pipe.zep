@@ -2,7 +2,6 @@ import std.ffi.c_popen
 import std.ffi.c_pclose
 import std.ffi.c_fileno
 import std.ffi.zep_errno
-import std.core.result.Result
 import std.io.error.IoError
 
 public struct Pipe {
@@ -19,12 +18,13 @@ public struct Pipe {
             return Pipe { handle: handle }
         }
 
-        static fn open(command: cstr) -> Result<Pipe, IoError> {
+        @throws(IoError)
+        static fn open(command: cstr) -> Pipe {
             var handle = c_popen(command, "r")
 
             return when (handle) {
-                null -> Result::Error { error: *zep_errno() as IoError },
-                else -> Result::Ok { value: Pipe { handle: handle } },
+                null -> throw IoError { value: *zep_errno() },
+                else -> Pipe { handle: handle },
             }
         }
 
@@ -35,23 +35,24 @@ public struct Pipe {
             }
         }
 
-        fn close() mut -> Result<i32, IoError> {
+        @throws(IoError)
+        fn close() mut -> i32 {
             var storage = handle
             handle = null
 
             if (storage == null) {
-                return Result::Ok { value: 0 }
+                return 0
             }
 
             var status = c_pclose(storage)
 
             return when {
-                (status < 0) -> Result::Error { error: *zep_errno() as IoError },
-                else -> Result::Ok { value: status },
+                (status < 0) -> throw IoError { value: *zep_errno() },
+                else -> status,
             }
         }
 
         fn ~Pipe() -> void {
-            self->close()
+            self->close() catch { error: IoError -> 0, }
         }
 }

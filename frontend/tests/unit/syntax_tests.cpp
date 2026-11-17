@@ -25,6 +25,50 @@ TEST(FrontendParser, ParsesNamedModuleTests) {
     EXPECT_TRUE(test->function->prototype->parameters.empty());
 }
 
+TEST(FrontendParser, ParsesTypedErrorsAndProtectedExpressions) {
+    FrontendHarness harness(R"zep(
+struct Failure {}
+@throws(Failure)
+fn read() -> i32 { throw Failure {} }
+fn work() -> i32 {
+    var callback: @throws(Failure) () -> i32 = read
+    return try { callback() } catch { error: Failure -> 0, }
+}
+)zep");
+    ASSERT_TRUE(harness.parse_succeeded());
+
+    const auto* function = harness.program.statements[1]->as<FunctionDeclaration>();
+    ASSERT_NE(function, nullptr);
+    ASSERT_EQ(function->prototype->errors.size(), 1U);
+    EXPECT_TRUE(function->attributes.empty());
+    const auto* body = function->body->statements.front()->as<ExpressionStatement>();
+    ASSERT_NE(body, nullptr);
+    EXPECT_NE(body->expression->as<ThrowExpression>(), nullptr);
+
+    const auto* work = harness.program.statements.back()->as<FunctionDeclaration>();
+    const auto* returned = work->body->statements.back()->as<ReturnStatement>();
+    const auto* protected_expression = returned->value->as<TryExpression>();
+    ASSERT_NE(protected_expression, nullptr);
+    const auto* handled = protected_expression->value->as<CatchExpression>();
+    ASSERT_NE(handled, nullptr);
+    ASSERT_EQ(handled->arms.size(), 1U);
+    EXPECT_EQ(handled->arms.front().name, "error");
+}
+
+TEST(FrontendParser, RejectsMalformedErrorDeclarationsAndHandlers) {
+    for (const auto* source : {
+        "@throws() fn read() -> void {}",
+        "@throws(E) @throws(E) fn read() -> void {}",
+        "fn read() -> void { work() catch {} }",
+        "fn read() -> void { work() catch { error -> 0 } }",
+        "fn read() -> void { work() catch { error: E 0 } }",
+        "var callback: @throws(E) i32",
+    }) {
+        FrontendHarness harness(source);
+        EXPECT_FALSE(harness.parse_succeeded()) << source;
+    }
+}
+
 TEST(FrontendParser, RejectsInvalidTestDeclarations) {
     for (const auto* source : {
         "test \"\" {}", "test name {}", "test \"name\"() {}",
@@ -124,51 +168,6 @@ TEST(FrontendParser, ParsesClosureExpressions) {
     EXPECT_EQ(closure->parameters[0]->name, "value");
 }
 
-TEST(FrontendParser, ParsesAssemblyTemplatesAndOperandSpans) {
-    FrontendHarness harness(R"zep(
-fn main() -> void {
-    asm {
-        "movq {source}, {target}";
-        "addq $1, {target}"
-        in(source, "r", 41 as i64);
-        out(target, "r", target)
-        clobber("flags")
-    }
-}
-)zep");
-
-    ASSERT_TRUE(harness.parse_succeeded());
-
-    const auto* function = harness.program.statements.front()->as<FunctionDeclaration>();
-
-    ASSERT_NE(function, nullptr);
-
-    const auto* statement = function->body->statements.front()->as<ExpressionStatement>();
-
-    ASSERT_NE(statement, nullptr);
-
-    const auto* assembly = statement->expression->as<AssemblyExpression>();
-
-    ASSERT_NE(assembly, nullptr);
-    EXPECT_EQ(assembly->text, "movq {source}, {target}\naddq $1, {target}");
-    EXPECT_EQ(assembly->arguments.size(), 2U);
-    ASSERT_EQ(assembly->assembly.operands.size(), 2U);
-    EXPECT_EQ(assembly->assembly.operands[0].name, "source");
-    EXPECT_EQ(assembly->assembly.operands[1].argument, 1U);
-}
-
-TEST(FrontendParser, RejectsRemovedAssemblyBuiltinAndMisplacedTemplates) {
-    for (const auto* source : {
-             "fn main() -> void { #asm(\"nop\") }",
-             "fn main() -> void { asm {} }",
-             "fn main() -> void { asm { \"nop\" options(\"att\") \"nop\" } }",
-         }) {
-        FrontendHarness harness(source);
-
-        EXPECT_FALSE(harness.parse_succeeded()) << source;
-    }
-}
-
 TEST(FrontendParser, AstSnapshotRemainsStable) {
     FrontendHarness harness("fn main() -> i32 { return 1 + 2 }\n");
 
@@ -180,6 +179,20 @@ TEST(FrontendParser, AstSnapshotRemainsStable) {
     });
 
     EXPECT_TRUE(Snapshot::matches("fixtures/snapshots/simple_ast.txt", output));
+}
+
+TEST(FrontendParser, RecoversAfterMalformedExpressionsWithoutExceptions) {
+    for (const auto* source : {
+        "fn broken() -> void { var value = ; var next = 2 } fn recovered() -> void {}",
+        "fn broken() -> void { for (; true; 1) {} } fn recovered() -> void {}",
+        "fn broken() -> void { var value: & = 1 } fn recovered() -> void {}",
+        "fn broken() -> void { var value = try work() catch { error: -> 0 } } fn recovered() -> void {}",
+    }) {
+        FrontendHarness harness(source);
+
+        EXPECT_FALSE(harness.parse_succeeded()) << source;
+        EXPECT_FALSE(harness.context.diagnostics.entries.empty());
+    }
 }
 
 TEST(FrontendParser, RejectsAllocatingNewAndDeleteExpressions) {

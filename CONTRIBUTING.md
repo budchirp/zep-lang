@@ -137,7 +137,7 @@ module/
   benchmarks, snapshots, and fixtures that require different process-wide FFI overrides.
 - Keep a scenario at multiple pipeline stages only when each stage asserts its own contract;
   a parse-only duplicate adds no coverage to a test that already checks successful parsing and types.
-- Use representative optimization levels; reserve full sweeps for assembly and ABI-sensitive cases.
+- Use representative optimization levels; reserve full sweeps for ABI-sensitive cases.
 
 Example frontend parser test:
 

@@ -22,28 +22,26 @@ export class LifecycleMode {
     enum class Type : std::uint8_t { Selected, Defaulted };
 };
 
-export class LifecyclePlan;
-
-export class LifecyclePart {
-  public:
-    class Kind {
-      public:
-        enum class Type : std::uint8_t { Base, Field, Element, Payload };
-    };
-
-    const Kind::Type kind;
-    const std::string name;
-    const std::size_t variant;
-    const std::size_t count;
-    const std::shared_ptr<const LifecyclePlan> plan;
-
-    LifecyclePart(Kind::Type kind, std::string name, std::size_t variant, std::size_t count,
-                  std::shared_ptr<const LifecyclePlan> plan)
-        : kind(kind), name(std::move(name)), variant(variant), count(count), plan(std::move(plan)) {}
-};
-
 export class LifecyclePlan {
   public:
+    class Part {
+      public:
+        class Kind {
+          public:
+            enum class Type : std::uint8_t { Base, Field, Element, Payload };
+        };
+
+        const Kind::Type kind;
+        const std::string name;
+        const std::size_t variant;
+        const std::size_t count;
+        const std::shared_ptr<const LifecyclePlan> plan;
+
+        Part(Kind::Type kind, std::string name, std::size_t variant, std::size_t count,
+             std::shared_ptr<const LifecyclePlan> plan)
+            : kind(kind), name(std::move(name)), variant(variant), count(count), plan(std::move(plan)) {}
+    };
+
     class Action {
       public:
         enum class Type : std::uint8_t { Trivial, Function, Aggregate, Deleted, Deferred };
@@ -53,10 +51,10 @@ export class LifecyclePlan {
     const Operation::Type operation;
     const Action::Type action;
     const FunctionSymbol* const function;
-    const std::vector<LifecyclePart> parts;
+    const std::vector<Part> parts;
 
     LifecyclePlan(const Type* type, Operation::Type operation, Action::Type action,
-                  const FunctionSymbol* function, std::vector<LifecyclePart> parts)
+                  const FunctionSymbol* function, std::vector<Part> parts)
         : type(type), operation(operation), action(action), function(function),
           parts(std::move(parts)) {}
 };

@@ -7,7 +7,6 @@ module;
 #include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/Module.h>
 #include <string>
-#include <stdexcept>
 #include <vector>
 
 export module zep.codegen.llvm.calls;
@@ -19,6 +18,7 @@ import zep.hir.node;
 import zep.codegen.llvm.types;
 import zep.codegen.llvm.declarations;
 import zep.codegen.llvm.values;
+import zep.codegen.llvm.errors;
 
 export class Dispatch {
   private:
@@ -68,13 +68,15 @@ export class Calls {
     Types& types;
     Declarations& declarations;
     Conversions& conversions;
+    Places& places;
+    ErrorPaths& errors;
     HIRVisitor<llvm::Value*>& expressions;
 
   public:
     Calls(llvm::IRBuilder<>& builder, Types& types, Declarations& declarations,
-          Conversions& conversions, HIRVisitor<llvm::Value*>& expressions)
+          Conversions& conversions, Places& places, ErrorPaths& errors, HIRVisitor<llvm::Value*>& expressions)
         : builder(builder), types(types), declarations(declarations), conversions(conversions),
-          expressions(expressions) {}
+          places(places), errors(errors), expressions(expressions) {}
 
     llvm::Value* emit(HIRCallExpression& node) {
         if (node.target == nullptr) {
@@ -121,32 +123,60 @@ export class Calls {
             auto* table = builder.CreateExtractValue(value, {1});
             auto* index = llvm::ConstantInt::get(builder.getInt64Ty(), dispatch->slot);
             auto* entry = builder.CreateGEP(builder.getPtrTy(), table, index);
-            callee = builder.CreateLoad(builder.getPtrTy(), entry);
+            callee = places.load(builder.getPtrTy(), entry);
             signature = dispatch->function_type;
         }
 
         if (signature == nullptr || callee == nullptr) {
-            throw std::runtime_error("resolved call has no emitted callee or signature");
+            errors.diagnostics.add_error(node.span, "resolved call has no emitted callee or signature");
+
+            return nullptr;
         }
 
         auto* function_type = types.lower_function(signature, abi);
 
         if (function_type == nullptr) {
-            throw std::runtime_error("resolved call has an unresolved LLVM signature: " + signature->to_string());
+            errors.diagnostics.add_error(node.span,
+                "resolved call has an unresolved LLVM signature: " + signature->to_string());
+
+            return nullptr;
         }
 
         if (const auto* function = llvm::dyn_cast<llvm::Function>(callee);
             function != nullptr && function->getFunctionType() != function_type) {
-            throw std::runtime_error("resolved call signature differs from the emitted function: " +
-                                     function->getName().str());
+            errors.diagnostics.add_error(node.span,
+                "resolved call signature differs from the emitted function: " + function->getName().str());
+
+            return nullptr;
         }
 
         std::vector<llvm::Value*> arguments;
-        arguments.reserve(node.arguments.size());
+        arguments.reserve(node.arguments.size() + 2);
+        llvm::Value* success = nullptr;
+        llvm::Value* failure = nullptr;
+
+        if (!signature->errors.empty()) {
+            if (!signature->return_type->is<VoidType>() && !signature->return_type->is<NeverType>()) {
+                success = places.allocate(types.lower(signature->return_type));
+                arguments.push_back(success);
+            }
+
+            failure = errors.storage(*signature);
+
+            if (failure == nullptr) {
+                return nullptr;
+            }
+
+            arguments.push_back(failure);
+        }
 
         for (auto index = std::size_t{0}; index < node.arguments.size(); ++index) {
             auto* value = index == 0 && object != nullptr ? object
                 : expressions.visit_expression(*node.arguments[index]);
+
+            if (builder.GetInsertBlock()->hasTerminator()) {
+                return nullptr;
+            }
 
             if (node.arguments[index]->type->is<VoidType>()) {
                 continue;
@@ -164,7 +194,15 @@ export class Calls {
             arguments.push_back(value);
         }
 
+        for (auto* transfer : node.transfers) {
+            expressions.visit_statement(*transfer);
+        }
+
         auto* result = builder.CreateCall(function_type, callee, arguments);
+
+        if (!signature->errors.empty()) {
+            return errors.complete(node, *signature, result, success, failure);
+        }
 
         if (signature->return_type->is<NeverType>()) {
             result->addFnAttr(llvm::Attribute::NoReturn);

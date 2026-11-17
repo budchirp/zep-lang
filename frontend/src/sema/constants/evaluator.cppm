@@ -320,6 +320,18 @@ export class Evaluator : public ExpressionVisitor<std::optional<CompileTimeValue
         return std::nullopt;
     }
 
+    std::optional<CompileTimeValue> visit(TryExpression& node) override {
+        return integer_error(node.span, "checked error handling is not supported in constant expressions");
+    }
+
+    std::optional<CompileTimeValue> visit(CatchExpression& node) override {
+        return integer_error(node.span, "checked error handling is not supported in constant expressions");
+    }
+
+    std::optional<CompileTimeValue> visit(ThrowExpression& node) override {
+        return integer_error(node.span, "throw is not supported in constant expressions");
+    }
+
     std::optional<CompileTimeValue> visit(BuiltinCall& node) override {
         if (node.name == "sizeof" && node.type_argument != nullptr) {
             const auto* type = node.type_argument->type;
@@ -396,11 +408,6 @@ export class Evaluator : public ExpressionVisitor<std::optional<CompileTimeValue
         }
 
         output().add_error(node.span, "unsupported builtin in constant expression");
-        return std::nullopt;
-    }
-
-    std::optional<CompileTimeValue> visit(AssemblyExpression& node) override {
-        output().add_error(node.span, "asm not supported in const expressions");
         return std::nullopt;
     }
 

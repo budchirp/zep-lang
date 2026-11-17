@@ -1,5 +1,30 @@
+import std.core.error.Error
+
+public enum MathFailure : i32 {
+    DivisionByZero = 0
+    Overflow = 1
+}
+
+public struct MathError : Error {
+    public:
+        var reason: MathFailure
+}
+
 public struct Math {
     public:
+        @throws(MathError)
+        static fn divide<T: i32>(left: T, right: T) -> T {
+            if (right == 0) {
+                throw MathError { reason: MathFailure::DivisionByZero }
+            }
+
+            if (right < 0 && right + 1 == 0 && left == Integer::minimum_value()) {
+                throw MathError { reason: MathFailure::Overflow }
+            }
+
+            return left / right
+        }
+
         static fn absolute(value: i32) -> i32 {
             return when { (value < 0) -> -value, else -> value, }
         }

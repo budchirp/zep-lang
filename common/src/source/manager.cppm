@@ -6,6 +6,7 @@ module;
 #include <optional>
 #include <sstream>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -37,7 +38,7 @@ export class SourceManager {
     }
 
     Source& add_override(const std::filesystem::path& path, std::string content) {
-        auto name = Paths::canonical(path).string();
+        auto name = Paths::identity(path).string();
 
         if (auto* source = find(name); source != nullptr) {
             source->content = std::move(content);
@@ -48,7 +49,14 @@ export class SourceManager {
     }
 
     std::optional<Source*> load(const std::filesystem::path& path) {
-        auto name = Paths::canonical(path).string();
+        std::error_code error;
+        const auto canonical = Paths::canonical(path, error);
+
+        if (error) {
+            return std::nullopt;
+        }
+
+        auto name = canonical.string();
 
         if (auto* source = find(name); source != nullptr) {
             return source;

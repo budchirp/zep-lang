@@ -54,6 +54,13 @@ export class Compatibility {
     }
 
     bool accepts(const Type* expected, const Type* actual) const {
+        expected = resolver.resolve_type(expected);
+        actual = resolver.resolve_type(actual);
+
+        if (expected != nullptr && actual != nullptr && expected->accepts(actual)) {
+            return true;
+        }
+
         expected = resolver.constraint_type(expected);
         actual = resolver.constraint_type(actual);
 

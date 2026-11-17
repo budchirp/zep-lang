@@ -4,17 +4,20 @@ module;
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <ranges>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <unordered_map>
 #include <vector>
 #include <variant>
 
 export module zep.compiler.lowering.lifetime;
 
 import zep.common.source.span;
+import zep.common.diagnostic.collection;
+import zep.frontend.node;
 import zep.frontend.kind;
 import zep.frontend.sema.context;
 import zep.frontend.sema.lifecycle;
@@ -39,6 +42,7 @@ export class TemporaryNames {
 
 export class Construction {
   private:
+    Diagnostics& diagnostics;
     HIRProgram& program;
     SemaContext& sema;
     TypeResolver& resolver;
@@ -59,10 +63,12 @@ export class Construction {
     }
 
   public:
-    Construction(HIRProgram& program, SemaContext& sema, TypeResolver& resolver, TemporaryNames& names,
+    Construction(Diagnostics& diagnostics, HIRProgram& program, SemaContext& sema,
+                 TypeResolver& resolver, TemporaryNames& names,
                  Specializations& specializations,
                  std::function<const Type*(const Type*, Span, Operation::Type)> prepare_type)
-        : program(program), sema(sema), resolver(resolver), names(names), specializations(specializations),
+        : diagnostics(diagnostics), program(program), sema(sema), resolver(resolver), names(names),
+          specializations(specializations),
           prepare_type(std::move(prepare_type)) {}
 
     HIRExpression* construct(Span span, HIRExpression* value,
@@ -78,7 +84,9 @@ export class Construction {
         }
 
         if (plan->action == LifecyclePlan::Action::Type::Deleted) {
-            throw std::runtime_error("use of deleted lifecycle operation for '" + type->to_string() + "'");
+            diagnostics.add_error(span, "use of deleted lifecycle operation for '" + type->to_string() + "'");
+
+            return nullptr;
         }
 
         if (plan->action == LifecyclePlan::Action::Type::Trivial) {
@@ -94,7 +102,14 @@ export class Construction {
             parameters.emplace_back("source", pointer);
             const auto* signature = sema.types.create<FunctionType>(function->signature()->name,
                 type, std::move(parameters), std::vector<GenericParameterType>(), false);
-            auto name = specializations.lifecycle(*function, *type->as_nominal(), signature).name;
+            auto instance = specializations.lifecycle(*function, *type->as_nominal(), signature);
+
+            if (!instance.has_value()) {
+                diagnostics.add_error(span, "lifecycle specialization requires concrete bindings");
+
+                return nullptr;
+            }
+
             std::vector<HIRExpression*> arguments;
             arguments.reserve(1);
             arguments.push_back(program.nodes.create<HIRUnaryExpression>(span,
@@ -102,7 +117,7 @@ export class Construction {
                 value, pointer));
 
             return program.nodes.create<HIRCallExpression>(span,
-                std::make_unique<HIRDirectCallTarget>(*function, std::move(name), signature),
+                std::make_unique<HIRDirectCallTarget>(*function, std::move(instance->name), signature),
                 std::move(arguments), type);
         }
 
@@ -127,7 +142,7 @@ export class Construction {
             for (const auto& part : plan->parts) {
                 const auto* field_type = prepare_type(part.plan->type, span, part.plan->operation);
 
-                if (part.kind == LifecyclePart::Kind::Type::Base) {
+                if (part.kind == LifecyclePlan::Part::Kind::Type::Base) {
                     auto base_name = names.next("return_tmp");
                     auto* copied = construct(span, base(span, source, field_type), part.plan);
                     statements.push_back(program.nodes.create<HIRVarDeclaration>(span,
@@ -171,7 +186,7 @@ export class Construction {
                 fields.reserve(variant.fields.size());
 
                 for (const auto& part : plan->parts) {
-                    if (part.kind == LifecyclePart::Kind::Type::Payload && part.variant != variant.index) {
+                    if (part.kind == LifecyclePlan::Part::Kind::Type::Payload && part.variant != variant.index) {
                         continue;
                     }
 
@@ -220,7 +235,9 @@ export class Construction {
         }
 
         if (plan->action == LifecyclePlan::Action::Type::Deleted) {
-            throw std::runtime_error("use of deleted destructor for '" + type->to_string() + "'");
+            diagnostics.add_error(span, "use of deleted destructor for '" + type->to_string() + "'");
+
+            return;
         }
 
         if (const auto* function = plan->function; function != nullptr) {
@@ -231,13 +248,21 @@ export class Construction {
             const auto* signature = sema.types.create<FunctionType>(function->signature()->name,
                 function->signature()->return_type, std::move(parameters),
                 std::vector<GenericParameterType>(), false);
+            auto instance = specializations.lifecycle(*function, *type->as_nominal(), signature);
+
+            if (!instance.has_value()) {
+                diagnostics.add_error(span, "lifecycle specialization requires concrete bindings");
+
+                return;
+            }
+
             std::vector<HIRExpression*> arguments;
             arguments.reserve(1);
             arguments.push_back(program.nodes.create<HIRUnaryExpression>(span,
                 UnaryOperator::Type::AddressOfMut, value, pointer));
             auto* call = program.nodes.create<HIRCallExpression>(span,
                 std::make_unique<HIRDirectCallTarget>(*function,
-                    specializations.lifecycle(*function, *type->as_nominal(), signature).name, signature),
+                    std::move(instance->name), signature),
                 std::move(arguments), signature->return_type);
             statements.push_back(program.nodes.create<HIRExpressionStatement>(span, call));
         }
@@ -253,7 +278,7 @@ export class Construction {
                 body.reserve(variant.fields.size());
 
                 for (const auto& part : plan->parts | std::views::reverse) {
-                    if ((part.kind == LifecyclePart::Kind::Type::Payload && part.variant != variant.index) ||
+                    if ((part.kind == LifecyclePlan::Part::Kind::Type::Payload && part.variant != variant.index) ||
                         part.plan->action == LifecyclePlan::Action::Type::Trivial) {
                         continue;
                     }
@@ -283,9 +308,9 @@ export class Construction {
         for (const auto& part : plan->parts | std::views::reverse) {
             const auto* field_type = prepare_type(part.plan->type, span, Operation::Type::Destroy);
 
-            if (part.kind == LifecyclePart::Kind::Type::Base) {
+            if (part.kind == LifecyclePlan::Part::Kind::Type::Base) {
                 destroy(span, base(span, value, field_type), part.plan, statements);
-            } else if (part.kind == LifecyclePart::Kind::Type::Element) {
+            } else if (part.kind == LifecyclePlan::Part::Kind::Type::Element) {
                 for (auto index = part.count; index > 0; --index) {
                     auto* offset = program.nodes.create<HIRNumberLiteral>(span, std::to_string(index - 1),
                         sema.primitives.entries.at("i64"));
@@ -435,6 +460,9 @@ export class Cleanup {
                 construction.destroy(drop->span, value, drop->plan, body);
                 auto* condition = program.nodes.create<HIRIdentifierExpression>(drop->span,
                     drop->flag, sema.primitives.entries.at("boolean"));
+                auto* cleared = program.nodes.create<HIRBooleanLiteral>(drop->span, false, condition->type);
+                body.push_back(program.nodes.create<HIRExpressionStatement>(drop->span,
+                    program.nodes.create<HIRAssignExpression>(drop->span, condition, cleared, condition->type)));
                 auto* destruction = program.nodes.create<HIRIfExpression>(drop->span, condition,
                     program.nodes.create<HIRBlockStatement>(drop->span, std::move(body)), nullptr,
                     sema.primitives.entries.at("void"));
@@ -487,10 +515,12 @@ export class CleanupScopeGuard {
 export class FullExpression {
   public:
     FullExpression* parent;
+    std::size_t depth;
     std::vector<HIRStatement*> declarations;
     std::vector<HIRStatement*> drops;
 
-    explicit FullExpression(FullExpression* parent) : parent(parent), declarations(), drops() {
+    FullExpression(FullExpression* parent, std::size_t depth)
+        : parent(parent), depth(depth), declarations(), drops() {
         declarations.reserve(4);
         drops.reserve(4);
     }
@@ -504,10 +534,77 @@ export class Temporaries {
     TemporaryNames& names;
 
   public:
+    class Handler {
+      public:
+        std::string name;
+        std::size_t depth;
+        FullExpression* expression;
+        std::size_t drops;
+
+        Handler(std::string name, std::size_t depth, FullExpression* expression, std::size_t drops)
+            : name(std::move(name)), depth(depth), expression(expression), drops(drops) {}
+    };
+
     FullExpression* current;
+    std::unordered_map<const CatchArm*, Handler> handlers;
 
     Temporaries(HIRProgram& program, SemaContext& sema, Cleanup& cleanup, TemporaryNames& names)
-        : program(program), sema(sema), cleanup(cleanup), names(names), current(nullptr) {}
+        : program(program), sema(sema), cleanup(cleanup), names(names), current(nullptr), handlers() {}
+
+    std::string protect(const CatchArm& arm) {
+        const auto name = names.next("catch");
+        handlers.emplace(&arm, Handler(name, cleanup.scopes.size(), current,
+            current != nullptr ? current->drops.size() : 0));
+
+        return name;
+    }
+
+    std::optional<HIRFailure> failure(const Type* type, const CatchArm* arm, Span span,
+                                      Diagnostics& diagnostics) {
+        if (arm == nullptr) {
+            return HIRFailure(type, std::string(), unwind(0));
+        }
+
+        const auto handler = handlers.find(arm);
+
+        if (handler == handlers.end()) {
+            diagnostics.add_error(span, "resolved error handler has no active lowering scope");
+
+            return std::nullopt;
+        }
+
+        const auto& target = handler->second;
+
+        return HIRFailure(type, target.name, unwind(target.depth, target.expression, target.drops));
+    }
+
+    std::vector<HIRStatement*> unwind(std::size_t depth, FullExpression* boundary = nullptr,
+                                      std::size_t preserved = 0) {
+        std::vector<HIRStatement*> actions;
+        actions.reserve(8);
+        auto* expression = current;
+
+        for (auto scope = cleanup.scopes.size(); scope > depth; --scope) {
+            while (expression != nullptr && expression != boundary && expression->depth >= scope) {
+                actions.insert(actions.end(), expression->drops.begin(), expression->drops.end());
+                expression = expression->parent;
+            }
+
+            cleanup.emit(cleanup.scopes[scope - 1], actions);
+        }
+
+        while (expression != nullptr && expression != boundary) {
+            actions.insert(actions.end(), expression->drops.begin(), expression->drops.end());
+            expression = expression->parent;
+        }
+
+        if (expression != nullptr && expression->drops.size() > preserved) {
+            actions.insert(actions.end(), expression->drops.begin(),
+                expression->drops.end() - static_cast<std::ptrdiff_t>(preserved));
+        }
+
+        return actions;
+    }
 
     HIRExpression* finish(Span span, HIRExpression* value, std::vector<HIRStatement*>& statements,
                            const std::vector<HIRStatement*>& actions) {
@@ -544,7 +641,22 @@ export class Temporaries {
         return program.nodes.create<HIRBlockExpression>(span, body, type);
     }
 
-    HIRExpression* capture(HIRExpression* value, Span span) {
+    HIRExpression* transfer(HIRExpression* value, const std::vector<HIRStatement*>& actions) {
+        if (actions.empty()) {
+            return value;
+        }
+
+        std::vector<HIRStatement*> statements;
+        statements.reserve(actions.size() + 2);
+        auto* result = finish(value->span, value, statements, actions);
+        statements.push_back(program.nodes.create<HIRExpressionStatement>(value->span, result));
+
+        return program.nodes.create<HIRBlockExpression>(value->span,
+            program.nodes.create<HIRBlockStatement>(value->span, std::move(statements)), value->type);
+    }
+
+    HIRExpression* capture(HIRExpression* value, Span span,
+                            std::vector<HIRStatement*>* transfers = nullptr) {
         if (current == nullptr || value == nullptr || value->type == nullptr ||
             value->as<HIRIdentifierExpression>() != nullptr || value->as<HIRMemberExpression>() != nullptr ||
             value->as<HIRIndexExpression>() != nullptr) {
@@ -571,6 +683,12 @@ export class Temporaries {
         const auto* boolean = sema.primitives.entries.at("boolean");
         auto* storage = program.nodes.create<HIRIdentifierExpression>(span, name, type);
         auto* flag = program.nodes.create<HIRIdentifierExpression>(span, declaration->name, boolean);
+
+        if (transfers != nullptr) {
+            auto* cleared = program.nodes.create<HIRBooleanLiteral>(span, false, boolean);
+            transfers->push_back(program.nodes.create<HIRExpressionStatement>(span,
+                program.nodes.create<HIRAssignExpression>(span, flag, cleared, boolean)));
+        }
         current->declarations.push_back(program.nodes.create<HIRVarDeclaration>(span,
             Visibility::Type::Private, Linkage::Type::Internal, StorageKind::Type::VarMut,
             name, type, nullptr, false));

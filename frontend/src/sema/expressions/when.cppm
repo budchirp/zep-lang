@@ -358,11 +358,7 @@ export class WhenChecker {
                 }
 
                 visitor.visit_statement(*arm->body);
-                auto* tail = arm->body->as<ExpressionStatement>();
-                if (auto* block = arm->body->as<BlockStatement>(); block != nullptr && !block->statements.empty()) {
-                    tail = block->statements.back()->as<ExpressionStatement>();
-                }
-                if (tail != nullptr) {
+                if (auto* tail = Values::tail(*arm->body); tail != nullptr) {
                     tail->expression = sema.binding.construct(tail->expression, tail->expression->type,
                         type_resolver, context.diagnostics);
                 }

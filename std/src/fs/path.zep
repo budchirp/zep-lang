@@ -1,8 +1,8 @@
 import std.ffi.c_access
 import std.ffi.c_realpath
 import std.core.box.Box
-import std.core.result.Result
 import std.fs.error.FileError
+import std.fs.error.FileOperation
 import std.io.error.IoError
 import std.ffi.zep_errno
 import std.memory.Memory
@@ -33,12 +33,14 @@ public struct Path {
             return Memory::move(result)
         }
 
-        static fn absolute(path: cstr) -> Result<String, FileError> {
+        @throws(FileError)
+        static fn absolute(path: cstr) -> String {
             var storage = Box::from_raw(c_realpath(path, null) as *mut char)
 
             return when (storage.get()) {
-                null -> Result::Error { error: FileError::ResolvePath { error: *zep_errno() as IoError } },
-                else -> Result::Ok { value: String(storage.get() as cstr) },
+                null -> throw FileError { operation: FileOperation::ResolvePath,
+                    error: IoError { value: *zep_errno() } },
+                else -> String(storage.get() as cstr),
             }
         }
 

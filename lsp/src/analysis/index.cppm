@@ -54,6 +54,10 @@ class AstTokenCollector : public Visitor<void> {
     }
 
     void visit(TypeExpression& node) override {
+        for (auto* error : node.errors) {
+            visit_child(error);
+        }
+
         if (node.span.start.line > 0 && node.type != nullptr) {
             auto line = static_cast<std::uint32_t>(node.span.start.line - 1);
             auto character = static_cast<std::uint32_t>(node.span.start.column - 1);
@@ -107,6 +111,10 @@ class AstTokenCollector : public Visitor<void> {
     }
 
     void visit(FunctionPrototype& node) override {
+        for (auto* error : node.errors) {
+            visit_child(error);
+        }
+
         for (auto* parameter : node.parameters) {
             visit_child(parameter);
         }
@@ -225,6 +233,26 @@ class AstTokenCollector : public Visitor<void> {
         visit_child(node.value);
     }
 
+    void visit(TryExpression& node) override { visit_child(node.value); }
+
+    void visit(ThrowExpression& node) override { visit_child(node.value); }
+
+    void visit(CatchExpression& node) override {
+        visit_child(node.value);
+
+        for (auto& arm : node.arms) {
+            if (arm.span.start.line > 0) {
+                add_token(static_cast<std::uint32_t>(arm.span.start.line - 1),
+                    static_cast<std::uint32_t>(arm.span.start.column - 1),
+                    static_cast<std::uint32_t>(arm.name.size()), SemanticKind::Type::Variable,
+                    SemanticModifier::Declaration);
+            }
+
+            visit_child(arm.annotation);
+            visit_child(arm.body);
+        }
+    }
+
     void visit(AssignExpression& node) override {
         visit_child(node.target);
         visit_child(node.value);
@@ -252,6 +280,10 @@ class AstTokenCollector : public Visitor<void> {
     }
 
     void visit(ClosureExpression& node) override {
+        for (auto* error : node.errors) {
+            visit_child(error);
+        }
+
         for (auto* parameter : node.parameters) {
             visit_child(parameter);
         }
@@ -259,12 +291,6 @@ class AstTokenCollector : public Visitor<void> {
     }
 
     void visit(BlockExpression& node) override { visit_child(node.body); }
-
-    void visit(AssemblyExpression& node) override {
-        for (auto* argument : node.arguments) {
-            visit_child(argument);
-        }
-    }
 
     void visit(BuiltinCall& node) override {
         for (auto* argument : node.arguments) {
@@ -432,14 +458,12 @@ export class SyntaxIndex {
             case Token::Type::Else:
             case Token::Type::When:
             case Token::Type::For:
-            case Token::Type::In:
             case Token::Type::While:
             case Token::Type::Type:
             case Token::Type::Defer:
             case Token::Type::Do:
             case Token::Type::Is:
             case Token::Type::As:
-            case Token::Type::Asm:
             case Token::Type::New:
             case Token::Type::Delete:
                 tokens.emplace_back(line, character, length, SemanticKind::Type::Keyword);

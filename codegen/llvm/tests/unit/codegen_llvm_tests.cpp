@@ -12,6 +12,7 @@ import zep.codegen.llvm.types;
 import zep.codegen.api;
 import zep.common.target;
 import zep.hir.program;
+import zep.hir.node;
 import zep.test.support;
 import zep.frontend.test.harness;
 import zep.compiler.lowering;
@@ -80,15 +81,90 @@ public fn release(ptr: *mut Record) -> void {
     EXPECT_LT(destructor, release);
 }
 
+TEST(CodegenLlvm, CopiesEmptyBasesWithoutMemoryAccess) {
+    TestWorkspace workspace("llvm_empty_base");
+    HirHarness harness(R"zep(
+struct Base {}
+struct Record : Base { public: var value: i32 }
+public fn copy(source: &Record) -> Record { return source }
+)zep");
+    ASSERT_TRUE(harness.succeeded());
+
+    auto program = harness.lower();
+    LLVMBackend backend;
+
+    const auto ir = capture_stderr([&] {
+        const auto result = backend.generate(*program, workspace.file("copy.o"),
+            EmitOptions(TargetInfo(), OptimizationLevel::Type::O0, DebugOutput::Type::IR));
+
+        EXPECT_TRUE(result.has_value());
+    });
+
+    EXPECT_EQ(ir.find("load %Base"), std::string::npos) << ir;
+    EXPECT_EQ(ir.find("store %Base"), std::string::npos) << ir;
+}
+
 TEST(CodegenLlvm, InitializesTargetContext) {
     Target context;
     TargetInfo target(TargetInfo::host_triple());
 
-    context.initialize(target, OptimizationLevel::Type::O2);
+    const auto result = context.initialize(target, OptimizationLevel::Type::O2);
 
+    ASSERT_TRUE(result.has_value()) << result.error();
     ASSERT_NE(context.module, nullptr);
     ASSERT_NE(context.target_machine, nullptr);
     EXPECT_EQ(context.module->getTargetTriple().str(), target.triple);
+}
+
+TEST(CodegenLlvm, ReportsAnUnknownTargetWithoutThrowing) {
+    Target context;
+    const auto result = context.initialize(TargetInfo("not-a-target"));
+
+    ASSERT_FALSE(result.has_value());
+    EXPECT_NE(result.error().find("could not find target"), std::string::npos);
+}
+
+TEST(CodegenLlvm, ReportsMissingCallMetadataThroughItsFailureResult) {
+    TestWorkspace workspace("llvm_missing_call_metadata");
+    HirHarness harness("fn work() -> void {} fn main() -> void { work() }");
+    ASSERT_TRUE(harness.succeeded());
+
+    auto program = harness.lower();
+    ASSERT_NE(program, nullptr);
+    auto* function = HirHarness::function(*program, "main");
+    ASSERT_NE(function, nullptr);
+    auto* statement = function->body->statements.front()->as<HIRExpressionStatement>();
+    ASSERT_NE(statement, nullptr);
+    auto* call = statement->expression->as<HIRCallExpression>();
+    ASSERT_NE(call, nullptr);
+    auto* target = call->target->as<HIRDirectCallTarget>();
+    ASSERT_NE(target, nullptr);
+    target->function_type = nullptr;
+
+    LLVMBackend backend;
+    const auto result = backend.generate(*program, workspace.file("invalid.o"), EmitOptions());
+
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), "resolved call has no emitted callee or signature");
+    EXPECT_FALSE(std::filesystem::exists(workspace.file("invalid.o")));
+}
+
+TEST(CodegenLlvm, KeepsSameNamedTypesDistinctAndReusesEquivalentInstances) {
+    llvm::LLVMContext context;
+    Types types(context);
+    IntegerType narrow(false, 32);
+    IntegerType wide(false, 64);
+    StructType first("Failure", {}, {FieldType("value", &narrow)});
+    StructType second("Failure", {}, {FieldType("value", &wide)});
+    StructType equivalent("Failure", {}, {FieldType("value", &narrow)}, {}, nullptr, {}, {}, &first);
+
+    auto* first_layout = llvm::cast<llvm::StructType>(types.lower(&first));
+    auto* second_layout = llvm::cast<llvm::StructType>(types.lower(&second));
+
+    EXPECT_NE(first_layout, second_layout);
+    EXPECT_TRUE(first_layout->getElementType(0)->isIntegerTy(32));
+    EXPECT_TRUE(second_layout->getElementType(0)->isIntegerTy(64));
+    EXPECT_EQ(types.lower(&equivalent), first_layout);
 }
 
 TEST(CodegenLlvm, IrSnapshotForEmptyProgramIsStable) {

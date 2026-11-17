@@ -13,6 +13,14 @@ import zep.frontend.sema.types;
 
 export class Values {
   public:
+    static ExpressionStatement* tail(Statement& statement) {
+        if (auto* block = statement.as<BlockStatement>(); block != nullptr) {
+            return block->statements.empty() ? nullptr : block->statements.back()->as<ExpressionStatement>();
+        }
+
+        return statement.as<ExpressionStatement>();
+    }
+
     static bool numeric_literal(const Expression& expression) {
         if (expression.is<NumberLiteral>() || expression.is<FloatLiteral>()) {
             return true;
@@ -26,6 +34,10 @@ export class Values {
     }
 
     static bool moving(const Expression& expression) {
+        if (const auto* protected_value = expression.as<TryExpression>(); protected_value != nullptr) {
+            return moving(*protected_value->value);
+        }
+
         if (const auto* coercion = expression.as<CoerceExpression>(); coercion != nullptr) {
             return coercion->coercion == Coercion::Type::MoveValue;
         }
@@ -46,6 +58,10 @@ export class Values {
     }
 
     static bool place(const Expression& expression) {
+        if (const auto* protected_value = expression.as<TryExpression>(); protected_value != nullptr) {
+            return place(*protected_value->value);
+        }
+
         if (const auto* coercion = expression.as<CoerceExpression>(); coercion != nullptr) {
             return coercion->coercion == Coercion::Type::BaseSlice;
         }
@@ -66,6 +82,10 @@ export class Values {
     }
 
     static bool mutable_place(const Expression& expression, const SymbolEnvironment& environment) {
+        if (const auto* protected_value = expression.as<TryExpression>(); protected_value != nullptr) {
+            return mutable_place(*protected_value->value, environment);
+        }
+
         if (const auto* call = expression.as<CallExpression>(); call != nullptr &&
             call->reference_result != nullptr) {
             const auto* reference = call->reference_result->as<PointerType>();

@@ -5,7 +5,6 @@ import std.ffi.FfiSocketAddressLength
 import std.ffi.FfiSocketDomain
 import std.ffi.FfiSocketKind
 import std.fs.file.File
-import std.core.result.Result
 import std.io.error.IoError
 import std.memory.Memory
 import std.net.socket.address.Ipv4Address
@@ -19,11 +18,12 @@ public struct TcpStream {
             return TcpStream { file: File::socket(descriptor) }
         }
 
-        static fn connect(address: Ipv4Address, port: u16) -> Result<TcpStream, IoError> {
+        @throws(IoError)
+        static fn connect(address: Ipv4Address, port: u16) -> TcpStream {
             var stream = TcpStream(c_socket(FfiSocketDomain::Ipv4.value, FfiSocketKind::Stream.value, 0))
 
             if (stream.file.as_descriptor() < 0) {
-                return Result::Error { error: *zep_errno() as IoError }
+                throw IoError { value: *zep_errno() }
             }
 
             var socket_address = SocketAddress::ipv4(address, port)
@@ -31,8 +31,8 @@ public struct TcpStream {
             return when {
                 (c_connect(stream.file.as_descriptor(), socket_address.as_ptr(),
                            FfiSocketAddressLength::Ipv4.value) < 0) ->
-                    Result::Error { error: *zep_errno() as IoError },
-                else -> Result::Ok { value: Memory::move(stream) },
+                    throw IoError { value: *zep_errno() },
+                else -> Memory::move(stream),
             }
         }
 }

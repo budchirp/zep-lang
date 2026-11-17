@@ -54,6 +54,14 @@ export class AstDumper : public Visitor<void> {
         }
     }
 
+    void begin_node(const char* name) {
+        if (with_indent) {
+            Logger::print_indent(depth);
+        }
+
+        Logger::print(name, "(\n");
+    }
+
     template <typename Child>
     void print_children(const char* label, const std::vector<Child*>& children, bool comma) {
         Logger::print_indent(depth + 1);
@@ -101,6 +109,13 @@ export class AstDumper : public Visitor<void> {
         } else {
             Logger::print("null");
         }
+
+        if (!node.errors.empty()) {
+            Logger::print(",\n");
+            print_children("errors", node.errors, false);
+            Logger::print_indent(depth);
+        }
+
         Logger::print(")");
 
         if (trailing_newline) {
@@ -205,6 +220,10 @@ export class AstDumper : public Visitor<void> {
 
         Logger::print_indent(depth + 1);
         Logger::print("is_variadic: ", (node.is_variadic ? "true" : "false"), ",\n");
+
+        if (!node.errors.empty()) {
+            print_children("errors", node.errors, true);
+        }
 
         print_children("generic_parameters", node.generic_parameters, true);
 
@@ -832,26 +851,6 @@ export class AstDumper : public Visitor<void> {
         end_node();
     }
 
-    void visit(AssemblyExpression& node) override {
-        if (with_indent) {
-            Logger::print_indent(depth);
-        }
-
-        Logger::print("AssemblyExpression(template: \"", node.text, "\", arguments: [\n");
-
-        for (auto index = std::size_t{0}; index < node.arguments.size(); ++index) {
-            visit_child(*node.arguments[index], depth + 1, true, false);
-            Logger::print(index + 1 < node.arguments.size() ? ",\n" : "\n");
-        }
-
-        Logger::print_indent(depth);
-        Logger::print("])");
-
-        if (trailing_newline) {
-            Logger::print("\n");
-        }
-    }
-
     void visit(BuiltinCall& node) override {
         if (with_indent) {
             Logger::print_indent(depth);
@@ -1157,6 +1156,10 @@ export class AstDumper : public Visitor<void> {
 
         Logger::print("ClosureExpression(\n");
 
+        if (!node.errors.empty()) {
+            print_children("errors", node.errors, true);
+        }
+
         Logger::print_indent(depth + 1);
         Logger::print("parameters: [");
         if (node.parameters.empty()) {
@@ -1182,6 +1185,33 @@ export class AstDumper : public Visitor<void> {
         Logger::print("body: ");
         visit_child(*node.body, depth + 1, false, false);
         Logger::print("\n");
+
+        end_node();
+    }
+
+    void visit(TryExpression& node) override {
+        begin_node("TryExpression");
+        print_field("value", node.value, false);
+        end_node();
+    }
+
+    void visit(ThrowExpression& node) override {
+        begin_node("ThrowExpression");
+        print_field("value", node.value, false);
+        end_node();
+    }
+
+    void visit(CatchExpression& node) override {
+        begin_node("CatchExpression");
+        print_field("value", node.value, true);
+
+        for (auto& arm : node.arms) {
+            Logger::print_indent(depth + 1);
+            Logger::print(arm.name, ": ");
+            visit_child(*arm.annotation, depth + 1, false, false);
+            Logger::print(" -> ");
+            visit_child(*arm.body, depth + 1, false, true);
+        }
 
         end_node();
     }

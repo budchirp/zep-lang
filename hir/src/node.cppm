@@ -35,6 +35,8 @@ export class HIRNodeKind {
         UnaryExpression,
         CoerceExpression,
         CallExpression,
+        ThrowExpression,
+        CatchExpression,
         IndexExpression,
         MemberExpression,
         AssignExpression,
@@ -44,7 +46,6 @@ export class HIRNodeKind {
         WhenExpression,
         ClosureExpression,
         BlockExpression,
-        AssemblyExpression,
         TypeExpression,
         BlockStatement,
         StatementGroup,
@@ -311,29 +312,60 @@ export class HIRInterfaceCallTarget final : public HIRCallTarget {
           function_type(function_type) {}
 };
 
-export class HIRAssemblyExpression : public HIRExpression {
+export class HIRFailure {
   public:
-    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::AssemblyExpression;
+    const Type* type;
+    std::string target;
+    std::vector<HIRStatement*> cleanup;
 
-    InlineAssembly assembly;
-    std::vector<HIRExpression*> arguments;
-
-    HIRAssemblyExpression(Span span, InlineAssembly assembly, std::vector<HIRExpression*> arguments,
-                          const Type* type)
-        : HIRExpression(static_kind, span, type), assembly(std::move(assembly)),
-          arguments(std::move(arguments)) {}
+    HIRFailure(const Type* type, std::string target, std::vector<HIRStatement*> cleanup)
+        : type(type), target(std::move(target)), cleanup(std::move(cleanup)) {}
 };
+
+export class HIRThrowExpression : public HIRExpression {
+  public:
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::ThrowExpression;
+    HIRExpression* value;
+    HIRFailure failure;
+
+    HIRThrowExpression(Span span, HIRExpression* value, HIRFailure failure, const Type* type)
+        : HIRExpression(static_kind, span, type), value(value), failure(std::move(failure)) {}
+};
+
+export class HIRCatchArm {
+  public:
+    std::string target;
+    std::string name;
+    const Type* type;
+    HIRStatement* body;
+
+    HIRCatchArm(std::string target, std::string name, const Type* type, HIRStatement* body)
+        : target(std::move(target)), name(std::move(name)), type(type), body(body) {}
+};
+
+export class HIRCatchExpression : public HIRExpression {
+  public:
+    static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::CatchExpression;
+    HIRExpression* value;
+    std::vector<HIRCatchArm> arms;
+
+    HIRCatchExpression(Span span, HIRExpression* value, std::vector<HIRCatchArm> arms, const Type* type)
+        : HIRExpression(static_kind, span, type), value(value), arms(std::move(arms)) {}
+};
+
 export class HIRCallExpression : public HIRExpression {
   public:
     static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::CallExpression;
 
     std::vector<HIRExpression*> arguments;
     std::unique_ptr<HIRCallTarget> target;
+    std::vector<HIRFailure> failures;
+    std::vector<HIRStatement*> transfers;
 
     HIRCallExpression(Span span, std::unique_ptr<HIRCallTarget> target,
                       std::vector<HIRExpression*> arguments, const Type* type = nullptr)
         : HIRExpression(static_kind, span, type), arguments(std::move(arguments)),
-          target(std::move(target)) {}
+          target(std::move(target)), failures(), transfers() {}
 };
 
 export class HIRIndexExpression : public HIRExpression {
@@ -604,7 +636,6 @@ class HIRVisitor {
 
     virtual T visit(HIRBlockStatement& node) = 0;
     virtual T visit(HIRBlockExpression& node) = 0;
-    virtual T visit(HIRAssemblyExpression& node) = 0;
     virtual T visit(HIRNumberLiteral& node) = 0;
     virtual T visit(HIRFloatLiteral& node) = 0;
     virtual T visit(HIRStringLiteral& node) = 0;
@@ -617,6 +648,8 @@ class HIRVisitor {
     virtual T visit(HIRUnaryExpression& node) = 0;
     virtual T visit(HIRCoerceExpression& node) = 0;
     virtual T visit(HIRCallExpression& node) = 0;
+    virtual T visit(HIRThrowExpression& node) = 0;
+    virtual T visit(HIRCatchExpression& node) = 0;
     virtual T visit(HIRIndexExpression& node) = 0;
     virtual T visit(HIRMemberExpression& node) = 0;
     virtual T visit(HIRAssignExpression& node) = 0;
@@ -634,6 +667,14 @@ class HIRVisitor {
     virtual T visit(HIRFunctionDeclaration& node) = 0;
 
     T visit_expression(HIRExpression& expression) {
+        if (auto* raised = expression.as<HIRThrowExpression>(); raised != nullptr) {
+            return visit(*raised);
+        }
+
+        if (auto* handled = expression.as<HIRCatchExpression>(); handled != nullptr) {
+            return visit(*handled);
+        }
+
         if (auto* number_literal = expression.as<HIRNumberLiteral>(); number_literal != nullptr) {
             return visit(*number_literal);
         }
@@ -699,9 +740,6 @@ class HIRVisitor {
         if (auto* block = expression.as<HIRBlockExpression>(); block != nullptr) {
             return visit(*block);
         }
-        if (auto* assembly = expression.as<HIRAssemblyExpression>(); assembly != nullptr) {
-            return visit(*assembly);
-        }
         if (auto* type_expression = expression.as<HIRTypeExpression>();
             type_expression != nullptr) {
             return visit(*type_expression);
@@ -744,6 +782,14 @@ class HIRVisitor {
     }
 
     T visit_node(HIRNode& node) {
+        if (auto* failure = node.as<HIRThrowExpression>(); failure != nullptr) {
+            return visit(*failure);
+        }
+
+        if (auto* recovery = node.as<HIRCatchExpression>(); recovery != nullptr) {
+            return visit(*recovery);
+        }
+
         if (auto* type_expression = node.as<HIRTypeExpression>(); type_expression != nullptr) {
             return visit(*type_expression);
         }
@@ -806,10 +852,6 @@ class HIRVisitor {
         if (auto* block = node.as<HIRBlockExpression>(); block != nullptr) {
             return visit(*block);
         }
-        if (auto* assembly = node.as<HIRAssemblyExpression>(); assembly != nullptr) {
-            return visit(*assembly);
-        }
-
         if (auto* block = node.as<HIRBlockStatement>(); block != nullptr) {
             return visit(*block);
         }

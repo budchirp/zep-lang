@@ -21,6 +21,28 @@ TEST(LspCompletion, CompletesLocalsInsideTestsWithoutExposingGeneratedFunctions)
     }
 }
 
+TEST(LspCompletion, CompletesCheckedErrorAttributesAndTypeLists) {
+    AnalysisHarness service;
+    const auto attribute = service.complete_cursor("@thr| fn work() -> void {}");
+
+    EXPECT_NE(find_completion(attribute, "throws"), nullptr);
+    EXPECT_EQ(find_completion(attribute, "throw"), nullptr);
+
+    const auto types = service.complete_cursor(
+        "struct Failure {}\nvar FailureValue = 1\nfn FailureHelper() -> void {}\n"
+        "@throws(Fai|) fn work() -> void {}");
+
+    EXPECT_NE(find_completion(types, "Failure"), nullptr);
+    EXPECT_EQ(find_completion(types, "FailureValue"), nullptr);
+    EXPECT_EQ(find_completion(types, "FailureHelper"), nullptr);
+
+    const auto body = service.complete_cursor("fn work() -> void { | }");
+
+    for (const auto* keyword : {"try", "catch", "throw"}) {
+        EXPECT_NE(find_completion(body, keyword), nullptr);
+    }
+}
+
 TEST(LspCompletion, CompletesUnfinishedCallsWithoutRepeatingPositionalArguments) {
     AnalysisHarness service;
     const auto items = service.complete_cursor(

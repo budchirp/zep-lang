@@ -20,7 +20,6 @@ module;
 #include <llvm/Target/TargetOptions.h>
 #include <llvm/TargetParser/Triple.h>
 #include <memory>
-#include <stdexcept>
 #include <string>
 
 export module zep.codegen.llvm.target_context;
@@ -109,13 +108,12 @@ export class Target {
         module_pass_manager.run(*module, module_analysis_manager);
     }
 
-    void initialize(const TargetInfo& target_info,
+    std::expected<void, std::string> initialize(const TargetInfo& target_info,
                     OptimizationLevel::Type optimization_level = OptimizationLevel::Type::O0) {
         [[maybe_unused]] static bool initialized = []() {
             llvm::InitializeAllTargetInfos();
             llvm::InitializeAllTargets();
             llvm::InitializeAllTargetMCs();
-            llvm::InitializeAllAsmParsers();
             llvm::InitializeAllAsmPrinters();
             return true;
         }();
@@ -126,7 +124,7 @@ export class Target {
         std::string error;
         const auto* target = llvm::TargetRegistry::lookupTarget(target_triple, error);
         if (target == nullptr) {
-            throw std::runtime_error("could not find target: " + error);
+            return std::unexpected("could not find target: " + error);
         }
 
         llvm::TargetOptions options;
@@ -136,10 +134,12 @@ export class Target {
                                                          reloc_model, std::nullopt,
                                                          codegen_level(optimization_level)));
         if (target_machine == nullptr) {
-            throw std::runtime_error("failed to create target machine");
+            return std::unexpected("failed to create target machine");
         }
 
         module->setDataLayout(target_machine->createDataLayout());
+
+        return {};
     }
 
     std::expected<void, std::string> emit_object(const std::filesystem::path& output) {

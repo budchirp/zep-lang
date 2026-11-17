@@ -11,12 +11,13 @@ export class Precedence {
     enum class Type : std::uint8_t {
         None = 0,
         Assignment = 1,
-        Or = 2,
-        And = 3,
-        Equality = 4,
-        Comparison = 5,
-        Is = 6,
-        As = 7,
+        Catch = 2,
+        Or = 3,
+        And = 4,
+        Equality = 5,
+        Comparison = 6,
+        Is = 7,
+        As = 8,
         Additive = 9,
         Multiplicative = 10,
         Unary = 11,
@@ -27,6 +28,8 @@ export class Precedence {
         switch (type) {
         case Token::Type::Assign:
             return Precedence::Type::Assignment;
+        case Token::Type::Catch:
+            return Precedence::Type::Catch;
         case Token::Type::Or:
             return Precedence::Type::Or;
         case Token::Type::And:

@@ -11,8 +11,8 @@ import std.ffi.FfiSocketKind
 import std.ffi.FfiSocketLevel
 import std.ffi.FfiSocketOption
 import std.fs.file.File
-import std.core.result.Result
 import std.io.error.IoError
+import std.io.error.IoCode
 import std.memory.Memory
 import std.net.socket.address.Ipv4Address
 import std.net.socket.address.SocketAddress
@@ -23,58 +23,61 @@ public struct TcpListener {
         var file: File
 
     public:
-        static fn bind(address: Ipv4Address, port: u16) -> Result<TcpListener, IoError> {
+        @throws(IoError)
+        static fn bind(address: Ipv4Address, port: u16) -> TcpListener {
             var listener = TcpListener {
                 file: File::socket(c_socket(FfiSocketDomain::Ipv4.value, FfiSocketKind::Stream.value, 0))
             }
 
             if (listener.file.as_descriptor() < 0) {
-                return Result::Error { error: *zep_errno() as IoError }
+                throw IoError { value: *zep_errno() }
             }
 
             var enabled: i32 = 1
 
             if (c_setsockopt(listener.file.as_descriptor(), FfiSocketLevel::Socket.value,
                              FfiSocketOption::reuse_address(), &enabled, #sizeof(i32) as u32) < 0) {
-                return Result::Error { error: *zep_errno() as IoError }
+                throw IoError { value: *zep_errno() }
             }
 
             var socket_address = SocketAddress::ipv4(address, port)
 
             if (c_bind(listener.file.as_descriptor(), socket_address.as_ptr(),
                        FfiSocketAddressLength::Ipv4.value) < 0) {
-                return Result::Error { error: *zep_errno() as IoError }
+                throw IoError { value: *zep_errno() }
             }
 
             return when {
                 (c_listen(listener.file.as_descriptor(), 16) < 0) ->
-                    Result::Error { error: *zep_errno() as IoError },
-                else -> Result::Ok { value: Memory::move(listener) },
+                    throw IoError { value: *zep_errno() },
+                else -> Memory::move(listener),
             }
         }
 
-        fn accept() mut -> Result<TcpStream, IoError> {
+        @throws(IoError)
+        fn accept() mut -> TcpStream {
             while (true) {
                 var descriptor = c_accept(file.as_descriptor(), null, null)
 
                 if (descriptor >= 0) {
-                    return Result::Ok { value: TcpStream(descriptor) }
+                    return TcpStream(descriptor)
                 }
 
-                if (*zep_errno() != IoError::Interrupted.value) {
-                    return Result::Error { error: *zep_errno() as IoError }
+                if (*zep_errno() != IoCode::Interrupted.value) {
+                    throw IoError { value: *zep_errno() }
                 }
             }
         }
 
-        fn local_port() -> Result<u16, IoError> {
+        @throws(IoError)
+        fn local_port() -> u16 {
             var mut address = SocketAddress()
             var mut length = FfiSocketAddressLength::Ipv4.value
 
             return when {
                 (c_getsockname(file.as_descriptor(), address.as_mut_ptr(), &mut length) < 0) ->
-                    Result::Error { error: *zep_errno() as IoError },
-                else -> Result::Ok { value: address.port() },
+                    throw IoError { value: *zep_errno() },
+                else -> address.port(),
             }
         }
 }

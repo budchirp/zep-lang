@@ -11,17 +11,24 @@ import std.io.FormatArguments
 import std.io.format
 import std.io.eprint
 import std.io.print
+import std.io.FormatError
+import std.io.IoError
 
 public fn main() -> i32 {
-    var mut arguments = FormatArguments()
-    arguments.add(7)
-    print("stdout {}", arguments).unwrap()
+    return try {
+        var mut arguments = FormatArguments()
+        arguments.add(7)
+        print("stdout {}", arguments)
 
-    arguments.clear()
-    arguments.add(false)
-    eprint("stderr {}", arguments).unwrap()
+        arguments.clear()
+        arguments.add(false)
+        eprint("stderr {}", arguments)
 
-    return 0
+        0
+    } catch {
+        error: FormatError -> 1,
+        error: IoError -> 2,
+    }
 }
 )zep");
 
@@ -38,6 +45,7 @@ TEST(CliFormat, ReportsSyntaxErrorsAndPreservesEscapedBraces) {
     harness.workspace.write("src/main.zep", R"zep(
 import std.io.FormatArguments
 import std.io.format
+import std.io.FormatError
 
 public fn main() -> i32 {
     var patterns: cstr[3] = ["{}", "{", "}"]
@@ -48,22 +56,30 @@ public fn main() -> i32 {
     ]
 
     for (var mut index = 0; index < 3; index = index + 1) {
-        var result = format(patterns[index], FormatArguments())
-
-        if (result.is_ok() || !result.unwrap_error().message().equals(messages[index])) {
+        try {
+            format(patterns[index], FormatArguments())
             return 1
-        }
+        } catch { error: FormatError -> {
+            if (!error.message().equals(messages[index])) {
+                return 1
+            }
+        }, }
     }
 
     var mut arguments = FormatArguments()
     arguments.add(7)
-    var extra = format("plain", arguments)
-
-    if (extra.is_ok() || !extra.unwrap_error().message().equals("unused format argument at index 0")) {
+    try {
+        format("plain", arguments)
         return 2
-    }
+    } catch { error: FormatError -> {
+        if (!error.message().equals("unused format argument at index 0")) {
+            return 2
+        }
+    }, }
 
-    return when (format("literal {{ok}}", FormatArguments()).unwrap().equals("literal {ok}")) {
+    var escaped = format("literal {{ok}}", FormatArguments()) catch { error: FormatError -> { return 3 }, }
+
+    return when (escaped.equals("literal {ok}")) {
         true -> 0,
         false -> 3,
     }

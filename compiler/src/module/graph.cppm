@@ -135,7 +135,7 @@ export class ModuleGraph {
         }
 
         auto* scope = sema.env.scopes.create<Scope>(Scope::Kind::Type::Module,
-            path.string() + (test ? "$test" : ""), parent);
+            module_identity, parent);
         auto module =
             std::make_unique<Module>(&package, std::move(path), *loaded, std::move(syntax), scope);
         auto* result = module.get();

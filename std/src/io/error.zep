@@ -1,4 +1,6 @@
-public enum IoError : i32 {
+import std.core.error.Error
+
+public enum IoCode : i32 {
     NotFound = 2
     Interrupted = 4
     Failed = 5
@@ -8,4 +10,9 @@ public enum IoError : i32 {
     InvalidInput = 22
     NotSeekable = 29
     BrokenPipe = 32
+}
+
+public struct IoError : Error {
+    public:
+        var value: i32
 }

@@ -2,7 +2,6 @@ import std.text.string.String
 import std.text.view.StringView
 import std.net.socket.stream.TcpStream
 import std.io.error.IoError
-import std.core.result.Result
 
 public enum Method {
     Get
@@ -86,7 +85,8 @@ public struct Response {
             return self
         }
 
-        fn send_to(stream: *mut TcpStream) -> Result<i32, IoError> {
+        @throws(IoError)
+        fn send_to(stream: *mut TcpStream) -> i32 {
             var mut header = String("HTTP/1.1 ")
             header.append(String::from(status.value))
             header.append(" ")
@@ -96,14 +96,9 @@ public struct Response {
             header.append("\r\nContent-Length: ")
             header.append(String::from(body.length()))
             header.append("\r\nConnection: close\r\n\r\n")
-            when (stream->file.write(header)) {
-                Result::Error { error } -> { return Result::Error { error: error } },
-                Result::Ok { value } -> {},
-            }
+            try stream->file.write(header)
+            try stream->file.write(body)
 
-            return when (stream->file.write(body)) {
-                Result::Error { error } -> Result::Error { error: error },
-                Result::Ok { value } -> Result::Ok { value: status.value },
-            }
+            return status.value
         }
 }

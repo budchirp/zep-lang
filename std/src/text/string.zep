@@ -1,7 +1,9 @@
 import std.collections.vector.Vector
 import std.collections.vector.CapacityError
+import std.collections.vector.CapacityFailure
 import std.core.option.Option
-import std.core.result.Result
+import std.core.error.Error
+import std.io.panic.panic
 import std.ffi.c_memcpy
 import std.ffi.c_memmove
 import std.ffi.zep_errno
@@ -13,14 +15,24 @@ import std.memory.Memory
 import std.text.view.StringView
 import std.core.bytes.ByteText
 
-public enum ParseError {
-    InvalidSyntax
-    OutOfRange
+public enum ParseFailure : i32 {
+    InvalidSyntax = 0
+    OutOfRange = 1
 }
 
-public enum ConversionError {
-    InvalidEncoding
-    TooLong
+public struct ParseError : Error {
+    public:
+        var reason: ParseFailure
+}
+
+public enum ConversionFailure : i32 {
+    InvalidEncoding = 0
+    TooLong = 1
+}
+
+public struct ConversionError : Error {
+    public:
+        var reason: ConversionFailure
 }
 
 public struct String {
@@ -34,12 +46,14 @@ public struct String {
                 return
             }
 
-            self->reserve(Memory::grow_capacity(capacity, required_capacity)).unwrap()
+            self->reserve(Memory::grow_capacity(capacity, required_capacity)) catch {
+                error: CapacityError -> panic("string capacity overflow"),
+            }
         }
 
         fn transform(mapping: (char) -> char) -> String {
             var mut result = String()
-            result.reserve(length).unwrap()
+            result.ensure_capacity(length)
 
             for (var mut index: i64 = 0; index < length; index = index + 1) {
                 result.push(mapping(ptr[index]))
@@ -48,19 +62,20 @@ public struct String {
             return Memory::move(result)
         }
 
-        fn number_result<T>(value: T, end: cstr) -> Result<T, ParseError> {
+        @throws(ParseError)
+        fn number<T>(value: T, end: cstr) -> T {
             if (*zep_errno() == 34) {
-                return Result::Error { error: ParseError::OutOfRange }
+                throw ParseError { reason: ParseFailure::OutOfRange }
             }
 
             var source = self->as_cstr()
 
             if ((end as *void) == null || end == source ||
                 (end as u64) - (source as u64) != length as u64) {
-                return Result::Error { error: ParseError::InvalidSyntax }
+                throw ParseError { reason: ParseFailure::InvalidSyntax }
             }
 
-            return Result::Ok { value: value }
+            return value
         }
 
     public:
@@ -102,18 +117,20 @@ public struct String {
             return String { ptr: storage, length: length, capacity: length }
         }
 
-        static fn from(value: f32) -> Result<String, ConversionError> {
-            return String::from(value as f64)
+        @throws(ConversionError)
+        static fn from(value: f32) -> String {
+            return try String::from(value as f64)
         }
 
-        static fn from(value: f64) -> Result<String, ConversionError> {
+        @throws(ConversionError)
+        static fn from(value: f64) -> String {
             var mut buffer: char[64]
             var length = c_snprintf((&mut buffer) as cstr, #length(buffer), "%g", value)
 
             return when {
-                (length < 0) -> Result::Error { error: ConversionError::InvalidEncoding },
-                (length as i64 >= #length(buffer)) -> Result::Error { error: ConversionError::TooLong },
-                else -> Result::Ok { value: String(StringView((&buffer) as cstr, length as i64)) },
+                (length < 0) -> throw ConversionError { reason: ConversionFailure::InvalidEncoding },
+                (length as i64 >= #length(buffer)) -> throw ConversionError { reason: ConversionFailure::TooLong },
+                else -> String(StringView((&buffer) as cstr, length as i64)),
             }
         }
 
@@ -154,17 +171,18 @@ public struct String {
             return Memory::move(result)
         }
 
-        fn reserve(minimum_capacity: i64) mut -> Result<void, CapacityError> {
+        @throws(CapacityError)
+        fn reserve(minimum_capacity: i64) mut -> void {
             if (minimum_capacity < 0) {
-                return Result::Error { error: CapacityError::Negative }
+                throw CapacityError { reason: CapacityFailure::Negative }
             }
 
             if (minimum_capacity == (9223372036854775807 as i64)) {
-                return Result::Error { error: CapacityError::Overflow }
+                throw CapacityError { reason: CapacityFailure::Overflow }
             }
 
             if (minimum_capacity <= capacity) {
-                return Result::Ok
+                return
             }
 
             var next_ptr = Memory::allocate_bytes(minimum_capacity + 1) as *mut char
@@ -177,8 +195,6 @@ public struct String {
             Memory::free(ptr as *mut void)
             ptr = next_ptr
             capacity = minimum_capacity
-
-            return Result::Ok
         }
 
         fn append(value: cstr) mut -> void {
@@ -350,56 +366,54 @@ public struct String {
             return Memory::move(result)
         }
 
-        fn repeat(count: i64) -> Result<String, CapacityError> {
+        @throws(CapacityError)
+        fn repeat(count: i64) -> String {
             var mut result = String()
 
             if (count < 0) {
-                return Result::Error { error: CapacityError::Negative }
+                throw CapacityError { reason: CapacityFailure::Negative }
             }
 
             if (count == 0 || length == 0) {
-                return Result::Ok { value: Memory::move(result) }
+                return Memory::move(result)
             }
 
             if (length > 0 && count > (9223372036854775807 as i64) / length) {
-                return Result::Error { error: CapacityError::Overflow }
+                throw CapacityError { reason: CapacityFailure::Overflow }
             }
 
-            when (result.reserve(count * length)) {
-                Result::Error { error } -> { return Result::Error { error: error } },
-                Result::Ok -> {},
-            }
+            try result.reserve(count * length)
 
             for (var mut index: i64 = 0; index < count; index = index + 1) {
                 result.append(*self)
             }
 
-            return Result::Ok { value: Memory::move(result) }
+            return Memory::move(result)
         }
 
-        fn parse_i32() -> Result<i32, ParseError> {
-            var value = when (self->parse_i64()) {
-                Result::Error { error } -> { return Result::Error { error: error } },
-                Result::Ok { value } -> value,
-            }
+        @throws(ParseError)
+        fn parse_i32() -> i32 {
+            var value = try self->parse_i64()
 
             if (((-2147483647 as i64) - 1) > value || (2147483647 as i64) < value) {
-                return Result::Error { error: ParseError::OutOfRange }
+                throw ParseError { reason: ParseFailure::OutOfRange }
             }
 
-            return Result::Ok { value: value as i32 }
+            return value as i32
         }
 
-        fn parse_i64() -> Result<i64, ParseError> {
+        @throws(ParseError)
+        fn parse_i64() -> i64 {
             var mut end: cstr = null;
 
             *zep_errno() = 0
             var value = c_strtoll(self->as_cstr(), &mut end, 10)
 
-            return self->number_result(value, end)
+            return try self->number(value, end)
         }
 
-        fn parse_u64() -> Result<u64, ParseError> {
+        @throws(ParseError)
+        fn parse_u64() -> u64 {
             var mut start: i64 = 0
 
             while (start < length && Char::is_whitespace(ptr[start])) {
@@ -407,7 +421,7 @@ public struct String {
             }
 
             if (start < length && ptr[start] == '-') {
-                return Result::Error { error: ParseError::OutOfRange }
+                throw ParseError { reason: ParseFailure::OutOfRange }
             }
 
             var mut end: cstr = null;
@@ -415,23 +429,25 @@ public struct String {
             *zep_errno() = 0
             var value = c_strtoull(self->as_cstr(), &mut end, 10)
 
-            return self->number_result(value, end)
+            return try self->number(value, end)
         }
 
-        fn parse_f64() -> Result<f64, ParseError> {
+        @throws(ParseError)
+        fn parse_f64() -> f64 {
             var mut end: cstr = null;
 
             *zep_errno() = 0
             var value = c_strtod(self->as_cstr(), &mut end)
 
-            return self->number_result(value, end)
+            return try self->number(value, end)
         }
 
-        fn parse_boolean() -> Result<boolean, ParseError> {
+        @throws(ParseError)
+        fn parse_boolean() -> boolean {
             return when {
-                (self->equals("true")) -> Result::Ok { value: true },
-                (self->equals("false")) -> Result::Ok { value: false },
-                else -> Result::Error { error: ParseError::InvalidSyntax },
+                (self->equals("true")) -> true,
+                (self->equals("false")) -> false,
+                else -> throw ParseError { reason: ParseFailure::InvalidSyntax },
             }
         }
 

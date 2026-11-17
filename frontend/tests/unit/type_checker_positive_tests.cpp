@@ -127,21 +127,6 @@ fn main() -> i32 {
     EXPECT_TRUE(assert_type_check_ok(source));
 }
 
-TEST(FrontendAssembly, AcceptsNamedOperands) {
-    EXPECT_TRUE(assert_type_check_ok(R"zep(
-fn main() -> i32 {
-    var mut value: i64 = 1
-    asm {
-        "addq {input}, {output}"
-        in(input, "r", 2 as i64)
-        inout(output, "r", value)
-        clobber("flags")
-    }
-    return value as i32
-}
-)zep"));
-}
-
 TEST(FrontendTypeCheckerPositive, KeepsGenericLookaheadInsideExpressionDelimiters) {
     EXPECT_TRUE(assert_type_check_ok(R"zep(
 fn valid(count: i64, width: i64) -> boolean {

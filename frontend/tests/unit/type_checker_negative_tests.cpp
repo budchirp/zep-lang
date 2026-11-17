@@ -52,16 +52,6 @@ fn main() -> i32 { return read(null) }
 )zep"));
 }
 
-TEST(FrontendAssembly, RejectsInvalidOperandContracts) {
-    for (const auto* source : {
-        R"zep(fn main() -> void { var value = 1 asm { "" out(value, "r", value) } })zep",
-        R"zep(fn main() -> void { asm { "{missing}" } })zep",
-        R"zep(fn main() -> void { asm { "" options("pure") } })zep",
-        R"zep(fn main() -> void { asm { "" options("att", "intel") } })zep"}) {
-        EXPECT_TRUE(assert_type_check_error(source));
-    }
-}
-
 TEST(FrontendTypeCheckerNegative, RejectsReturnTypeMismatch) {
     const std::string source = R"zep(
 fn main() -> i32 {

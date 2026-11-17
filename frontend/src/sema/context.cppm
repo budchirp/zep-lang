@@ -10,6 +10,7 @@ import zep.frontend.sema.types;
 import zep.frontend.sema.types.facades;
 import zep.frontend.sema.lifecycle;
 import zep.frontend.sema.expression.binding;
+import zep.frontend.sema.checking.errors;
 import zep.common.target;
 
 export class SemaContext {
@@ -27,7 +28,10 @@ export class SemaContext {
     SymbolEnvironment env;
 
     Lifecycle lifecycle;
+
     Binding binding;
+
+    Errors errors;
 
     explicit SemaContext(TargetInfo target = TargetInfo())
         : target(std::move(target)), primitives(types), env(primitives.entries),

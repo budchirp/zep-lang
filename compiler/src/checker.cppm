@@ -97,6 +97,12 @@ export class CompilerChecker {
             ScopeGuard active_scope(sema.env.current_scope, module->scope);
             SemanticChecker checker(context, sema);
             checker.check(module->syntax);
+
+            if (module->owner->manifest.name == "std" && module->path.string() == "core.error") {
+                const auto* symbol = module->scope->find_exported_type("Throwable");
+                sema.errors.throwable = symbol != nullptr ? symbol->type->as<InterfaceType>() : nullptr;
+            }
+
             for (const auto& entry : context.diagnostics.entries) {
                 diagnostics.entries.push_back(entry);
             }

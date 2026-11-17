@@ -69,12 +69,13 @@ frontend/         Compiler frontend
     symbols/      Base, type, function, variable, and enum-variant definitions
     scopes/       Scope storage and semantic environments
     resolution/   Callable and member resolution
-    expression/   Generic arguments, literals, operators, builtins, and when checking
+    expressions/  Generic arguments, literals, operators, builtins, and when checking
     constants/    Compile-time evaluation and checked arithmetic
     generics/     Generic bindings and substitution environments
-    lifecycle/    Construction, assignment, and destruction plans
+    lifecycles/   Construction, assignment, and destruction plans
+    errors/       Checked error sets, semantic boundaries, and resolved routing
     checking/     Expression validation and initialization state
-    declaration/  Declaration checking
+    declarations/ Declaration checking
   debug/          AST and type dumpers
   tests/          Lexer, parser, type compatibility, and semantic tests
 hir/              High-level IR node and program definitions
@@ -89,7 +90,6 @@ codegen/          Code generation interfaces and implementations
     functions.cppm  HIR traversal and function emission
     values.cppm   Value scopes, places, casts, ABI conversion, and aggregate values
     calls.cppm    Call emission and interface dispatch
-    assembly.cppm Inline assembly emission
     control_flow.cppm  Branches, loops, and returns
 workspace/        Manifest, Project model, package graph, and environment discovery
 compiler/         Module graph, parsing, semantic checking, and HIR lowering

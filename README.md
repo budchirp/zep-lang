@@ -6,9 +6,10 @@ Systems programming language with manual memory management, generics, interfaces
 
 - **RAII** — recursive copies, move constructors, assignment special members, destructors, and deterministic `defer`
 - **References** — `&T`, `&mut T`, and `move T`, with std `Memory::move(value)` for move construction and assignment
+- **Checked errors** — throwable structs, `@throws`, explicit `try`, and typed `catch` expressions
 - **Generics** — `fn identity<T>(value: T) -> T`, `struct Container<T>`
 - **Interfaces** — structural contracts with dynamic dispatch
-- **Enums with payloads** — `Option<T>::Some { value: T }`, `Result<T, E>::Ok { value: T }`, or backed variants (`enum Key : i32`)
+- **Enums with payloads** — `Option<T>::Some { value: T }` or backed variants (`enum Key : i32`)
 - **Struct inheritance** — single inheritance with `override fn`
 - **defer** — scope-exit cleanup in reverse order
 - **when** — multi-branch matching with guards and destructuring
@@ -16,7 +17,7 @@ Systems programming language with manual memory management, generics, interfaces
 - **Primitive facades** — `32.to_string()`, `"zep".to_string()`, `true.to_string()`
 - **C FFI** — `extern fn`, `extern var` with variadic support
 - **Memory** — explicit allocation, placement `new (storage) value`, and `value.~Type()` destruction
-- **Built-ins** — `#sizeof`, `#length`, and named-operand `asm { ... }` blocks
+- **Built-ins** — `#sizeof` and `#length`
 - **Language Server Protocol** — incremental document sync, import-aware completion, navigation,
   symbols, signatures, diagnostics, hover, and semantic tokens through `zep lsp`
 
@@ -25,6 +26,9 @@ Systems programming language with manual memory management, generics, interfaces
 ```zep
 import std.io.FormatArguments
 import std.io.print
+import std.io.FormatError
+import std.io.IoError
+import std.text.ConversionError
 
 struct Point {
     public:
@@ -59,17 +63,23 @@ struct Circle : Shape {
 }
 
 public fn main() -> i32 {
-    var point = Point(3, 4)
-    var mut arguments = FormatArguments()
-    arguments.add(point.distance_squared())
-    print("distance squared: {}\n", arguments).unwrap()
+    return try {
+        var point = Point(3, 4)
+        var mut arguments = FormatArguments()
+        arguments.add(point.distance_squared())
+        print("distance squared: {}\n", arguments)
 
-    var circle = Circle(5.0)
-    arguments.clear()
-    arguments.add(circle.area())
-    print("area: {}\n", arguments).unwrap()
+        var circle = Circle(5.0)
+        arguments.clear()
+        arguments.add(circle.area())
+        print("area: {}\n", arguments)
 
-    return 0
+        0
+    } catch {
+        error: FormatError -> 1,
+        error: IoError -> 2,
+        error: ConversionError -> 3,
+    }
 }
 ```
 
@@ -97,7 +107,7 @@ Build configuration lives in focused files under `cmake/`: `Options`, `Compiler`
 ctest --preset debug
 ```
 
-The test preset runs two tests at a time and reports failures. Assembly and callback ABI tests use
+The test preset runs two tests at a time and reports failures. Callback ABI tests use
 all four optimization levels; other runtime fixtures use representative levels rather than a full sweep.
 
 Use `ctest --test-dir cmake-build-debug -N` to list the currently discovered tests.
@@ -201,5 +211,3 @@ See [DESIGN.md](DESIGN.md) for the full language specification and
 [CONTRIBUTING.md](CONTRIBUTING.md) for build, test, and contribution details.
 
 See [TODO.md](TODO.md) for unfinished compiler work and prioritized language additions.
-The [assembly example](examples/assembly/src/main.zep) demonstrates named inputs, multiple register
-constraints, and a Linux x86_64 syscall.

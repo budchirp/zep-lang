@@ -20,7 +20,7 @@ export class Types {
   private:
     llvm::LLVMContext& context;
 
-    std::unordered_map<std::string, llvm::StructType*> type_cache;
+    std::unordered_map<GenericBinding, llvm::StructType*, GenericBindingHash> type_cache;
 
     static std::optional<unsigned> c_abi_integer_struct_bits(const Type* type) {
         const auto* struct_type = type != nullptr ? type->as<StructType>() : nullptr;
@@ -243,7 +243,7 @@ export class Types {
         }
 
         if (type->is<StructType>() || type->is<EnumType>() || type->is<InterfaceType>()) {
-            auto type_key = type->to_string();
+            GenericBinding type_key = TypeBinding(type);
             auto iterator = type_cache.find(type_key);
             if (iterator != type_cache.end()) {
                 return iterator->second;
@@ -286,7 +286,19 @@ export class Types {
         const auto parameter_count = parameters.size();
 
         std::vector<llvm::Type*> llvm_parameter_types;
-        llvm_parameter_types.reserve(parameter_count);
+        llvm_parameter_types.reserve(parameter_count + 2);
+
+        if (!function_type->errors.empty()) {
+            if (abi == Abi::Type::C) {
+                return nullptr;
+            }
+
+            if (!function_type->return_type->is<VoidType>() && !function_type->return_type->is<NeverType>()) {
+                llvm_parameter_types.push_back(llvm::PointerType::getUnqual(context));
+            }
+
+            llvm_parameter_types.push_back(llvm::PointerType::getUnqual(context));
+        }
 
         for (std::size_t index = 0; index < parameter_count; ++index) {
             auto* parameter_type = abi == Abi::Type::C
@@ -304,7 +316,8 @@ export class Types {
             return nullptr;
         }
 
-        return llvm::FunctionType::get(return_type, llvm_parameter_types, function_type->variadic);
+        return llvm::FunctionType::get(function_type->errors.empty()
+            ? return_type : llvm::Type::getInt32Ty(context), llvm_parameter_types, function_type->variadic);
     }
 
     void declare(const std::vector<HIRType>& types) {
@@ -313,7 +326,7 @@ export class Types {
                 continue;
             }
 
-            auto type_key = entry.type->to_string();
+            GenericBinding type_key = TypeBinding(entry.type);
             if (!type_cache.contains(type_key)) {
                 auto* llvm_struct = llvm::StructType::create(context, entry.name);
                 type_cache[std::move(type_key)] = llvm_struct;
@@ -325,7 +338,7 @@ export class Types {
                 continue;
             }
 
-            auto type_key = entry.type->to_string();
+            GenericBinding type_key = TypeBinding(entry.type);
             if (auto iterator = type_cache.find(type_key); iterator != type_cache.end()) {
                 populate_type_body(iterator->second, entry.type);
             }

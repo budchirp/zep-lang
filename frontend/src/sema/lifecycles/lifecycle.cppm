@@ -45,10 +45,6 @@ export class Lifecycle {
     std::unordered_map<Key, std::shared_ptr<const LifecyclePlan>, Hash> plans;
     std::unordered_set<const FunctionSymbol*> disabled;
 
-    static const NominalType* identity(const NominalType* type) {
-        return type != nullptr && type->definition != nullptr ? type->definition : type;
-    }
-
   public:
     Lifecycle() : members(), plans(), disabled() {}
 
@@ -63,14 +59,12 @@ export class Lifecycle {
 
     void register_function(const NominalType* type, Operation::Type operation,
                            const FunctionSymbol* function) {
-        members[identity(type)][static_cast<std::size_t>(operation)] = function;
+        members[type->definition][static_cast<std::size_t>(operation)] = function;
         plans.clear();
     }
 
     const FunctionSymbol* function(const NominalType* type, Operation::Type operation) const {
-        const auto* definition = identity(type);
-
-        const auto found = members.find(definition);
+        const auto found = members.find(type != nullptr ? type->definition : nullptr);
 
         return found != members.end() ? found->second[static_cast<std::size_t>(operation)] : nullptr;
     }
@@ -93,7 +87,7 @@ export class Lifecycle {
         auto action = LifecyclePlan::Action::Type::Trivial;
         const auto* nominal = resolved != nullptr ? resolved->as_nominal() : nullptr;
         const auto* selected = mode == LifecycleMode::Type::Selected ? function(nominal, operation) : nullptr;
-        std::vector<LifecyclePart> parts;
+        std::vector<LifecyclePlan::Part> parts;
 
         if (resolved != nullptr && (resolved->is<NamedType>() ||
             (nominal != nullptr && !nominal->generic_parameters.empty()) ||
@@ -120,19 +114,19 @@ export class Lifecycle {
                 parts.reserve(structure->fields.size() - inherited + 1);
 
                 if (structure->base_type != nullptr) {
-                    parts.emplace_back(LifecyclePart::Kind::Type::Base, std::string(), 0, 1,
+                    parts.emplace_back(LifecyclePlan::Part::Kind::Type::Base, std::string(), 0, 1,
                                        resolve(structure->base_type, operation, resolver));
                 }
 
                 for (auto index = inherited; index < structure->fields.size(); ++index) {
                     const auto& field = structure->fields[index];
-                    parts.emplace_back(LifecyclePart::Kind::Type::Field, field.name, 0, 1,
+                    parts.emplace_back(LifecyclePlan::Part::Kind::Type::Field, field.name, 0, 1,
                                        resolve(field.type, operation, resolver));
                 }
             } else if (const auto* array = resolved != nullptr ? resolved->as<ArrayType>() : nullptr;
                        array != nullptr) {
                 parts.reserve(1);
-                parts.emplace_back(LifecyclePart::Kind::Type::Element, std::string(), 0,
+                parts.emplace_back(LifecyclePlan::Part::Kind::Type::Element, std::string(), 0,
                                    std::get<ConcreteArrayExtent>(array->extent).value,
                                    resolve(array->element, operation, resolver));
             } else if (const auto* enumeration = resolved != nullptr ? resolved->as<EnumType>() : nullptr;
@@ -146,13 +140,13 @@ export class Lifecycle {
                 parts.reserve(count);
 
                 for (const auto& field : enumeration->fields) {
-                    parts.emplace_back(LifecyclePart::Kind::Type::Field, field.name,
+                    parts.emplace_back(LifecyclePlan::Part::Kind::Type::Field, field.name,
                                        0, 1, resolve(field.type, operation, resolver));
                 }
 
                 for (const auto& variant : enumeration->variants) {
                     for (const auto& field : variant.fields) {
-                        parts.emplace_back(LifecyclePart::Kind::Type::Payload, field.name,
+                        parts.emplace_back(LifecyclePlan::Part::Kind::Type::Payload, field.name,
                                            variant.index, 1, resolve(field.type, operation, resolver));
                     }
                 }

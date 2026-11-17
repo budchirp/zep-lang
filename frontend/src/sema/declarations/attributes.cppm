@@ -122,6 +122,12 @@ export class AttributeResolver {
     }
 
     static void validate_one(const AttributeInfo& attribute, const ValidationContext& ctx) {
+        if (attribute.name == "throws") {
+            ctx.context.diagnostics.add_error(ctx.span,
+                "@throws is only supported on callable declarations and function types");
+            return;
+        }
+
         const auto& map = handler_map();
         const auto iterator = map.find(attribute.name);
         if (iterator != map.end()) {

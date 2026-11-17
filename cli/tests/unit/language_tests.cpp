@@ -6,6 +6,67 @@
 import zep.cli.test.support;
 import zep.test.support;
 
+TEST(CliLanguage, RunsCheckedErrorsAtBothOptimizationLevels) {
+    CliTestHarness harness("cli_checked_errors", ZEP_ZEP_EXECUTABLE);
+    write_project_config(harness, "checked_errors");
+    harness.workspace.write("src/errors.test.zep",
+        TextFile::read(TestPaths::project_source_root() / "cli/tests/fixtures/errors.test.zep"));
+
+    for (const auto* level : {"0", "2"}) {
+        const auto result = harness.run({"test", "-O", level});
+
+        ASSERT_TRUE(result.succeeded()) << result.stderr_text << result.stdout_text;
+    }
+}
+
+TEST(CliLanguage, KeepsErrorIdentityAcrossPackagesAndModules) {
+    CliTestHarness harness("cli_error_identity", ZEP_ZEP_EXECUTABLE);
+    harness.workspace.write("zep.json", R"({
+        "name":"error_identity",
+        "libs":{"std":"0.0.1","dep":{"version":"0.1.0","path":"dep"}}
+    })");
+    harness.workspace.write("dep/zep.json", R"({
+        "name":"dep","version":"0.1.0","type":"library","libs":{"std":"0.0.1"}
+    })");
+    harness.workspace.write("src/failure.zep",
+        "import std.core.Error\npublic struct Failure : Error { public: var code: i32 }\n");
+    harness.workspace.write("dep/src/failure.zep",
+        "import std.core.Error\npublic struct Failure : Error { public: var code: i64 }\n");
+    harness.workspace.write("src/operations.zep", R"zep(
+import failure.Failure as LocalFailure
+import dep.failure.Failure as ForeignFailure
+
+@throws(LocalFailure, ForeignFailure)
+public fn read(remote: boolean) -> i32 {
+    if (remote) { throw ForeignFailure { code: 9000000000 } }
+
+    throw LocalFailure { code: 17 }
+}
+)zep");
+    harness.workspace.write("src/main.zep", R"zep(
+import failure.Failure as LocalFailure
+import dep.failure.Failure as ForeignFailure
+import operations.read
+
+public fn main() -> i32 {
+    var callback: @throws(ForeignFailure, LocalFailure) (boolean) -> i32 = read
+    var first = callback(false) catch { local: LocalFailure -> local.code, remote: ForeignFailure -> 0, }
+    var second = callback(true) catch {
+        local: LocalFailure -> 0,
+        remote: ForeignFailure -> if (remote.code == 9000000000) { 2 } else { 0 },
+    }
+
+    return if (first == 17 && second == 2) { 0 } else { 1 }
+}
+)zep");
+
+    for (const auto* level : {"0", "2"}) {
+        const auto result = build_and_run(harness, "error_identity", level);
+
+        ASSERT_TRUE(result.succeeded()) << result.stderr_text;
+    }
+}
+
 TEST(CliTests, DiscoversRootModulesAndRunsEachTestWithFreshGlobals) {
     CliTestHarness harness("cli_named_discovery", ZEP_ZEP_EXECUTABLE);
     harness.workspace.write("zep.json", R"({

@@ -13,6 +13,7 @@ module;
 export module zep.frontend.sema.types.resolver;
 
 import zep.frontend.sema.types;
+import zep.frontend.sema.types.errors;
 import zep.frontend.sema.scopes.environment;
 import zep.frontend.sema.symbols;
 import zep.frontend.sema.scopes.scope;
@@ -854,13 +855,22 @@ export class TypeResolver {
             auto generic_parameters = substitute_generic_parameters(
                 function_type->generic_parameters, substitution_map, changed);
 
+            std::vector<const Type*> errors;
+            errors.reserve(function_type->errors.size());
+
+            for (const auto* error : function_type->errors) {
+                const auto* replaced = substitute(error, substitution_map);
+                changed = changed || replaced != error;
+                errors.push_back(replaced);
+            }
+
             if (!changed) {
                 return type;
             }
 
             return type_arena.create<FunctionType>(
                 function_type->name, return_type, std::move(parameters),
-                std::move(generic_parameters), function_type->variadic);
+                std::move(generic_parameters), function_type->variadic, ErrorSet::normalize(std::move(errors)));
         }
 
         default:
@@ -1023,7 +1033,7 @@ export class TypeResolver {
         }
 
         return type_arena.create<FunctionType>(resolved->name, resolved->return_type,
-            std::move(parameters), resolved->generic_parameters, resolved->variadic);
+            std::move(parameters), resolved->generic_parameters, resolved->variadic, resolved->errors);
     }
 
     const Type* constraint_type(const Type* type) {
@@ -1066,7 +1076,7 @@ export class TypeResolver {
             return false;
         }
 
-        if (resolved_argument->accepts(resolved_constraint)) {
+        if (resolved_constraint->accepts(resolved_argument)) {
             return true;
         }
 
@@ -1097,6 +1107,15 @@ export class TypeResolver {
         auto generic_parameters =
             resolve_generic_parameters(function_type->generic_parameters, changed);
 
+        std::vector<const Type*> errors;
+        errors.reserve(function_type->errors.size());
+
+        for (const auto* error : function_type->errors) {
+            const auto* resolved = resolve_type(error);
+            changed = changed || resolved != error;
+            errors.push_back(resolved);
+        }
+
         if (!changed) {
             return function_type;
         }
@@ -1106,7 +1125,7 @@ export class TypeResolver {
 
         return type_arena.create<FunctionType>(
             function_type->name, return_type, std::move(parameters),
-            std::move(generic_parameters), function_type->variadic);
+            std::move(generic_parameters), function_type->variadic, ErrorSet::normalize(std::move(errors)));
     }
 
     const Type* resolve_type(const Type* type) {

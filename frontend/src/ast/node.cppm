@@ -68,7 +68,9 @@ export class Node : public Tagged {
             ClosureExpression,
             BlockExpression,
             BuiltinCall,
-            AssemblyExpression,
+            TryExpression,
+            CatchExpression,
+            ThrowExpression,
 
             BlockStatement,
             ExpressionStatement,
@@ -186,10 +188,11 @@ export class TypeExpression : public Expression {
     TypeExpression* element;
     std::vector<TypeExpression*> parameters;
     TypeExpression* return_type;
+    std::vector<TypeExpression*> errors;
 
     TypeExpression(Span span, const Type* type)
         : Expression(static_kind, span), source_type(type), array_sizes(), generic_arguments(),
-          element(nullptr), parameters(), return_type(nullptr) {
+          element(nullptr), parameters(), return_type(nullptr), errors() {
         this->type = type;
     }
 
@@ -288,6 +291,7 @@ export class FunctionPrototype : public Node {
     std::vector<Parameter*> parameters;
 
     TypeExpression* return_type;
+    std::vector<TypeExpression*> errors;
 
     FunctionPrototype(Span span, bool is_variadic, std::string name,
                       std::vector<GenericParameter*> generic_parameters,
@@ -295,7 +299,7 @@ export class FunctionPrototype : public Node {
         : Node(static_kind, span), is_variadic(is_variadic),
           receiver_kind(ReceiverKind::Type::None), name(std::move(name)),
           generic_parameters(std::move(generic_parameters)), parameters(std::move(parameters)),
-          return_type(return_type) {}
+          return_type(return_type), errors() {}
 };
 
 export class Field : public Node {
@@ -755,9 +759,12 @@ export class ClosureExpression : public Expression {
     std::vector<Parameter*> parameters;
     BlockStatement* body;
     std::vector<const VariableSymbol*> captures;
+    std::vector<TypeExpression*> errors;
+    bool declares_errors;
 
     ClosureExpression(Span span, std::vector<Parameter*> parameters, BlockStatement* body)
-        : Expression(static_kind, span), parameters(std::move(parameters)), body(body) {}
+        : Expression(static_kind, span), parameters(std::move(parameters)), body(body), captures(),
+          errors(), declares_errors(false) {}
 };
 
 export class BlockExpression : public Expression {
@@ -769,18 +776,43 @@ export class BlockExpression : public Expression {
     BlockExpression(Span span, BlockStatement* body) : Expression(static_kind, span), body(body) {}
 };
 
-export class AssemblyExpression : public Expression {
+export class TryExpression : public Expression {
   public:
-    static constexpr Kind::Type static_kind = Kind::Type::AssemblyExpression;
+    static constexpr Kind::Type static_kind = Kind::Type::TryExpression;
+    Expression* value;
 
-    std::string text;
-    InlineAssembly assembly;
-    std::vector<Expression*> arguments;
+    TryExpression(Span span, Expression* value) : Expression(static_kind, span), value(value) {}
+};
 
-    AssemblyExpression(Span span, std::string text, InlineAssembly assembly,
-                       std::vector<Expression*> arguments)
-        : Expression(static_kind, span), text(std::move(text)), assembly(std::move(assembly)),
-          arguments(std::move(arguments)) {}
+export class ThrowExpression : public Expression {
+  public:
+    static constexpr Kind::Type static_kind = Kind::Type::ThrowExpression;
+    Expression* value;
+
+    ThrowExpression(Span span, Expression* value) : Expression(static_kind, span), value(value) {}
+};
+
+export class CatchArm {
+  public:
+    Span span;
+    std::string name;
+    TypeExpression* annotation;
+    BlockStatement* body;
+    Scope* scope;
+    const VariableSymbol* symbol;
+
+    CatchArm(Span span, std::string name, TypeExpression* annotation, BlockStatement* body)
+        : span(span), name(std::move(name)), annotation(annotation), body(body), scope(nullptr), symbol(nullptr) {}
+};
+
+export class CatchExpression : public Expression {
+  public:
+    static constexpr Kind::Type static_kind = Kind::Type::CatchExpression;
+    Expression* value;
+    std::vector<CatchArm> arms;
+
+    CatchExpression(Span span, Expression* value, std::vector<CatchArm> arms)
+        : Expression(static_kind, span), value(value), arms(std::move(arms)) {}
 };
 
 export class BuiltinCall : public Expression {
@@ -1142,11 +1174,25 @@ class ExpressionVisitor {
     virtual T visit(ClosureExpression& node) = 0;
     virtual T visit(BlockExpression& node) = 0;
     virtual T visit(BuiltinCall& node) = 0;
-    virtual T visit(AssemblyExpression& node) = 0;
+    virtual T visit(TryExpression& node) = 0;
+    virtual T visit(CatchExpression& node) = 0;
+    virtual T visit(ThrowExpression& node) = 0;
     virtual T visit(IfExpression& node) = 0;
     virtual T visit(ArrayLiteralExpression& node) = 0;
 
     T visit_expression(Expression& expression) {
+        if (auto* protected_expression = expression.as<TryExpression>(); protected_expression != nullptr) {
+            return visit(*protected_expression);
+        }
+
+        if (auto* handled = expression.as<CatchExpression>(); handled != nullptr) {
+            return visit(*handled);
+        }
+
+        if (auto* raised = expression.as<ThrowExpression>(); raised != nullptr) {
+            return visit(*raised);
+        }
+
         if (auto* number_literal = expression.as<NumberLiteral>(); number_literal != nullptr) {
             return visit(*number_literal);
         }
@@ -1217,9 +1263,6 @@ class ExpressionVisitor {
         }
         if (auto* allocation = expression.as<NewExpression>(); allocation != nullptr) {
             return visit(*allocation);
-        }
-        if (auto* assembly = expression.as<AssemblyExpression>(); assembly != nullptr) {
-            return visit(*assembly);
         }
         if (auto* type_expression = expression.as<TypeExpression>(); type_expression != nullptr) {
             return visit(*type_expression);
@@ -1438,10 +1481,6 @@ class Visitor : public ExpressionVisitor<T> {
         if (auto* allocation = node.as<NewExpression>(); allocation != nullptr) {
             return visit(*allocation);
         }
-        if (auto* assembly = node.as<AssemblyExpression>(); assembly != nullptr) {
-            return visit(*assembly);
-        }
-
         if (auto* block = node.as<BlockStatement>(); block != nullptr) {
             return visit(*block);
         }

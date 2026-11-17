@@ -123,11 +123,12 @@ export class GenericInference {
             const auto parameters = function->value_parameters();
             const auto actual_parameters = actual_function->value_parameters();
 
+            match(function->return_type, actual_function->return_type, origin);
+
             if (parameters.size() != actual_parameters.size()) {
                 return;
             }
 
-            match(function->return_type, actual_function->return_type, origin);
             for (auto index = std::size_t{0}; index < parameters.size(); ++index) {
                 match(parameters[index].type, actual_parameters[index].type, origin);
             }

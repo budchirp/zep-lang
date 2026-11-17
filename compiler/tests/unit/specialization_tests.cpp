@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-#include <stdexcept>
 
 import zep.common.source.span;
 import zep.frontend.node;
@@ -90,16 +89,19 @@ TEST_F(MonomorphizerTest, CacheReusesOneGeneratedNamePerIdentity) {
 
     auto result = cache.get_or_create(i32_type(), "identity", types);
 
-    EXPECT_FALSE(result.is_generated);
-    EXPECT_EQ(result.name, "identity$i32");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(result->is_generated);
+    EXPECT_EQ(result->name, "identity$i32");
 
     const auto duplicate = cache.get_or_create(i32_type(), "identity", types);
     const auto renamed = cache.get_or_create(i32_type(), "renamed", types);
 
-    EXPECT_TRUE(duplicate.is_generated);
-    EXPECT_TRUE(renamed.is_generated);
-    EXPECT_EQ(duplicate.name, result.name);
-    EXPECT_EQ(renamed.name, result.name);
+    ASSERT_TRUE(duplicate.has_value());
+    ASSERT_TRUE(renamed.has_value());
+    EXPECT_TRUE(duplicate->is_generated);
+    EXPECT_TRUE(renamed->is_generated);
+    EXPECT_EQ(duplicate->name, result->name);
+    EXPECT_EQ(renamed->name, result->name);
 }
 
 TEST_F(MonomorphizerTest, CacheRegistersAndRetrievesGenericFunctions) {
@@ -127,12 +129,15 @@ TEST_F(MonomorphizerTest, ConstBindingsDistinguishPayloadsAndTypes) {
     const auto second_result = cache.get_or_create(i32_type(), "count", {ConstBinding(second)});
     const auto wide_result = cache.get_or_create(i32_type(), "count", {ConstBinding(wide)});
 
-    EXPECT_FALSE(first_result.is_generated);
-    EXPECT_FALSE(second_result.is_generated);
-    EXPECT_FALSE(wide_result.is_generated);
-    EXPECT_NE(first_result.name, second_result.name);
-    EXPECT_NE(first_result.name, wide_result.name);
-    EXPECT_TRUE(cache.get_or_create(i32_type(), "count", {ConstBinding(first)}).is_generated);
+    ASSERT_TRUE(first_result.has_value());
+    ASSERT_TRUE(second_result.has_value());
+    ASSERT_TRUE(wide_result.has_value());
+    EXPECT_FALSE(first_result->is_generated);
+    EXPECT_FALSE(second_result->is_generated);
+    EXPECT_FALSE(wide_result->is_generated);
+    EXPECT_NE(first_result->name, second_result->name);
+    EXPECT_NE(first_result->name, wide_result->name);
+    EXPECT_TRUE(cache.get_or_create(i32_type(), "count", {ConstBinding(first)})->is_generated);
 }
 
 TEST_F(MonomorphizerTest, ConcreteConstBindingsShareStableKeys) {
@@ -154,7 +159,18 @@ TEST_F(MonomorphizerTest, UnevaluatedConstBindingsCannotBeMangled) {
 
     EXPECT_NE(left, right);
     EXPECT_NE(hash(left), hash(right));
-    EXPECT_THROW(Mangler::encode(left), std::invalid_argument);
+    EXPECT_FALSE(Mangler::encode(left).has_value());
+    EXPECT_FALSE(Mangler::mangle("dependent", {left}).has_value());
+
+    Specializations cache;
+
+    EXPECT_FALSE(cache.get_or_create(i32_type(), "dependent", {left}).has_value());
+
+    NamedType dependent("Owner", {GenericArgumentType("", left)});
+    PointerType pointer(&dependent, false);
+
+    EXPECT_FALSE(Mangler::encode(GenericBinding(TypeBinding(&pointer))).has_value());
+    EXPECT_FALSE(cache.get_or_create(i32_type(), "nested", {TypeBinding(&pointer)}).has_value());
 }
 
 TEST_F(MonomorphizerTest, ConstBindingsEncodeCompleteAggregatePayloads) {
@@ -178,9 +194,9 @@ TEST_F(MonomorphizerTest, ConstBindingsEncodeCompleteAggregatePayloads) {
 TEST_F(MonomorphizerTest, CacheUsesDefiningIdentityInsteadOfLinkerName) {
     Specializations cache;
     const std::vector<GenericBinding> arguments = {TypeBinding(i32_type())};
-    EXPECT_FALSE(cache.get_or_create(i32_type(), "same", arguments).is_generated);
-    EXPECT_FALSE(cache.get_or_create(u32_type(), "same", arguments).is_generated);
-    EXPECT_TRUE(cache.get_or_create(i32_type(), "same", arguments).is_generated);
+    EXPECT_FALSE(cache.get_or_create(i32_type(), "same", arguments)->is_generated);
+    EXPECT_FALSE(cache.get_or_create(u32_type(), "same", arguments)->is_generated);
+    EXPECT_TRUE(cache.get_or_create(i32_type(), "same", arguments)->is_generated);
 }
 
 TEST_F(MonomorphizerTest, EqualBindingsShareKeysAcrossTypeAllocations) {
@@ -192,8 +208,8 @@ TEST_F(MonomorphizerTest, EqualBindingsShareKeysAcrossTypeAllocations) {
 
     EXPECT_EQ(left, right);
     EXPECT_EQ(hash(left), hash(right));
-    EXPECT_FALSE(cache.get_or_create(i32_type(), "identity", {left}).is_generated);
-    EXPECT_TRUE(cache.get_or_create(i32_type(), "identity", {right}).is_generated);
+    EXPECT_FALSE(cache.get_or_create(i32_type(), "identity", {left})->is_generated);
+    EXPECT_TRUE(cache.get_or_create(i32_type(), "identity", {right})->is_generated);
 }
 
 TEST_F(MonomorphizerTest, RenamedNominalsPreserveBindingIdentityAndHash) {
@@ -205,8 +221,8 @@ TEST_F(MonomorphizerTest, RenamedNominalsPreserveBindingIdentityAndHash) {
 
     EXPECT_TRUE(source.same(&target));
     EXPECT_EQ(source.hash(), target.hash());
-    EXPECT_FALSE(cache.get_or_create(i32_type(), "identity", {TypeBinding(&source)}).is_generated);
-    EXPECT_TRUE(cache.get_or_create(i32_type(), "identity", {TypeBinding(&target)}).is_generated);
+    EXPECT_FALSE(cache.get_or_create(i32_type(), "identity", {TypeBinding(&source)})->is_generated);
+    EXPECT_TRUE(cache.get_or_create(i32_type(), "identity", {TypeBinding(&target)})->is_generated);
 }
 
 TEST_F(MonomorphizerTest, FunctionBindingsUseSignaturesInsteadOfDisplayNames) {
@@ -219,7 +235,7 @@ TEST_F(MonomorphizerTest, FunctionBindingsUseSignaturesInsteadOfDisplayNames) {
     EXPECT_EQ(first.hash(), second.hash());
     EXPECT_EQ(Mangler::encode(&first), Mangler::encode(&second));
     EXPECT_NE(Mangler::encode(&first), Mangler::encode(&different));
-    EXPECT_FALSE(cache.get_or_create(i32_type(), "identity", {TypeBinding(&first)}).is_generated);
-    EXPECT_TRUE(cache.get_or_create(i32_type(), "identity", {TypeBinding(&second)}).is_generated);
-    EXPECT_FALSE(cache.get_or_create(i32_type(), "identity", {TypeBinding(&different)}).is_generated);
+    EXPECT_FALSE(cache.get_or_create(i32_type(), "identity", {TypeBinding(&first)})->is_generated);
+    EXPECT_TRUE(cache.get_or_create(i32_type(), "identity", {TypeBinding(&second)})->is_generated);
+    EXPECT_FALSE(cache.get_or_create(i32_type(), "identity", {TypeBinding(&different)})->is_generated);
 }

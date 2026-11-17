@@ -9,23 +9,23 @@ export module zep.frontend.sema.types.facades;
 
 import zep.frontend.sema.types;
 
-export class FacadeEntry {
-  public:
-    const StructType* type;
-    const Type* backing;
-    std::optional<std::size_t> parameter;
-
-    FacadeEntry(const StructType* type, const Type* backing,
-                std::optional<std::size_t> parameter = std::nullopt)
-        : type(type), backing(backing), parameter(parameter) {}
-};
-
 export class FacadeRegistry {
   private:
     std::unordered_map<const Type*, const StructType*> backings;
 
   public:
-    std::unordered_map<const StructType*, FacadeEntry> entries;
+    class Entry {
+      public:
+        const StructType* type;
+        const Type* backing;
+        std::optional<std::size_t> parameter;
+
+        Entry(const StructType* type, const Type* backing,
+              std::optional<std::size_t> parameter = std::nullopt)
+            : type(type), backing(backing), parameter(parameter) {}
+    };
+
+    std::unordered_map<const StructType*, Entry> entries;
 
     FacadeRegistry() = default;
 
@@ -36,7 +36,7 @@ export class FacadeRegistry {
         return definition != nullptr ? definition : &type;
     }
 
-    void add(FacadeEntry entry) {
+    void add(Entry entry) {
         const auto* type = identity(*entry.type);
 
         if (entry.backing != nullptr) {
@@ -46,13 +46,13 @@ export class FacadeRegistry {
         entries.insert_or_assign(type, std::move(entry));
     }
 
-    const FacadeEntry* find(const StructType& type) const {
+    const Entry* find(const StructType& type) const {
         const auto found = entries.find(identity(type));
 
         return found != entries.end() ? &found->second : nullptr;
     }
 
-    const FacadeEntry* find(const Type* backing) const {
+    const Entry* find(const Type* backing) const {
         const auto found = backings.find(backing);
 
         return found != backings.end() ? find(*found->second) : nullptr;

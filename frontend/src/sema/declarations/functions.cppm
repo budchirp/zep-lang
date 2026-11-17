@@ -18,6 +18,7 @@ import zep.frontend.sema.types.compatibility;
 import zep.frontend.sema.symbols;
 import zep.frontend.sema.scopes.scope;
 import zep.frontend.sema.types;
+import zep.frontend.sema.checking.errors;
 import zep.frontend.sema.types.resolver;
 import zep.frontend.sema.lifecycle;
 
@@ -321,7 +322,8 @@ export class DeclarationTypeBuilder {
 
         return sema.types.create<FunctionType>(
             prototype.name, prototype.return_type->type, std::move(parameter_types),
-            std::move(generic_parameter_types), prototype.is_variadic);
+            std::move(generic_parameter_types), prototype.is_variadic,
+            sema.errors.declarations(prototype.errors, visitor, resolver, context.diagnostics));
     }
 };
 export class FunctionDeclarationChecker {
@@ -602,6 +604,7 @@ export class FunctionDeclarationChecker {
         }
 
         const auto role = classify_function(node, *type);
+
         if (node.is_defaulted && (role == FunctionSymbol::Role(ConstructorKind::Type::Copy) ||
                                  role == FunctionSymbol::Role(ConstructorKind::Type::Move))) {
             attribute_infos.emplace_back(".defaulted_constructor", std::vector<std::string>());
@@ -612,6 +615,16 @@ export class FunctionDeclarationChecker {
         auto* symbol = sema.env.symbols.create<FunctionSymbol>(
             node.prototype->name, node.span, node.visibility, Linkage::Type::Internal, type,
             role, node.parent, std::move(attribute_infos), Abi::Type::Language, node.is_deleted);
+
+        if (!type->errors.empty() &&
+            (role == FunctionSymbol::Role(ConstructorKind::Type::Copy) ||
+             role == FunctionSymbol::Role(ConstructorKind::Type::Move) ||
+             role == FunctionSymbol::Role(CallableKind::Type::Destructor) ||
+             node.prototype->name == "operator=" ||
+             (node.parent.empty() && (node.prototype->name == "main" ||
+                 AttributeResolver::get_linker_name(symbol->base_name(), symbol->attributes) == "main")))) {
+            context.diagnostics.add_error(node.span, "this callable cannot propagate checked errors");
+        }
 
         target_scope->define_function(node.prototype->name, symbol);
 
@@ -666,6 +679,8 @@ export class FunctionDeclarationChecker {
 
         const auto* type = builder.build_function_type(*node.prototype);
         node.type = type;
+
+        Errors::check_foreign(context.diagnostics, *type, node.span);
 
         auto* symbol = sema.env.symbols.create<FunctionSymbol>(
             node.prototype->name, node.span, node.visibility, Linkage::Type::External, type,

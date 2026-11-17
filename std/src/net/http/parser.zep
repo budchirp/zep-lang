@@ -1,35 +1,33 @@
 import std.text.string.String
 import std.text.view.StringView
-import std.core.result.Result
 import std.core.option.Option
 import std.net.http.framing.MessageFraming
 import std.net.http.framing.HttpParseError
+import std.net.http.framing.HttpParseFailure
 import std.net.http.types.Method
 import std.net.http.types.Request
 
 public struct RequestParser {
     public:
-        static fn parse(source: &StringView) -> Result<Request, HttpParseError> {
-            var length = when (MessageFraming::body_length(source)) {
-                Result::Error { error } -> { return Result::Error { error: error } },
-                Result::Ok { value } -> value.unwrap_or(0),
-            }
+        @throws(HttpParseError)
+        static fn parse(source: &StringView) -> Request {
+            var length = (try MessageFraming::body_length(source)).unwrap_or(0)
 
             var body_start = MessageFraming::header_end(source).unwrap()
             var expected_length = body_start + length
 
             if (source.length() < expected_length) {
-                return Result::Error { error: HttpParseError::Incomplete }
+                throw HttpParseError { reason: HttpParseFailure::Incomplete }
             }
 
             if (source.length() != expected_length) {
-                return Result::Error { error: HttpParseError::Unsupported }
+                throw HttpParseError { reason: HttpParseFailure::Unsupported }
             }
 
             var method = Method::parse(source)
 
             if (method.value == Method::Unknown.value) {
-                return Result::Error { error: HttpParseError::Unsupported }
+                throw HttpParseError { reason: HttpParseFailure::Unsupported }
             }
 
             var start = method.path_start() as i64
@@ -38,43 +36,45 @@ public struct RequestParser {
 
             while (end < body_start && bytes[end] != ' ') {
                 if ((bytes[end] as u8) < (33 as u8) || (bytes[end] as u8) == (127 as u8)) {
-                    return Result::Error { error: HttpParseError::Malformed }
+                    throw HttpParseError { reason: HttpParseFailure::Malformed }
                 }
 
                 end = end + 1
             }
 
             if (end == start || end >= body_start || bytes[start] != '/') {
-                return Result::Error { error: HttpParseError::Malformed }
+                throw HttpParseError { reason: HttpParseFailure::Malformed }
             }
 
             var line_end = when (source.index_of("\r\n", end)) {
-                Option::None -> { return Result::Error { error: HttpParseError::Malformed } },
+                Option::None -> throw HttpParseError { reason: HttpParseFailure::Malformed },
                 Option::Some { value } -> value,
             }
 
             var version = source.substring(end + 1, line_end).unwrap()
 
             if (!version.equals("HTTP/1.1") && !version.equals("HTTP/1.0")) {
-                return Result::Error { error: HttpParseError::Unsupported }
+                throw HttpParseError { reason: HttpParseFailure::Unsupported }
             }
 
-            return Result::Ok { value: Request {
+            return Request {
                 method: method,
                 path: String(source.substring(start, end).unwrap()),
                 body: String(source.substring(body_start, source.length()).unwrap())
-            } }
+            }
         }
 
-        static fn parse(source: &String) -> Result<Request, HttpParseError> {
-            return RequestParser::parse(source.as_view())
+        @throws(HttpParseError)
+        static fn parse(source: &String) -> Request {
+            return try RequestParser::parse(source.as_view())
         }
 
-        static fn parse(buffer: *u8, length: i64) -> Result<Request, HttpParseError> {
+        @throws(HttpParseError)
+        static fn parse(buffer: *u8, length: i64) -> Request {
             return when {
                 (length < 0 || (buffer == null && length != 0)) ->
-                    Result::Error { error: HttpParseError::Malformed },
-                else -> RequestParser::parse(StringView(buffer as cstr, length)),
+                    throw HttpParseError { reason: HttpParseFailure::Malformed },
+                else -> try RequestParser::parse(StringView(buffer as cstr, length)),
             }
         }
 }

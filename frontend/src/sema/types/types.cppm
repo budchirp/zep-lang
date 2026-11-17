@@ -22,7 +22,6 @@ export import :extent;
 import zep.frontend.kind;
 import zep.common.hash;
 
-
 export class GenericParameterType {
   public:
     class Kind {
@@ -668,11 +667,28 @@ export class FunctionType : public Type {
 
     bool variadic;
 
+    std::vector<const Type*> errors;
+
     FunctionType(std::string name, const Type* return_type, std::vector<ParameterType> parameters,
-                 std::vector<GenericParameterType> generic_parameters, bool variadic)
+                 std::vector<GenericParameterType> generic_parameters, bool variadic,
+                 std::vector<const Type*> errors = {})
         : Type(static_kind, "function"), name(std::move(name)), return_type(return_type),
           parameters(std::move(parameters)), generic_parameters(std::move(generic_parameters)),
-          variadic(variadic) {}
+          variadic(variadic), errors(std::move(errors)) {}
+
+    bool same_errors(const FunctionType& other) const {
+        if (errors.size() != other.errors.size()) {
+            return false;
+        }
+
+        for (auto index = std::size_t{0}; index < errors.size(); ++index) {
+            if (!errors[index]->same(other.errors[index])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     std::size_t byte_size() const override { return 8; }
     std::size_t alignment() const override { return 8; }
@@ -691,7 +707,7 @@ export class FunctionType : public Type {
     }
 
     bool matches_method(const FunctionType& actual) const {
-        if (return_type == nullptr || actual.return_type == nullptr ||
+        if (!same_errors(actual) || return_type == nullptr || actual.return_type == nullptr ||
             !return_type->accepts(actual.return_type) || variadic != actual.variadic ||
             parameters.size() != actual.parameters.size()) {
             return false;
@@ -762,31 +778,57 @@ export class FunctionType : public Type {
 
     std::string to_string() const override {
         std::string result = "fn";
+
         if (!generic_parameters.empty()) {
             result += "<";
-            for (std::size_t i = 0; i < generic_parameters.size(); ++i) {
-                if (i != 0) {
+
+            for (auto index = std::size_t{0}; index < generic_parameters.size(); ++index) {
+                if (index != 0) {
                     result += ", ";
                 }
-                result += generic_parameters[i].name;
+
+                result += generic_parameters[index].name;
             }
+
             result += ">";
         }
+
         result += "(";
-        for (std::size_t i = 0; i < parameters.size(); ++i) {
-            if (i != 0) {
+
+        for (auto index = std::size_t{0}; index < parameters.size(); ++index) {
+            if (index != 0) {
                 result += ", ";
             }
-            result += (parameters[i].type ? parameters[i].type->to_string() : "unknown");
+
+            const auto* type = parameters[index].type;
+            result += type != nullptr ? type->to_string() : "unknown";
         }
+
         if (variadic) {
             if (!parameters.empty()) {
                 result += ", ";
             }
+
             result += "...";
         }
+
         result += "): ";
-        result += (return_type ? return_type->to_string() : "unknown");
+        result += return_type != nullptr ? return_type->to_string() : "unknown";
+
+        if (!errors.empty()) {
+            result += " @throws(";
+
+            for (auto index = std::size_t{0}; index < errors.size(); ++index) {
+                if (index != 0) {
+                    result += ", ";
+                }
+
+                result += errors[index]->to_string();
+            }
+
+            result += ")";
+        }
+
         return result;
     }
 };
@@ -865,7 +907,7 @@ bool Type::same(const Type* other) const {
 
     if (const auto* function = as<FunctionType>(); function != nullptr) {
         const auto* right = other->as<FunctionType>();
-        if (function->variadic != right->variadic ||
+        if (!function->same_errors(*right) || function->variadic != right->variadic ||
             function->parameters.size() != right->parameters.size() ||
             function->generic_parameters.size() != right->generic_parameters.size() ||
             function->return_type == nullptr || !function->return_type->same(right->return_type)) {
@@ -919,6 +961,11 @@ std::size_t Type::hash() const {
         combine(static_cast<std::size_t>(function->variadic));
         combine(function->parameters.size());
         combine(function->generic_parameters.size());
+        combine(function->errors.size());
+
+        for (const auto* error : function->errors) {
+            combine(Type::hash(error));
+        }
 
         for (const auto& parameter : function->parameters) {
             combine(Type::hash(parameter.type));
@@ -1093,15 +1140,16 @@ bool Type::accepts(const Type* other) const {
     }
 
     case Type::Kind::Type::Named: {
-        const auto* left_named = as<NamedType>();
-        const auto* right_named = other->as<NamedType>();
-
-        return left_named->name == right_named->name;
+        return same(other);
     }
 
     case Type::Kind::Type::Function: {
         const auto* left_function = as<FunctionType>();
         const auto* right_function = other->as<FunctionType>();
+
+        if (!left_function->same_errors(*right_function)) {
+            return false;
+        }
 
         if (left_function->return_type == nullptr || right_function->return_type == nullptr) {
             return false;

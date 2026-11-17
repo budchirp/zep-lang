@@ -26,6 +26,13 @@ TEST(FrontendTypes, ChecksCompatibilityRules) {
     EXPECT_FALSE(mutable_integer.accepts(&immutable_integer));
     EXPECT_TRUE(immutable_void.accepts(&mutable_integer));
     EXPECT_FALSE(integers.accepts(&unsigned_integers));
+
+    NamedType parameter("T", {}, &mutable_integer);
+    NamedType renamed("Renamed", {}, &mutable_integer);
+    NamedType shadowed("T", {}, &immutable_integer);
+
+    EXPECT_TRUE(parameter.accepts(&renamed));
+    EXPECT_FALSE(parameter.accepts(&shadowed));
 }
 
 TEST(FrontendTypes, LayoutDistinguishesDependentInvalidAndConcreteTypes) {

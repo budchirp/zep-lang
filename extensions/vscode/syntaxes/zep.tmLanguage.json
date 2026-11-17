@@ -83,7 +83,7 @@
       "patterns": [
         {
           "name": "keyword.control.zep",
-          "match": "\\b(?:if|else|when|while|for|in|return|defer|do)\\b"
+          "match": "\\b(?:if|else|when|while|for|return|defer|do|try|catch|throw)\\b"
         },
         {
           "name": "storage.modifier.zep",
@@ -103,7 +103,7 @@
         },
         {
           "name": "keyword.other.zep",
-          "match": "\\b(?:new|delete|asm|inout|out|clobber|options)\\b"
+          "match": "\\b(?:new|delete)\\b"
         }
       ]
     },

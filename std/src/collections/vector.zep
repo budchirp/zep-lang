@@ -1,14 +1,21 @@
 import std.core.option.Option
-import std.core.result.Result
+import std.core.error.Error
 import std.memory.Memory
 
-public enum CapacityError {
-    Negative
-    Overflow
+public enum CapacityFailure : i32 {
+    Negative = 0
+    Overflow = 1
 }
 
-public enum IndexError {
-    OutOfBounds { index: i64, size: i64 }
+public struct CapacityError : Error {
+    public:
+        var reason: CapacityFailure
+}
+
+public struct IndexError : Error {
+    public:
+        var index: i64
+        var length: i64
 }
 
 public struct Vector<T> {
@@ -16,6 +23,13 @@ public struct Vector<T> {
         var ptr: *mut T
         var length: i64
         var capacity: i64
+
+        fn destroy_tail(count: i64) mut -> void {
+            while (length > count) {
+                length = length - 1
+                ptr[length].~T()
+            }
+        }
 
         fn ensure_capacity(required_capacity: i64) mut -> void {
             if (required_capacity >= 0 && required_capacity <= capacity) {
@@ -66,13 +80,12 @@ public struct Vector<T> {
             return Vector { ptr: null, length: 0, capacity: 0 }
         }
 
-        static fn with_capacity(capacity: i64) -> Result<Vector<T>, CapacityError> {
+        @throws(CapacityError)
+        static fn with_capacity(capacity: i64) -> Vector<T> {
             var mut value: Vector<T> = Vector()
+            try value.reserve(capacity)
 
-            return when (value.reserve(capacity)) {
-                Result::Error { error } -> Result::Error { error: error },
-                Result::Ok -> Result::Ok { value: Memory::move(value) },
-            }
+            return Memory::move(value)
         }
 
         fn push(value: T) mut -> void {
@@ -93,11 +106,10 @@ public struct Vector<T> {
             return Memory::move(result)
         }
 
-        fn insert(index: i64, value: T) mut -> Result<i64, IndexError> {
+        @throws(IndexError)
+        fn insert(index: i64, value: T) mut -> i64 {
             if (index < 0 || index > length) {
-                return Result::Error {
-                    error: IndexError::OutOfBounds { index: index, size: length }
-                }
+                throw IndexError { index: index, length: length }
             }
 
             self->ensure_capacity(length + 1)
@@ -116,7 +128,7 @@ public struct Vector<T> {
             }
             new (&mut ptr[index]) Memory::move(value)
             length = length + 1
-            return Result::Ok { value: index }
+            return index
         }
 
         fn remove(index: i64) mut -> Option<T> {
@@ -182,18 +194,17 @@ public struct Vector<T> {
             return true
         }
 
-        fn reserve(minimum_capacity: i64) mut -> Result<void, CapacityError> {
+        @throws(CapacityError)
+        fn reserve(minimum_capacity: i64) mut -> void {
             if (minimum_capacity < 0) {
-                return Result::Error { error: CapacityError::Negative }
+                throw CapacityError { reason: CapacityFailure::Negative }
             }
 
             if (#sizeof(T) > 0 && minimum_capacity > (9223372036854775807 as i64) / #sizeof(T)) {
-                return Result::Error { error: CapacityError::Overflow }
+                throw CapacityError { reason: CapacityFailure::Overflow }
             }
 
             self->ensure_capacity(minimum_capacity)
-
-            return Result::Ok
         }
 
         fn shrink_to_fit() mut -> void {
@@ -233,37 +244,27 @@ public struct Vector<T> {
         }
 
         fn clear() mut -> void {
-            self->truncate(0)
+            self->destroy_tail(0)
         }
 
-        fn truncate(count: i64) mut -> Result<void, IndexError> {
+        @throws(IndexError)
+        fn truncate(count: i64) mut -> void {
             if (count < 0) {
-                return Result::Error { error: IndexError::OutOfBounds { index: count, size: length } }
+                throw IndexError { index: count, length: length }
             }
 
-            while (length > count) {
-                length = length - 1
-                ptr[length].~T()
-            }
-
-            return Result::Ok
+            self->destroy_tail(count)
         }
 
-        fn resize(count: i64, value: T) mut -> Result<void, CapacityError> {
-            var reserved = self->reserve(count)
-
-            if (reserved.is_error()) {
-                return reserved
-            }
-
-            self->truncate(count)
+        @throws(CapacityError)
+        fn resize(count: i64, value: T) mut -> void {
+            try self->reserve(count)
+            self->destroy_tail(count)
 
             while (length < count) {
                 new (&mut ptr[length]) value
                 length = length + 1
             }
-
-            return Result::Ok
         }
 
         fn ~Vector() -> void {

@@ -1,36 +1,31 @@
-import std.core.result.Result
+import std.core.error.Error
 import std.core.option.Option
 import std.collections.vector.Vector
 import std.text.string.String
 import std.text.string.ConversionError
 import std.text.view.StringView
 import std.memory.Memory
-import std.core.pair.Pair
 
-public enum FormatError {
-    MissingArgument { placeholder_index: i64 }
-    ExtraArgument { argument_index: i64 }
-    UnmatchedOpeningBrace { character_index: i64 }
-    UnmatchedClosingBrace { character_index: i64 }
-    Conversion { argument_index: i64, error: ConversionError }
+public enum FormatFailure : i32 {
+    MissingArgument = 0
+    ExtraArgument = 1
+    UnmatchedOpeningBrace = 2
+    UnmatchedClosingBrace = 3
+}
 
+public struct FormatError : Error {
     public:
-        fn message() -> String {
-            var detail = when (*self) {
-                FormatError::MissingArgument { placeholder_index } ->
-                    Pair("missing format argument at index ", placeholder_index),
-                FormatError::ExtraArgument { argument_index } ->
-                    Pair("unused format argument at index ", argument_index),
-                FormatError::UnmatchedOpeningBrace { character_index } ->
-                    Pair("unmatched opening brace at index ", character_index),
-                FormatError::UnmatchedClosingBrace { character_index } ->
-                    Pair("unmatched closing brace at index ", character_index),
-                FormatError::Conversion { argument_index, error } ->
-                    Pair("cannot format argument at index ", argument_index),
-            }
+        var reason: FormatFailure
+        var index: i64
 
-            var mut message = String(detail.first)
-            message.append(String::from(detail.second))
+        fn message() -> String {
+            var mut message = String(when (reason) {
+                FormatFailure::MissingArgument -> "missing format argument at index ",
+                FormatFailure::ExtraArgument -> "unused format argument at index ",
+                FormatFailure::UnmatchedOpeningBrace -> "unmatched opening brace at index ",
+                FormatFailure::UnmatchedClosingBrace -> "unmatched closing brace at index ",
+            })
+            message.append(String::from(index))
 
             return Memory::move(message)
         }
@@ -38,7 +33,7 @@ public enum FormatError {
 
 public struct FormatArguments {
     private:
-        var values: Vector<Result<String, ConversionError>>
+        var values: Vector<String>
 
     public:
         fn FormatArguments() -> FormatArguments {
@@ -46,46 +41,39 @@ public struct FormatArguments {
         }
 
         fn add(value: cstr) mut -> void {
-            values.push(Result::Ok { value: String(value) })
+            values.push(String(value))
         }
 
         fn add(value: &String) mut -> void {
-            values.push(Result::Ok { value: value })
+            values.push(value)
         }
 
         fn add(value: &StringView) mut -> void {
-            values.push(Result::Ok { value: String(value) })
+            values.push(String(value))
         }
 
         fn add<T: i32>(value: T) mut -> void {
-            values.push(Result::Ok { value: String::from(value) })
+            values.push(String::from(value))
         }
 
+        @throws(ConversionError)
         fn add<T: f64>(value: T) mut -> void {
-            values.push(String::from(value as f64))
+            values.push(try String::from(value as f64))
         }
 
         fn add(value: boolean) mut -> void {
-            values.push(Result::Ok { value: String::from(value) })
+            values.push(String::from(value))
         }
 
         fn add(value: char) mut -> void {
-            values.push(Result::Ok { value: String::from(value) })
+            values.push(String::from(value))
         }
 
-        fn append_to(index: i64, output: &mut String) -> Result<void, FormatError> {
-            return when (values.get(index)) {
-                Option::None -> Result::Error { error: FormatError::MissingArgument { placeholder_index: index } },
-                Option::Some { value } -> when (*value) {
-                    Result::Error { error } -> Result::Error { error: FormatError::Conversion {
-                        argument_index: index, error: error
-                    } },
-                    Result::Ok { value } -> {
-                        output.append(value)
-
-                        Result::Ok
-                    },
-                },
+        @throws(FormatError)
+        fn append_to(index: i64, output: &mut String) -> void {
+            when (values.get(index)) {
+                Option::None -> throw FormatError { reason: FormatFailure::MissingArgument, index: index },
+                Option::Some { value } -> output.append(*value),
             }
         }
 
@@ -102,7 +90,8 @@ public struct FormatArguments {
         }
 }
 
-public fn format(pattern: &StringView, arguments: &FormatArguments) -> Result<String, FormatError> {
+@throws(FormatError)
+public fn format(pattern: &StringView, arguments: &FormatArguments) -> String {
     var mut output = String()
     var mut character_index: i64 = 0
     var mut argument_index: i64 = 0
@@ -117,15 +106,10 @@ public fn format(pattern: &StringView, arguments: &FormatArguments) -> Result<St
                     output.push('{')
                 } else {
                     if (next != '}') {
-                        return Result::Error {
-                            error: FormatError::UnmatchedOpeningBrace { character_index: character_index }
-                        }
+                        throw FormatError { reason: FormatFailure::UnmatchedOpeningBrace, index: character_index }
                     }
 
-                    when (arguments.append_to(argument_index, output)) {
-                        Result::Error { error } -> { return Result::Error { error: error } },
-                        Result::Ok -> {},
-                    }
+                    try arguments.append_to(argument_index, output)
                 }
 
                 argument_index = when (next == '{') {
@@ -137,9 +121,7 @@ public fn format(pattern: &StringView, arguments: &FormatArguments) -> Result<St
             },
             (character == '}') -> {
                 if (next != '}') {
-                    return Result::Error {
-                        error: FormatError::UnmatchedClosingBrace { character_index: character_index }
-                    }
+                    throw FormatError { reason: FormatFailure::UnmatchedClosingBrace, index: character_index }
                 }
 
                 output.push('}')
@@ -154,15 +136,17 @@ public fn format(pattern: &StringView, arguments: &FormatArguments) -> Result<St
 
     return when {
         (argument_index < arguments.length()) ->
-            Result::Error { error: FormatError::ExtraArgument { argument_index: argument_index } },
-        else -> Result::Ok { value: Memory::move(output) },
+            throw FormatError { reason: FormatFailure::ExtraArgument, index: argument_index },
+        else -> Memory::move(output),
     }
 }
 
-public fn format(pattern: cstr, arguments: &FormatArguments) -> Result<String, FormatError> {
-    return format(StringView::from_cstr(pattern), arguments)
+@throws(FormatError)
+public fn format(pattern: cstr, arguments: &FormatArguments) -> String {
+    return try format(StringView::from_cstr(pattern), arguments)
 }
 
-public fn format(pattern: &String, arguments: &FormatArguments) -> Result<String, FormatError> {
-    return format(pattern.as_view(), arguments)
+@throws(FormatError)
+public fn format(pattern: &String, arguments: &FormatArguments) -> String {
+    return try format(pattern.as_view(), arguments)
 }

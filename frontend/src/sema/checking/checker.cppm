@@ -35,10 +35,11 @@ import zep.frontend.kind;
 import zep.frontend.sema.generics.environment;
 import zep.frontend.sema.constants.evaluator;
 import zep.frontend.sema.expression.builtin;
-import zep.frontend.sema.expression.assembly;
 import zep.common.state;
 import zep.frontend.sema.expression.values;
 import zep.frontend.sema.lifecycle;
+import zep.frontend.sema.checking.errors;
+import zep.frontend.sema.types.errors;
 
 export class SemanticChecker : public Visitor<void> {
   private:
@@ -54,6 +55,7 @@ export class SemanticChecker : public Visitor<void> {
     std::unordered_set<const VariableSymbol*> destroyed;
 
     const FunctionSymbol* current_function = nullptr;
+    const Type* return_type = nullptr;
     const NominalType* enclosing_type = nullptr;
     const Type* target_type = nullptr;
     ClosureExpression* active_closure = nullptr;
@@ -136,7 +138,8 @@ export class SemanticChecker : public Visitor<void> {
             visit(*node.return_type);
             base =
                 sema.types.create<FunctionType>("", node.return_type->type, std::move(parameters),
-                                                std::vector<GenericParameterType>{}, false);
+                    std::vector<GenericParameterType>{}, false,
+                    sema.errors.declarations(node.errors, *this, resolver, context.diagnostics));
         } else if (!node.generic_arguments.empty()) {
             const auto* receiver = resolver.resolve_type(base);
             GenericArgumentResolver arguments(context, sema, resolver, *this);
@@ -591,22 +594,8 @@ export class SemanticChecker : public Visitor<void> {
         }
     }
 
-    void visit(AssemblyExpression& node) override {
-        for (auto* argument : node.arguments) {
-            visit_expression(*argument);
-        }
-
-        for (const auto& operand : node.assembly.operands) {
-            if (operand.constraint == "i") {
-                auto* argument = node.arguments[operand.argument];
-                argument->compile_time_value = create_evaluator().evaluate(*argument).value;
-            }
-        }
-
-        AssemblyChecker::check(node, context, sema, resolver);
-    }
-
     void visit(CallExpression& node) override {
+        sema.errors.targets.erase(&node);
         if (auto* member = node.callee->as<MemberExpression>();
             member != nullptr && member->member.starts_with("~")) {
             if (!node.arguments.empty() || !node.generic_arguments.empty()) {
@@ -683,12 +672,125 @@ export class SemanticChecker : public Visitor<void> {
                                  node.callee->as<ClosureExpression>());
         CallResolver call_resolver(context, sema, resolver, *this, enclosing_type, target_type);
         call_resolver.resolve(node);
+        const FunctionType* signature = nullptr;
+
+        if (node.resolved_target != nullptr) {
+            if (const auto* direct = node.resolved_target->as<DirectCallTarget>(); direct != nullptr) {
+                signature = direct->signature;
+            } else if (const auto* indirect = node.resolved_target->as<IndirectCallTarget>(); indirect != nullptr) {
+                signature = indirect->function_type;
+            } else if (const auto* dispatch = node.resolved_target->as<InterfaceCallTarget>(); dispatch != nullptr) {
+                signature = dispatch->signature;
+            }
+        }
+
+        if (signature != nullptr) {
+            for (const auto* error : signature->errors) {
+                sema.errors.raise(node, error, Errors::Origin::Type::Call, resolver, context.diagnostics);
+            }
+        }
+
         if (const auto* reference = node.type != nullptr ? node.type->as<PointerType>() : nullptr;
             reference != nullptr && reference->reference_kind != PointerType::ReferenceKind::Type::None) {
             node.reference_result = reference;
             node.type = reference->element;
         }
 
+    }
+
+    void visit(TryExpression& node) override {
+        sema.errors.targets.erase(&node);
+        sema.errors.protect();
+        visit_expression(*node.value);
+        const auto escaping = sema.errors.finish();
+        node.type = node.value->type;
+
+        for (const auto* error : escaping) {
+            sema.errors.raise(node, error, Errors::Origin::Type::Forward, resolver, context.diagnostics);
+        }
+    }
+
+    void visit(ThrowExpression& node) override {
+        sema.errors.targets.erase(&node);
+        StateGuard target_guard(target_type, static_cast<const Type*>(nullptr));
+        visit_expression(*node.value);
+        node.type = sema.primitives.entries.at("never");
+        node.value = sema.binding.construct(node.value, node.value->type, resolver, context.diagnostics);
+        sema.errors.raise(node, node.value->type, Errors::Origin::Type::Throw, resolver, context.diagnostics);
+    }
+
+    void visit(CatchExpression& node) override {
+        sema.errors.targets.erase(&node);
+        std::vector<const Type*> handlers;
+        handlers.reserve(node.arms.size());
+
+        for (auto& arm : node.arms) {
+            visit(*arm.annotation);
+            const auto* type = resolver.resolve_type(arm.annotation->type);
+            arm.annotation->type = type;
+
+            if (type != nullptr && ErrorSet::contains(handlers, type)) {
+                context.diagnostics.add_error(arm.span, "duplicate catch handler for '" + type->to_string() + "'");
+            }
+
+            if (type != nullptr) {
+                handlers.push_back(type);
+            }
+        }
+
+        sema.errors.protect(&node);
+        visit_expression(*node.value);
+        const auto failures = sema.errors.finish();
+        const auto entry_state = destroyed;
+        auto merged_state = destroyed;
+        const Type* result = node.value->type;
+
+        for (auto& arm : node.arms) {
+            const auto* type = arm.annotation->type;
+
+            if (type == nullptr) {
+                continue;
+            }
+
+            if (!ErrorSet::contains(failures, type)) {
+                context.diagnostics.add_error(arm.span, "catch handler cannot receive '" + type->to_string() + "'");
+            }
+
+            destroyed = entry_state;
+            ScopeGuard scope(sema.env.current_scope, sema.env.scopes, Scope::Kind::Type::Block, "catch");
+            arm.scope = sema.env.current_scope;
+            auto* symbol = sema.env.symbols.create<VariableSymbol>(arm.name, arm.span,
+                Visibility::Type::Private, StorageKind::Type::VarMut, type);
+            arm.symbol = symbol;
+            arm.scope->define_var(arm.name, symbol);
+
+            StateGuard target_guard(target_type,
+                result != nullptr && !result->is<NeverType>() ? result : target_type);
+            visit_statement(*arm.body);
+
+            if (auto* tail = Values::tail(*arm.body); tail != nullptr) {
+                tail->expression = sema.binding.initialize(tail->expression,
+                    result != nullptr && !result->is<NeverType>() ? result : tail->expression->type,
+                    resolver, context.diagnostics);
+            }
+
+            merged_state.insert(destroyed.begin(), destroyed.end());
+            const auto* branch = arm.body->type;
+
+            if (result == nullptr || result->is<NeverType>()) {
+                result = branch;
+            } else if (branch != nullptr && !compatibility.accepts(result, branch)) {
+                context.diagnostics.add_error(arm.span, "catch handler result does not match the success type");
+            }
+        }
+
+        destroyed = std::move(merged_state);
+        node.type = result;
+        for (const auto* error : failures) {
+            if (!ErrorSet::contains(handlers, error)) {
+                sema.errors.raise(node, error, Errors::Origin::Type::Call, resolver, context.diagnostics);
+            }
+        }
     }
 
     void visit(IndexExpression& node) override {
@@ -942,6 +1044,7 @@ export class SemanticChecker : public Visitor<void> {
     }
 
     void visit(DeferStatement& node) override {
+        StateGuard error_guard(sema.errors.state, Errors::State());
         visit_statement(*node.body);
         node.type = sema.primitives.entries.at("void");
     }
@@ -952,19 +1055,23 @@ export class SemanticChecker : public Visitor<void> {
     }
 
     void visit(ReturnStatement& node) override {
-        if (current_function == nullptr) {
+        if (current_function == nullptr && active_closure == nullptr) {
             context.diagnostics.add_error(node.span, "return statement outside of function");
-            return;
-        }
-
-        const auto* return_type =
-            current_function->signature()->return_type;
-        if (return_type == nullptr) {
             return;
         }
 
         if (node.value != nullptr) {
             visit_expression_with_target(*node.value, return_type);
+
+            if (return_type == nullptr) {
+                return_type = node.value->type;
+            }
+
+            if (return_type == nullptr) {
+                context.diagnostics.add_error(node.span, "return value has no type");
+                return;
+            }
+
             const auto* reference = return_type->as<PointerType>();
             const Expression* referent = node.value;
             while (true) {
@@ -1006,6 +1113,10 @@ export class SemanticChecker : public Visitor<void> {
 
             node.value = sema.binding.initialize(node.value, return_type, resolver, context.diagnostics);
         } else {
+            if (return_type == nullptr) {
+                return_type = sema.primitives.entries.at("void");
+            }
+
             if (!return_type->is<VoidType>()) {
                 context.diagnostics.add_error(node.span, "non-void function must return a value");
             }
@@ -1155,6 +1266,8 @@ export class SemanticChecker : public Visitor<void> {
         }
 
         StateGuard function_guard(current_function, symbol);
+        StateGuard return_guard(return_type, symbol->signature()->return_type);
+        StateGuard error_guard(sema.errors.state, Errors::State(symbol->signature()->errors));
         StateGuard lifetime_guard(destroyed, std::unordered_set<const VariableSymbol*>());
 
         const NominalType* function_owner = nullptr;
@@ -1289,6 +1402,14 @@ export class SemanticChecker : public Visitor<void> {
 
         StateGuard closure_guard(active_closure, &node);
         StateGuard closure_scope_guard(active_closure_scope, sema.env.current_scope);
+        StateGuard return_guard(return_type,
+            target_function_type != nullptr ? target_function_type->return_type : nullptr);
+        StateGuard target_guard(target_type, return_type);
+        const auto declared = node.declares_errors
+            ? sema.errors.declarations(node.errors, *this, resolver, context.diagnostics)
+            : target_function_type != nullptr ? target_function_type->errors : std::vector<const Type*>();
+        StateGuard error_guard(sema.errors.state, Errors::State(declared,
+            !node.declares_errors && target_function_type == nullptr));
 
         auto parameter_types = builder.build_parameter_types(node.parameters, target_function_type);
         for (std::size_t index = 0; index < parameter_types.size(); ++index) {
@@ -1309,14 +1430,20 @@ export class SemanticChecker : public Visitor<void> {
 
         visit(*node.body);
 
-        const Type* return_type = node.body->type;
-        if (return_type == nullptr) {
-            return_type = sema.primitives.entries.at("void");
+        if (return_type != nullptr) {
+            if (!compatibility.accepts(return_type, node.body->type)) {
+                context.diagnostics.add_error(node.span, "closure return type mismatch: expected '" +
+                    return_type->to_string() + "', got '" + node.body->type->to_string() + "'");
+            }
+        } else {
+            return_type = node.body->type != nullptr
+                ? node.body->type : sema.primitives.entries.at("void");
         }
 
         const auto* closure_type =
             sema.types.create<FunctionType>("", return_type, std::move(parameter_types),
-                                            std::vector<GenericParameterType>{}, false);
+                std::vector<GenericParameterType>{}, false, sema.errors.state.inferred
+                    ? ErrorSet::normalize(sema.errors.state.escaped) : declared);
 
         node.type = closure_type;
 

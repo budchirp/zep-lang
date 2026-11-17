@@ -2,6 +2,7 @@ module;
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -102,7 +103,7 @@ export class Specializations {
         pending.clear();
     }
 
-    SpecializationResult get_or_create(std::variant<const Node*, const Type*> definition,
+    std::optional<SpecializationResult> get_or_create(std::variant<const Node*, const Type*> definition,
                                   const std::string& name,
                                   const std::vector<GenericBinding>& arguments) {
         SpecializationKey key(definition, arguments);
@@ -121,11 +122,17 @@ export class Specializations {
         }
 
         auto full = Mangler::mangle(base, arguments);
-        specializations.emplace(std::move(key), full);
-        return SpecializationResult(std::move(full), false);
+
+        if (base.empty() || !full.has_value()) {
+            return std::nullopt;
+        }
+
+        specializations.emplace(std::move(key), *full);
+
+        return SpecializationResult(std::move(*full), false);
     }
 
-    SpecializationResult lifecycle(const FunctionSymbol& function, const NominalType& owner,
+    std::optional<SpecializationResult> lifecycle(const FunctionSymbol& function, const NominalType& owner,
                                const FunctionType* signature) {
         const auto* declaration = get_function(&function);
 

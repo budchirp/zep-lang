@@ -489,11 +489,17 @@ export class Completer {
         result.is_field_list = false;
         result.is_argument_list = true;
         const auto size_builtin = callee_start > 0 && content[callee_start - 1] == '#' && result.callee == "sizeof";
-        result.type_only = size_builtin || result.is_cast;
+        const auto error_attribute = callee_start > 0 && content[callee_start - 1] == '@' && result.callee == "throws";
+        result.type_only = size_builtin || error_attribute || result.is_cast;
 
-        if (size_builtin) {
+        if (size_builtin || error_attribute) {
             result.type_start = open_parenthesis + 1;
         }
+
+        if (error_attribute) {
+            result.callee = "@throws";
+        }
+
         result.call = Position(1, 1);
 
         for (auto index = std::size_t{0}; index < open_parenthesis; ++index) {
@@ -505,7 +511,7 @@ export class Completer {
             }
         }
 
-        result.is_argument_list = !size_builtin && scan_arguments(result, content.substr(open_parenthesis + 1,
+        result.is_argument_list = !size_builtin && !error_attribute && scan_arguments(result, content.substr(open_parenthesis + 1,
                                                                   cursor_offset - open_parenthesis - 1));
 
         return result;
@@ -1098,6 +1104,20 @@ export class Completer {
         items.reserve(128);
         std::unordered_set<std::string> seen;
 
+        auto header = content.substr(0, offset(content, position) - context.prefix.size());
+
+        while (!header.empty() && std::isspace(static_cast<unsigned char>(header.back())) != 0) {
+            header.remove_suffix(1);
+        }
+
+        if (header.ends_with('@')) {
+            if (std::string_view("throws").starts_with(context.prefix)) {
+                items.emplace_back("throws", CompletionKind::Type::Keyword, "checked error types");
+            }
+
+            return finish(std::move(items), context, position, content);
+        }
+
         if (!context.generic.empty() && scope != nullptr) {
             const std::vector<GenericParameterType>* parameters = nullptr;
 
@@ -1204,6 +1224,20 @@ export class Completer {
         }
 
         if (context.type_only) {
+            if (context.callee == "@throws" && context.generic.empty()) {
+                if (scope != nullptr && sema != nullptr && sema->errors.throwable != nullptr) {
+                    std::erase_if(items, [scope, sema](const Completion& item) {
+                        const auto* symbol = scope->lookup_type(item.label);
+                        const auto* structure = symbol != nullptr && symbol->type != nullptr
+                            ? symbol->type->as<StructType>() : nullptr;
+
+                        return structure == nullptr || !structure->implements(sema->errors.throwable);
+                    });
+                }
+
+                return finish(std::move(items), context, position, content);
+            }
+
             if (std::string_view("move").starts_with(context.prefix) && seen.insert("move").second) {
                 items.emplace_back("move", CompletionKind::Type::Keyword, "move reference", Span(), "move ");
             }
@@ -1227,12 +1261,6 @@ export class Completer {
             if (builtin_name.starts_with(context.prefix) && seen.insert(builtin_name).second) {
                 items.emplace_back(builtin_name, CompletionKind::Type::Function, "builtin");
             }
-        }
-
-        auto header = content.substr(0, offset(content, position) - context.prefix.size());
-
-        while (!header.empty() && std::isspace(static_cast<unsigned char>(header.back())) != 0) {
-            header.remove_suffix(1);
         }
 
         const auto function = header.rfind("fn ");

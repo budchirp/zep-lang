@@ -19,12 +19,15 @@
 | `const` | Compile-time constant / const function qualifier (`fn f() const -> T`) |
 | `mut` | Mutable binding (`var mut`), pointer (`*mut`), or method receiver qualifier (`fn m() mut -> T`) |
 | `return` | Return statement |
+| `try` | Explicit checked-error propagation or protected block |
+| `catch` | Typed checked-error handlers |
+| `throw` | Raise an owned checked error |
 | `defer` | Deferred statement, runs at scope exit |
 | `do` | Block expression (`do { ... }`) |
 | `if` / `else` | Conditional expression |
 | `when` | Multi-branch conditional expression |
 | `while` | Boolean loop statement |
-| `for` / `in` | C-style and array range loop statements |
+| `for` | C-style loop statements |
 | `extern` | FFI declaration |
 | `public` | Visibility modifier (exported) |
 | `private` | Visibility modifier (module-local, default) |
@@ -40,6 +43,7 @@
 | Precedence | Operators | Result Type |
 |------------|-----------|-------------|
 | Assignment | `=` | Target type |
+| Catch | `catch` | Success type of the protected expression |
 | Logical Or | `\|\|` | `boolean` |
 | Logical And | `&&` | `boolean` |
 | Equality | `==` `!=` | `boolean` |
@@ -516,11 +520,13 @@ The standard I/O module exports side-effecting `print` and `eprint` functions. `
 provides the `panic` function, while `std.io.format` provides `format`, `FormatArguments`, and
 `FormatError`. Formatting uses sequential `{}` placeholders, `{{` and `}}` for literal braces, and
 a concrete argument container that accepts strings, integers, floating-point values, booleans, and
-characters. Argument containers own their text values. `format` returns a `Result` for missing or
-extra arguments, unmatched braces, and numeric conversion failures. It requires an explicit argument
+characters. Argument containers own their text values. `format` throws `FormatError` for missing or
+extra arguments and unmatched braces. Floating-point argument conversion throws `ConversionError`
+when the argument is added. Formatting requires an explicit argument
 container. `print(value)` and `eprint(value)` write plain text, including literal braces;
 `print(pattern, arguments)` and `eprint(pattern, arguments)` format it. Both forms return
-`Result<i64, PrintError>`. Patterns and text accept `cstr`, `String`, and `StringView`; bounded forms
+the written byte count and declare `IoError`; formatted forms additionally declare `FormatError`.
+Patterns and text accept `cstr`, `String`, and `StringView`; bounded forms
 preserve embedded zero bytes. Panic writes directly to standard error without formatting or
 allocation, with its low-level write loop inline in `panic`.
 
@@ -534,8 +540,8 @@ and resource handles are move-only. `Memory::move(box).into_inner()` extracts th
 `Box::from_raw` adopts compatible allocated storage; `into_raw()` transfers it to the caller.
 Vectors destroy removed elements and move initialized elements during growth. `truncate()` destroys
 the removed tail; `resize()` copies a fill value into newly initialized elements. Public `reserve()`,
-`resize()`, `truncate()`, and string `repeat()` return results for invalid sizes and overflow.
-`Vector::with_capacity()` replaces the capacity constructor and returns a result.
+`resize()`, `truncate()`, and string `repeat()` throw checked errors for invalid sizes and overflow.
+`Vector::with_capacity()` replaces the capacity constructor and declares `CapacityError`.
 `Map<K, V>` stores
 pairs in one vector and uses its supplied equality function for linear lookup; it is not a hash map.
 Map keys and algorithm inputs use references; comparison callbacks also receive references.
@@ -543,11 +549,11 @@ Map keys and algorithm inputs use references; comparison callbacks also receive 
 String/view arguments and formatting containers use references, for example `text.append(view)`
 and `format("{}", arguments)`. Construct C-string copies with `String(value)`; numeric conversions
 use `String::from(value)`. Integer conversion uses one stack buffer and one owned allocation;
-floating-point conversion returns `Result<String, ConversionError>`. Formatting arguments store owned
-text or a conversion error when added; formatting reports errors with their argument index.
-`arguments.append_to(index, output)` appends a stored argument directly and returns a result.
+floating-point conversion returns `String` and declares `ConversionError`. Formatting arguments store
+validated owned text. `FormatError` carries a `FormatFailure` reason and an index.
+`arguments.append_to(index, output)` appends a stored argument directly and declares `FormatError`.
 Generic calls use their arguments and expected result type for inference:
-`var values: Vector<String> = Vector()` and `return Result::Ok { value: value }`.
+`var values: Vector<String> = Vector()` and `return Option::Some { value: value }`.
 An unconstrained local factory call still needs a type annotation. Typed argument bindings take
 precedence over result context.
 
@@ -563,18 +569,17 @@ Console, file, socket, HTTP, and process code reuse these operations.
 File byte reads return `Vector<u8>` and stream until EOF without requiring a
 seekable input. `Directory::open` supports incremental `next()` reads; `Directory::list` collects
 owned names. Directory creation lives on `Directory::create` and `create_all`; existence checks live
-on `Path::exists`. `IoError` has named OS error values and preserves unknown numeric codes through
-its backing value. `FileError` and `ProcessError` are payload enums identifying the failed operation
+on `Path::exists`. `IoError.value` preserves the OS error code, including unknown values; `IoCode`
+defines named codes. `FileError` and `ProcessError` are throwable structs identifying the failed operation
 and its I/O error. Typed path and command overloads reject embedded zero bytes at the C boundary.
 `std.io.console.StandardFile` borrows standard output/error descriptors without closing them.
 `Process::capture` reads through a borrowed `File` and uses the pipe owner to close and wait. It
 preserves binary output. Process exit codes,
 including nonzero codes, are successful operation results; start/read/wait failures use `ProcessError`.
 
-Operational failures use `Result`, absence uses `Option`, and success-only results use `Result<void, E>`.
-`Result::Ok` carries no payload when its success type is `void`. Generic void enum fields have no storage;
-supplied void initializers still execute. Void callback parameters have no runtime argument, so
-mapping a void success invokes a no-argument callback. Void unwrap operations return `void`.
+Operational failures use checked `@throws` declarations, absence uses `Option`, and success-only
+functions return `void`. Generic void enum fields have no storage; supplied void initializers still
+execute. Void callback parameters have no runtime argument and adapt to no-argument callbacks.
 Allocation failure and explicit failed unwrapping panic. File and standard-output writes handle
 partial writes and interrupted operations. HTTP clients accept an explicit IPv4 connection address
 separately from the Host header. Servers expose `serve_one()` and a looping `serve(on_start)`.
@@ -583,15 +588,18 @@ framing. Headers are limited to 64 KiB and bodies to 8 MiB. DNS, TLS, chunked tr
 connections are unsupported. Prioritized language work is tracked in [TODO.md](TODO.md).
 
 ```zep
-var path = String("output.bin")
-var mut file = File::open(path, FileMode::Write).unwrap()
-file.write(StringView::from_cstr("hello")).unwrap()
-file.close().unwrap()
+@throws(FileError, IoError, FormatError)
+fn save() -> void {
+    var path = String("output.bin")
+    var mut file = try File::open(path, FileMode::Write)
+    try file.write(StringView::from_cstr("hello"))
+    try file.close()
 
-var mut arguments = FormatArguments()
-arguments.add(42)
-var text = format(String("value: {}"), arguments).unwrap()
-print(text).unwrap()
+    var mut arguments = FormatArguments()
+    arguments.add(42)
+    var text = try format(String("value: {}"), arguments)
+    try print(text)
+}
 ```
 
 ## Expressions
@@ -782,38 +790,6 @@ resource. Construction and assignment select a move operation from that referenc
 remains alive and destructible. Compiler checking and lowering use reference types and lifecycle
 plans rather than recognizing the move helper's name.
 
-### Inline Assembly
-
-Named operands exchange integers and pointers with target assembly:
-
-```zep
-var mut total: i64 = 20
-asm {
-    "addq {rhs}, {sum}"
-
-    in(rhs, "r", 22 as i64)
-    inout(sum, "r", total)
-
-    clobber("flags")
-}
-```
-
-`asm` is a reserved keyword introducing a `void` block expression. One or more quoted instruction
-templates appear first and are joined with newlines. Operand, clobber, and option declarations follow.
-Semicolons between entries are optional. The former `#asm(...)` syntax is rejected with a migration diagnostic.
-
-`in`, `out`, and `inout` declare named operands. Outputs require mutable destinations. `r` requests
-a general register, `i` requests an immediate input, and register names such as `rax` request a
-fixed register. Multiple outputs write to their destinations; the expression returns `void`.
-Inputs and destination addresses are evaluated once. Placeholders use `{name}`; doubled braces
-insert literal braces. Literal dollar signs are escaped for LLVM automatically.
-
-Assembly is side-effecting and clobbers memory by default. `options("nomem")` promises no memory
-access; `options("pure", "nomem")` additionally permits removal of unused computations and requires
-an output. `options("att")` is the default x86 dialect; `options("intel")` selects Intel syntax.
-List modified registers and flags with `clobber`. Named register operands initially target Linux
-x86_64. Branches into language code, unwinding, and unbalanced stack manipulation are unsupported.
-
 ## Generics
 
 ```zep
@@ -832,7 +808,7 @@ nested generic calls; the constraint does not become the runtime type.
 
 Typed arguments determine numeric generic bindings before default literal types. Numeric literals
 can adopt the expected result's width within their numeric family. Instantiated receiver parameters
-also provide context for arguments such as `Result::Ok { value: text }`.
+also provide context for arguments such as `Option::Some { value: text }`.
 
 Generic instantiation: `identity<i32>(42)`, `Container<i32> { value: 42 }`
 
@@ -854,6 +830,51 @@ function types, and arguments of matching nominal declarations. Repeated occurre
 must infer the same type; there is no common numeric type inference. Constraints are checked after
 inference. Unresolved parameters require explicit generic arguments. Const-parameter inference,
 partial `_` arguments, and expected-type-driven overload selection are not supported.
+
+## Checked Errors
+
+Checked errors are concrete structs implementing `std.core.error.Throwable`. The standard
+`Error` and `Exception` structs implement this marker interface and may be used as bases.
+Enums, ordinary structs, and interface values cannot be thrown. Implementing an unrelated
+interface with the same name does not qualify a type.
+
+`Throwable` is a marker interface. Enums may describe reasons inside a throwable struct;
+for example, `MathError.reason` holds a `MathFailure` value. The enum itself is not throwable.
+
+```zep
+import std.core.error.Error
+
+struct ReadError : Error {
+    public:
+        var code: i32
+}
+
+@throws(ReadError)
+fn read() -> i32 {
+    throw ReadError { code: 5 }
+}
+
+fn fallback() -> i32 {
+    return read() catch { error: ReadError -> error.code, }
+}
+```
+
+Every fallible expression requires `try`, `catch`, or a surrounding protected `try` block.
+`@throws` declares escaping error types; it does not implicitly propagate calls. Handler
+arms match declared concrete error types. `try expression` propagates unhandled errors to
+an enclosing handler or the function's declared error boundary. Errors raised by a handler
+are handled outside that catch block.
+
+Function and callback signatures include normalized error sets. Error-list order does not
+matter. Copy/move special members, destructors, entry points, named tests, and C ABI functions
+cannot propagate checked errors. Panic and allocation failure remain outside this mechanism.
+
+Fallible language functions return a status code internally: zero selects success, and a
+positive code selects a type in their canonical error set. Hidden pointers carry success
+and error storage; `void` and `never` omit success storage. Nonthrowing functions and C ABI
+functions retain their existing calling conventions. Propagation transfers error ownership
+and runs scope cleanup without platform unwinding. A failed replacement leaves its destination
+unchanged, and a failed placement initializer leaves raw storage uninitialized.
 
 ## Function Overloading
 
@@ -878,7 +899,7 @@ diagnosed; references do not introduce a borrow checker.
 Move constructors use `fn Type(source: move Type) -> Type`. Std's `move(value)` explicitly requests a
 move. Moving leaves the source alive and destructible; resource implementations reset their source
 to an empty state. Move-qualified methods use `fn method() move -> ReturnType` and are called on a
-temporary or an explicit move, for example `move(result).unwrap()`.
+temporary or an explicit move, for example `Memory::move(owner).into_inner()`.
 
 Assignment special members use `fn operator=(source: &Type) mut -> &mut Type` and
 `fn operator=(source: move Type) mut -> &mut Type`. `= default` requests generated member operations;
@@ -1025,8 +1046,22 @@ and their shared `TemporaryNames` generator. Names are internal and do not chang
 symbol identity. Lowering implementations live inside the `Lowerer` class in `lowerer.cppm`.
 
 LLVM's `values.cppm` groups value scopes, places, casts, ABI conversions, and aggregate values.
-Interface dispatch lives beside call emission. Assembly, control flow, declarations, types, target
+Interface dispatch lives beside call emission. Control flow, declarations, types, target
 setup, and function traversal retain their own modules.
+
+The semantic `Errors` service owns throwable validation, handling boundaries, and resolved failure
+targets outside source nodes. Its implementation and shared error-set policies live under `errors/`.
+Type representation partitions live together under `types/`; lifecycle plans and selection live
+under `lifecycles/`. Public module namespaces remain unchanged. `types.errors` owns error-set ordering
+and storage layout. Lowering's `Temporaries` converts checked decisions into cleanup edges, and LLVM's
+`errors.cppm` emits status branches and handler storage. Direct, indirect, interface, and closure
+calls share this error convention. LLVM type caching uses semantic type identity rather than
+display names.
+
+Compiler failures use source diagnostics and explicit optional/expected results. Parser recovery
+discards failed statements at statement boundaries. Lowering stops before emitting failed modules;
+backend failures return to the build driver for diagnostic/logger rendering. These paths do not
+raise C++ exceptions to signal source or pipeline errors.
 
 Function symbols record a variant of `CallableKind`, `MethodKind`, and `ConstructorKind` rather
 than one mixed enum or a separate extension flag. Explicit deletion
@@ -1059,13 +1094,8 @@ semantic type symbols to describe backend representations. Control-flow implemen
 `SemanticChecker` and `Lowerer` in their `.cppm` modules.
 
 LLVM place emission owns address calculation and entry-block allocation. Value conversions own
-scalar casts and C ABI representation changes. Calls, assembly, aggregate initialization, and control
+scalar casts and C ABI representation changes. Calls, aggregate initialization, and control
 flow receive their dependencies explicitly and reuse the HIR visitor for recursive expression emission.
-
-Assembly has dedicated AST and HIR expressions. The semantic assembly module validates operands
-and produces LLVM constraints and translated placeholders. The LLVM assembly module evaluates
-operand expressions and destination addresses once, emits the validated instruction block, and
-stores explicit outputs. Assembly does not use builtin or intrinsic call targets.
 
 ### Language Server Protocol
 

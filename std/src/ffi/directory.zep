@@ -2,8 +2,8 @@ import std.ffi.c_opendir
 import std.ffi.c_readdir
 import std.ffi.c_closedir
 import std.ffi.zep_errno
-import std.core.result.Result
 import std.io.error.IoError
+import std.io.error.IoCode
 
 public struct DirectoryHandle {
     private:
@@ -19,45 +19,48 @@ public struct DirectoryHandle {
             return DirectoryHandle { handle: handle }
         }
 
-        static fn open(path: cstr) -> Result<DirectoryHandle, IoError> {
+        @throws(IoError)
+        static fn open(path: cstr) -> DirectoryHandle {
             var handle = c_opendir(path)
 
             return when (handle) {
-                null -> Result::Error { error: *zep_errno() as IoError },
-                else -> Result::Ok { value: DirectoryHandle { handle: handle } },
+                null -> throw IoError { value: *zep_errno() },
+                else -> DirectoryHandle { handle: handle },
             }
         }
 
-        fn next() mut -> Result<*mut void, IoError> {
+        @throws(IoError)
+        fn next() mut -> *mut void {
             if (handle == null) {
-                return Result::Error { error: IoError::Closed }
+                throw IoError { value: IoCode::Closed.value }
             };
 
             *zep_errno() = 0
             var entry = c_readdir(handle)
 
             if (entry != null) {
-                return Result::Ok { value: entry }
+                return entry
             }
 
             return when (*zep_errno()) {
-                0 -> Result::Ok { value: null },
-                else -> Result::Error { error: *zep_errno() as IoError },
+                0 -> null,
+                else -> throw IoError { value: *zep_errno() },
             }
         }
 
-        fn close() mut -> Result<void, IoError> {
+        @throws(IoError)
+        fn close() mut -> void {
             var storage = handle
             handle = null
 
-            return when {
-                (storage == null || c_closedir(storage) == 0) -> Result::Ok,
-                else -> Result::Error { error: *zep_errno() as IoError },
+            when {
+                (storage == null || c_closedir(storage) == 0) -> {},
+                else -> throw IoError { value: *zep_errno() },
             }
         }
 
         fn ~DirectoryHandle() -> void {
-            self->close()
+            self->close() catch { error: IoError -> {}, }
         }
 
         @os("linux")

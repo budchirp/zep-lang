@@ -3,45 +3,10 @@ module;
 #include <cstdint>
 #include <optional>
 #include <string>
-#include <utility>
-#include <vector>
 
 export module zep.frontend.kind;
 
 import zep.frontend.token;
-import zep.common.source.span;
-
-export class AssemblyOperand {
-  public:
-    class Kind {
-      public:
-        enum class Type : std::uint8_t { Input, Output, InputOutput };
-    };
-
-    Kind::Type kind;
-    std::string name;
-    std::string constraint;
-    std::size_t argument;
-    Span span;
-
-    AssemblyOperand(Kind::Type kind, std::string name, std::string constraint, std::size_t argument,
-                    Span span)
-        : kind(kind), name(std::move(name)), constraint(std::move(constraint)), argument(argument),
-          span(span) {}
-};
-
-export class InlineAssembly {
-  public:
-    std::vector<AssemblyOperand> operands;
-    std::vector<std::string> clobbers;
-    std::vector<std::string> options;
-    std::string text;
-    std::string constraints;
-    bool pure;
-    bool intel;
-
-    InlineAssembly() : operands(), clobbers(), options(), text(), constraints(), pure(false), intel(false) {}
-};
 
 export class Linkage {
   public:

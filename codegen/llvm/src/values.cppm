@@ -59,6 +59,20 @@ export class Places {
            HIRVisitor<llvm::Value*>& expressions)
         : builder(builder), types(types), scope(scope), expressions(expressions) {}
 
+    llvm::Value* load(llvm::Type* type, llvm::Value* storage) {
+        if (type->isEmptyTy()) {
+            return llvm::Constant::getNullValue(type);
+        }
+
+        return builder.CreateLoad(type, storage);
+    }
+
+    void store(llvm::Value* value, llvm::Value* storage) {
+        if (!value->getType()->isEmptyTy()) {
+            builder.CreateStore(value, storage);
+        }
+    }
+
     llvm::Value* allocate(llvm::Type* type) {
         auto& entry = builder.GetInsertBlock()->getParent()->getEntryBlock();
         llvm::IRBuilder<> allocations(&entry, entry.begin());
@@ -113,7 +127,7 @@ export class Places {
                     return nullptr;
                 }
 
-                builder.CreateStore(value, storage);
+                store(value, storage);
             }
 
             const auto field = structure != nullptr ? structure->field_index(member->member)
@@ -248,9 +262,9 @@ export class Conversions {
         }
 
         auto* storage = places.allocate(native);
-        builder.CreateStore(value, storage);
+        places.store(value, storage);
 
-        return builder.CreateLoad(form == Form::Type::External ? external : native, storage);
+        return places.load(form == Form::Type::External ? external : native, storage);
     }
 };
 
@@ -274,6 +288,10 @@ export class Aggregates {
         for (const auto& field : expression.fields) {
             auto* value = expressions.visit_expression(*field.value);
 
+            if (builder.GetInsertBlock()->hasTerminator()) {
+                return nullptr;
+            }
+
             if (field.value->type->is<VoidType>()) {
                 continue;
             }
@@ -288,11 +306,11 @@ export class Aggregates {
                 auto* destination = builder.CreateStructGEP(
                     type, storage, static_cast<unsigned>(*index));
 
-                builder.CreateStore(value, destination);
+                places.store(value, destination);
             }
         }
 
-        return builder.CreateLoad(type, storage);
+        return places.load(type, storage);
     }
 
     llvm::Value* emit(HIREnumVariantExpression& expression) {
@@ -304,14 +322,18 @@ export class Aggregates {
 
         auto* type = types.lower(enumeration);
         auto* storage = places.allocate(type);
-        builder.CreateStore(llvm::Constant::getNullValue(type), storage);
+        places.store(llvm::Constant::getNullValue(type), storage);
 
         auto* tag = builder.CreateStructGEP(type, storage, 0);
         auto* value = llvm::ConstantInt::get(builder.getInt32Ty(), expression.variant_index);
-        builder.CreateStore(value, tag);
+        places.store(value, tag);
 
         for (const auto& field : expression.fields) {
             auto* value = expressions.visit_expression(*field.value);
+
+            if (builder.GetInsertBlock()->hasTerminator()) {
+                return nullptr;
+            }
 
             if (field.value->type->is<VoidType>()) {
                 continue;
@@ -327,11 +349,11 @@ export class Aggregates {
                 auto* destination = builder.CreateStructGEP(
                     type, storage, static_cast<unsigned>(*index));
 
-                builder.CreateStore(value, destination);
+                places.store(value, destination);
             }
         }
 
-        return builder.CreateLoad(type, storage);
+        return places.load(type, storage);
     }
 
     llvm::Value* emit(HIRArrayLiteralExpression& expression) {
@@ -354,9 +376,9 @@ export class Aggregates {
 
             auto* offset = llvm::ConstantInt::get(builder.getInt64Ty(), index);
             auto* destination = builder.CreateGEP(type, storage, {zero, offset});
-            builder.CreateStore(value, destination);
+            places.store(value, destination);
         }
 
-        return builder.CreateLoad(type, storage);
+        return places.load(type, storage);
     }
 };

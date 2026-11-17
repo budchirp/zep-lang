@@ -1,6 +1,9 @@
 import std.memory.Memory
 import std.text.String
 import std.text.StringView
+import std.text.string.ParseError
+import std.text.string.ParseFailure
+import std.collections.vector.CapacityError
 import std.testing.Test
 
 test "strings preserve aliased and binary storage through copies and moves" {
@@ -22,7 +25,7 @@ test "strings preserve aliased and binary storage through copies and moves" {
 
     Test::expect(moved.length() == 6 && text.equals("reused"))
 
-    var repeated = copied.repeat(3).unwrap()
+    var repeated = copied.repeat(3) catch { error: CapacityError -> Test::fail("repeat failed"), }
 
     Test::expect(repeated.length() == 9 && repeated.get(7).unwrap() == 0 as char)
     Test::expect(copied.replace("", "x").equals(copied))
@@ -38,7 +41,23 @@ test "strings preserve aliased and binary storage through copies and moves" {
 test "numeric conversion preserves boundaries and rejects overflow" {
     Test::expect(String::from(-9223372036854775807 as i64 - 1).equals("-9223372036854775808") &&
         String::from(18446744073709551615 as u64).equals("18446744073709551615"))
-    Test::expect(String("9223372036854775808").parse_i64().is_error() &&
-        String("18446744073709551616").parse_u64().is_error() &&
-        String(" -1").parse_u64().is_error() && String("1e9999").parse_f64().is_error())
+    try {
+        String("9223372036854775808").parse_i64()
+        Test::fail("signed overflow was accepted")
+    } catch { error: ParseError -> { Test::expect(error.reason == ParseFailure::OutOfRange) }, }
+
+    try {
+        String("18446744073709551616").parse_u64()
+        Test::fail("unsigned overflow was accepted")
+    } catch { error: ParseError -> { Test::expect(error.reason == ParseFailure::OutOfRange) }, }
+
+    try {
+        String(" -1").parse_u64()
+        Test::fail("negative unsigned value was accepted")
+    } catch { error: ParseError -> { Test::expect(error.reason == ParseFailure::OutOfRange) }, }
+
+    try {
+        String("1e9999").parse_f64()
+        Test::fail("floating point overflow was accepted")
+    } catch { error: ParseError -> { Test::expect(error.reason == ParseFailure::OutOfRange) }, }
 }

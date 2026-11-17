@@ -5,8 +5,8 @@ import std.ffi.c_write
 import std.ffi.c_send
 import std.ffi.c_lseek
 import std.ffi.zep_errno
-import std.core.result.Result
 import std.io.error.IoError
+import std.io.error.IoCode
 
 enum Transfer : i32 {
     Read = 0
@@ -34,13 +34,14 @@ public struct Handle {
             return 0
         }
 
-        fn transfer(data: *mut void, length: i64, operation: Transfer) -> Result<i64, IoError> {
+        @throws(IoError)
+        fn transfer(data: *mut void, length: i64, operation: Transfer) -> i64 {
             if (descriptor < 0) {
-                return Result::Error { error: IoError::Closed }
+                throw IoError { value: IoCode::Closed.value }
             }
 
             if (length < 0 || (data == null && length != 0)) {
-                return Result::Error { error: IoError::InvalidInput }
+                throw IoError { value: IoCode::InvalidInput.value }
             }
 
             while (true) {
@@ -53,11 +54,11 @@ public struct Handle {
                 }
 
                 if (count >= 0) {
-                    return Result::Ok { value: count }
+                    return count
                 }
 
-                if (*zep_errno() != IoError::Interrupted.value) {
-                    return Result::Error { error: *zep_errno() as IoError }
+                if (*zep_errno() != IoCode::Interrupted.value) {
+                    throw IoError { value: *zep_errno() }
                 }
             }
         }
@@ -76,12 +77,13 @@ public struct Handle {
             return Handle(descriptor, source.kind)
         }
 
-        static fn open(path: cstr, flags: i32) -> Result<Handle, IoError> {
+        @throws(IoError)
+        static fn open(path: cstr, flags: i32) -> Handle {
             var descriptor = c_open(path, flags, 438 as u32)
 
             return when {
-                (descriptor < 0) -> Result::Error { error: *zep_errno() as IoError },
-                else -> Result::Ok { value: Handle(descriptor, HandleKind::Owned) },
+                (descriptor < 0) -> throw IoError { value: *zep_errno() },
+                else -> Handle(descriptor, HandleKind::Owned),
             }
         }
 
@@ -89,34 +91,38 @@ public struct Handle {
             return descriptor
         }
 
-        fn read(data: *mut void, length: i64) -> Result<i64, IoError> {
-            return self->transfer(data, length, Transfer::Read)
+        @throws(IoError)
+        fn read(data: *mut void, length: i64) -> i64 {
+            return try self->transfer(data, length, Transfer::Read)
         }
 
-        fn write(data: *void, length: i64) -> Result<i64, IoError> {
-            return self->transfer(data as *mut void, length, Transfer::Write)
+        @throws(IoError)
+        fn write(data: *void, length: i64) -> i64 {
+            return try self->transfer(data as *mut void, length, Transfer::Write)
         }
 
-        fn seek(offset: i64, origin: i32) -> Result<i64, IoError> {
+        @throws(IoError)
+        fn seek(offset: i64, origin: i32) -> i64 {
             var position = c_lseek(descriptor, offset, origin)
 
             return when {
-                (position < 0) -> Result::Error { error: *zep_errno() as IoError },
-                else -> Result::Ok { value: position },
+                (position < 0) -> throw IoError { value: *zep_errno() },
+                else -> position,
             }
         }
 
-        fn close() mut -> Result<void, IoError> {
+        @throws(IoError)
+        fn close() mut -> void {
             var descriptor = self->descriptor
             self->descriptor = -1
 
-            return when {
-                (kind == HandleKind::Borrowed || descriptor < 0 || c_close(descriptor) == 0) -> Result::Ok,
-                else -> Result::Error { error: *zep_errno() as IoError },
+            when {
+                (kind == HandleKind::Borrowed || descriptor < 0 || c_close(descriptor) == 0) -> {},
+                else -> throw IoError { value: *zep_errno() },
             }
         }
 
         fn ~Handle() -> void {
-            self->close()
+            self->close() catch { error: IoError -> {}, }
         }
 }

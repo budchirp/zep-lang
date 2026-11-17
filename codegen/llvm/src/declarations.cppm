@@ -24,7 +24,7 @@ import zep.hir.program;
 export class Declarations {
   private:
     llvm::Module& module;
-    Types& type_lowerer;
+    Types& types;
     ValueScope& scope;
 
     static llvm::GlobalValue::LinkageTypes llvm_linkage(Linkage::Type linkage) {
@@ -41,9 +41,9 @@ export class Declarations {
     }
 
   public:
-    explicit Declarations(llvm::Module& module, Types& type_lowerer,
+    explicit Declarations(llvm::Module& module, Types& types,
                           ValueScope& scope)
-        : module(module), type_lowerer(type_lowerer), scope(scope) {}
+        : module(module), types(types), scope(scope) {}
 
     llvm::Function* declare_function(const std::string& name, const FunctionType* function_type,
                                      llvm::GlobalValue::LinkageTypes linkage,
@@ -52,7 +52,7 @@ export class Declarations {
             return nullptr;
         }
 
-        auto* llvm_function_type = type_lowerer.lower_function(function_type, abi);
+        auto* llvm_function_type = types.lower_function(function_type, abi);
         if (llvm_function_type == nullptr) {
             return nullptr;
         }
@@ -65,7 +65,7 @@ export class Declarations {
         }
 
         auto* function = llvm::Function::Create(llvm_function_type, linkage, name, module);
-        if (function_type->return_type->is<NeverType>()) {
+        if (function_type->return_type->is<NeverType>() && function_type->errors.empty()) {
             function->addFnAttr(llvm::Attribute::NoReturn);
         }
 
@@ -174,7 +174,7 @@ export class Declarations {
             return;
         }
 
-        auto* type = type_lowerer.lower(node.type);
+        auto* type = types.lower(node.type);
         if (type == nullptr) {
             return;
         }

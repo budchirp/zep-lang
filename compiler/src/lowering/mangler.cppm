@@ -2,7 +2,7 @@ module;
 
 #include <cstdint>
 #include <memory>
-#include <stdexcept>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -15,6 +15,7 @@ import zep.frontend.kind;
 import zep.frontend.sema.declaration.attribute;
 import zep.frontend.sema.symbols;
 import zep.frontend.sema.types;
+import zep.frontend.sema.types.errors;
 export class Mangler {
   private:
     static std::string encode_arguments(std::string result, const std::vector<GenericArgumentType>& arguments) {
@@ -26,7 +27,12 @@ export class Mangler {
 
         for (const auto& argument : arguments) {
             const auto encoded = encode(argument.binding());
-            result += std::to_string(encoded.size()) + "_" + encoded;
+
+            if (!encoded.has_value()) {
+                return {};
+            }
+
+            result += std::to_string(encoded->size()) + "_" + *encoded;
         }
 
         return result + "E";
@@ -54,15 +60,24 @@ export class Mangler {
             if (pointer->reference_kind != PointerType::ReferenceKind::Type::None) {
                 result = pointer->reference_kind == PointerType::ReferenceKind::Type::Move ? "M" : pointer->is_mutable ? "r" : "R";
             }
-            return result + encode(pointer->element);
+            const auto element = encode(pointer->element);
+
+            return element.empty() ? std::string() : result + element;
         }
         case Type::Kind::Type::Array: {
             const auto* array = type->as<ArrayType>();
+            const auto element = encode(array->element);
+
+            if (element.empty()) {
+                return {};
+            }
+
             if (const auto* concrete = std::get_if<ConcreteArrayExtent>(&array->extent);
                 concrete != nullptr) {
-                return "A" + std::to_string(concrete->value) + encode(array->element);
+                return "A" + std::to_string(concrete->value) + element;
             }
-            return "a" + encode(array->element);
+
+            return "a" + element;
         }
         case Type::Kind::Type::Named: {
             const auto* named = type->as<NamedType>();
@@ -82,12 +97,31 @@ export class Mangler {
         case Type::Kind::Type::Function: {
             const auto* function = type->as<FunctionType>();
             const auto result_type = encode(function->return_type);
+
+            if (result_type.empty()) {
+                return {};
+            }
+
             auto result = "F" + std::to_string(function->parameters.size()) + "_" +
                 (function->variadic ? "V" : "N") + std::to_string(result_type.size()) + "_" + result_type;
 
             for (const auto& parameter : function->parameters) {
                 const auto encoded = encode(parameter.type);
+
+                if (encoded.empty()) {
+                    return {};
+                }
+
                 result += std::to_string(encoded.size()) + "_" + encoded;
+            }
+
+            if (!function->errors.empty()) {
+                result += "X" + std::to_string(function->errors.size()) + "_";
+
+                for (const auto* error : function->errors) {
+                    const auto encoded = ErrorSet::key(error);
+                    result += std::to_string(encoded.size()) + "_" + encoded;
+                }
             }
 
             return result;
@@ -97,21 +131,23 @@ export class Mangler {
         }
     }
 
-    static std::string encode(const GenericBinding& binding) {
+    static std::optional<std::string> encode(const GenericBinding& binding) {
         if (const auto* type = std::get_if<TypeBinding>(&binding); type != nullptr) {
-            return encode(type->type);
+            auto encoded = encode(type->type);
+
+            return encoded.empty() ? std::nullopt : std::optional<std::string>(std::move(encoded));
         }
 
         const auto& value = std::get<ConstBinding>(binding).value;
         if (!value.has_value()) {
-            throw std::invalid_argument("cannot mangle a dependent const binding");
+            return std::nullopt;
         }
 
         return "c" + encode(value->type) + "_" + value->stable_encoding();
     }
 
-    static std::string mangle(const std::string& name,
-                              const std::vector<GenericBinding>& arguments) {
+    static std::optional<std::string> mangle(const std::string& name,
+                                            const std::vector<GenericBinding>& arguments) {
         if (arguments.empty()) {
             return name;
         }
@@ -123,7 +159,13 @@ export class Mangler {
                 result += "_";
             }
 
-            result += encode(arguments[index]);
+            const auto encoded = encode(arguments[index]);
+
+            if (!encoded.has_value() || encoded->empty()) {
+                return std::nullopt;
+            }
+
+            result += *encoded;
         }
 
         return result;
@@ -142,7 +184,13 @@ export class Mangler {
                 result += "_";
             }
 
-            result += encode(parameters[index].type);
+            const auto encoded = encode(parameters[index].type);
+
+            if (encoded.empty()) {
+                return {};
+            }
+
+            result += encoded;
         }
 
         return result;

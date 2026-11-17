@@ -494,6 +494,19 @@ export class TypeDumper {
             Logger::print_indent(depth + 1);
             Logger::print("variadic: ", (function->variadic ? "true" : "false"), "\n");
 
+            if (!function->errors.empty()) {
+                Logger::print_indent(depth + 1);
+                Logger::print("errors: [\n");
+
+                for (auto index = std::size_t{0}; index < function->errors.size(); ++index) {
+                    dump(function->errors[index], depth + 2, true, false);
+                    Logger::print(index + 1 < function->errors.size() ? ",\n" : "\n");
+                }
+
+                Logger::print_indent(depth + 1);
+                Logger::print("]\n");
+            }
+
             Logger::print_indent(depth);
             Logger::print(")");
 

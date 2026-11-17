@@ -6,7 +6,6 @@ module;
 #include <optional>
 #include <span>
 #include <string>
-#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -41,14 +40,6 @@ import zep.frontend.sema.lifecycle;
 
 export class Lowerer : public Visitor<HIRNode*> {
   private:
-    class LoweringFailure {
-      public:
-        Span span;
-        std::string message;
-
-        LoweringFailure(Span span, std::string message) : span(span), message(std::move(message)) {}
-    };
-
     SemaContext& sema;
     std::shared_ptr<HIRProgram> program;
 
@@ -68,24 +59,51 @@ export class Lowerer : public Visitor<HIRNode*> {
     bool consuming_block_tail = false;
 
     HIRCallExpression* make_call(CallExpression& node, std::unique_ptr<HIRCallTarget> target,
-                                 std::vector<HIRExpression*> arguments) {
+                                 std::vector<HIRExpression*> arguments,
+                                 std::vector<HIRStatement*> transfers = {}) {
         const auto* result = node.reference_result != nullptr ? node.reference_result : node.type;
-
-        return program->nodes.create<HIRCallExpression>(
+        const auto* direct = target->as<HIRDirectCallTarget>();
+        auto* call = program->nodes.create<HIRCallExpression>(
             node.span, std::move(target), std::move(arguments), lower_type(result, node.span));
+
+        if (direct == nullptr || direct->abi == Abi::Type::Language) {
+            call->transfers = std::move(transfers);
+        }
+
+        if (const auto decisions = sema.errors.targets.find(&node); decisions != sema.errors.targets.end()) {
+            call->failures.reserve(decisions->second.size());
+
+            for (const auto& failure : decisions->second) {
+                auto edge = temporaries.failure(
+                    lower_type(failure.type, node.span), failure.handler, node.span, diagnostics);
+
+                if (!edge.has_value()) {
+                    return nullptr;
+                }
+
+                call->failures.push_back(std::move(*edge));
+            }
+        }
+
+        return call;
     }
 
     HIRCallExpression* bind_call(CallExpression& node, HIRExpression* callee,
-                                 std::vector<HIRExpression*> arguments) {
+                                 std::vector<HIRExpression*> arguments,
+                                 std::vector<HIRStatement*> transfers = {}) {
         if (node.resolved_target == nullptr) {
-            throw LoweringFailure(node.span, "call has no resolved semantic target");
+            diagnostics.add_error(node.span, "call has no resolved semantic target");
+
+            return nullptr;
         }
 
         if (const auto* direct = node.resolved_target->as<DirectCallTarget>(); direct != nullptr) {
             const auto* identifier = callee != nullptr ? callee->as<HIRIdentifierExpression>() : nullptr;
 
             if (identifier == nullptr || identifier->name.empty()) {
-                throw LoweringFailure(node.span, "direct call has no lowered callable");
+                diagnostics.add_error(node.span, "direct call has no lowered callable");
+
+                return nullptr;
             }
 
             const auto* function = identifier->function_symbol != nullptr
@@ -94,7 +112,7 @@ export class Lowerer : public Visitor<HIRNode*> {
                 ? identifier->type->as<FunctionType>() : lower_function_type(direct->signature, node.span);
 
             return make_call(node, std::make_unique<HIRDirectCallTarget>(*function,
-                identifier->name, signature), std::move(arguments));
+                identifier->name, signature), std::move(arguments), std::move(transfers));
         }
 
         if (const auto* indirect = node.resolved_target->as<IndirectCallTarget>(); indirect != nullptr) {
@@ -105,16 +123,18 @@ export class Lowerer : public Visitor<HIRNode*> {
             const auto* signature = lower_function_type(indirect->function_type, node.span);
 
             return make_call(node, std::make_unique<HIRIndirectCallTarget>(callee, *signature),
-                              std::move(arguments));
+                              std::move(arguments), std::move(transfers));
         }
 
         if (const auto* dispatch = node.resolved_target->as<InterfaceCallTarget>(); dispatch != nullptr) {
             return make_call(node, std::make_unique<HIRInterfaceCallTarget>(
                 *dispatch->method_symbol, dispatch->slot, lower_function_type(dispatch->signature, node.span)),
-                std::move(arguments));
+                std::move(arguments), std::move(transfers));
         }
 
-        throw LoweringFailure(node.span, "call has no resolved semantic target");
+        diagnostics.add_error(node.span, "call has no resolved semantic target");
+
+        return nullptr;
     }
 
     HIRExpression* specialize_call(CallExpression& node, const std::string& name,
@@ -123,7 +143,9 @@ export class Lowerer : public Visitor<HIRNode*> {
                                    const std::vector<GenericBinding>& bindings) {
         for (const auto& binding : bindings) {
             if (!is_concrete_binding(binding)) {
-                throw LoweringFailure(node.span, "generic specialization requires concrete bindings");
+                diagnostics.add_error(node.span, "generic specialization requires concrete bindings");
+
+                return nullptr;
             }
         }
 
@@ -131,8 +153,14 @@ export class Lowerer : public Visitor<HIRNode*> {
             : std::variant<const Node*, const Type*>(signature);
         const auto instance = specializations.get_or_create(identity, name, bindings);
 
-        if (!instance.is_generated && definition != nullptr) {
-            auto* body = specialize(*definition, instance.name, bindings);
+        if (!instance.has_value()) {
+            diagnostics.add_error(node.span, "generic specialization requires concrete bindings");
+
+            return nullptr;
+        }
+
+        if (!instance->is_generated && definition != nullptr) {
+            auto* body = specialize(*definition, instance->name, bindings);
 
             if (body != nullptr) {
                 specializations.enqueue(body);
@@ -158,11 +186,11 @@ export class Lowerer : public Visitor<HIRNode*> {
             type = lower_type(signature, node.span);
         }
 
-        return program->nodes.create<HIRIdentifierExpression>(node.callee->span, instance.name, type);
+        return program->nodes.create<HIRIdentifierExpression>(node.callee->span, instance->name, type);
     }
 
     HIRCallExpression* lower_captured_call(CallExpression& node, ClosureExpression& closure) {
-        const auto* signature = closure.type != nullptr ? closure.type->as<FunctionType>() : nullptr;
+        const auto* signature = lower_function_type(closure.type, node.span);
 
         if (signature == nullptr || signature->parameters.size() != node.arguments.size()) {
             return nullptr;
@@ -174,6 +202,8 @@ export class Lowerer : public Visitor<HIRNode*> {
 
         std::vector<HIRExpression*> arguments;
         arguments.reserve(closure.captures.size() + node.arguments.size());
+        std::vector<HIRStatement*> transfers;
+        transfers.reserve(node.arguments.size());
 
         std::unordered_map<const VariableSymbol*, std::pair<std::string, const PointerType*>> captures;
         captures.reserve(closure.captures.size());
@@ -203,12 +233,14 @@ export class Lowerer : public Visitor<HIRNode*> {
 
         const auto* function_type = sema.types.create<FunctionType>(name,
             lower_type(signature->return_type, node.span), std::move(parameters),
-            std::vector<GenericParameterType>(), false);
+            std::vector<GenericParameterType>(), false, signature->errors);
         HIRBlockStatement* body = nullptr;
 
         {
             if (closure.body->scope == nullptr) {
-                throw LoweringFailure(closure.span, "closure has no checked scope");
+                diagnostics.add_error(closure.span, "closure has no checked scope");
+
+                return nullptr;
             }
 
             ScopeGuard scope(sema.env.current_scope, closure.body->scope->parent);
@@ -231,11 +263,11 @@ export class Lowerer : public Visitor<HIRNode*> {
                 return nullptr;
             }
 
-            arguments.push_back(value);
+            arguments.push_back(temporaries.capture(value, argument->span, &transfers));
         }
 
         return make_call(node, std::make_unique<HIRDirectCallTarget>(name, function_type),
-                          std::move(arguments));
+                          std::move(arguments), std::move(transfers));
     }
 
     HIRCallExpression* lower_call(CallExpression& node,
@@ -246,10 +278,14 @@ export class Lowerer : public Visitor<HIRNode*> {
         }
 
         if (node.resolved_target == nullptr) {
-            throw LoweringFailure(node.span, "call has no resolved semantic target");
+            diagnostics.add_error(node.span, "call has no resolved semantic target");
+
+            return nullptr;
         }
 
         std::vector<HIRExpression*> arguments;
+        std::vector<HIRStatement*> transfers;
+        transfers.reserve(node.arguments.size());
 
         if (bound.has_value()) {
             arguments = std::move(*bound);
@@ -257,14 +293,14 @@ export class Lowerer : public Visitor<HIRNode*> {
             arguments.reserve(node.arguments.size());
 
             for (const auto* argument : node.arguments) {
-                arguments.push_back(lower_expression(*argument->value));
+                arguments.push_back(temporaries.capture(lower_expression(*argument->value), argument->span, &transfers));
             }
         }
 
         const auto* target = node.resolved_target->as<DirectCallTarget>();
 
         if (node.resolved_target->as<InterfaceCallTarget>() != nullptr) {
-            return bind_call(node, nullptr, std::move(arguments));
+            return bind_call(node, nullptr, std::move(arguments), std::move(transfers));
         }
 
         const auto* function = target != nullptr ? target->function_symbol : nullptr;
@@ -277,7 +313,7 @@ export class Lowerer : public Visitor<HIRNode*> {
                     specializations.get_function(signature->name),
                     lower_generic_arguments(node.generic_arguments, node.span));
 
-            return bind_call(node, callee, std::move(arguments));
+            return bind_call(node, callee, std::move(arguments), std::move(transfers));
         }
 
         const auto* signature = function->signature();
@@ -305,7 +341,7 @@ export class Lowerer : public Visitor<HIRNode*> {
             auto* callee = specialize_call(
                 node, name, signature, specializations.get_function(function), bindings);
 
-            return bind_call(node, callee, std::move(arguments));
+            return bind_call(node, callee, std::move(arguments), std::move(transfers));
         }
 
         const auto* direct = node.resolved_target->as<DirectCallTarget>();
@@ -314,25 +350,39 @@ export class Lowerer : public Visitor<HIRNode*> {
 
         auto* callee = program->nodes.create<HIRIdentifierExpression>(node.callee->span, emitted, resolved);
 
-        return bind_call(node, callee, std::move(arguments));
+        return bind_call(node, callee, std::move(arguments), std::move(transfers));
     }
 
     HIRExpression* lower_expression(Expression& node) {
+        if (diagnostics.has_errors()) {
+            return nullptr;
+        }
+
         return static_cast<HIRExpression*>(visit_expression(node));
     }
 
-    Scope* checked_scope(Scope* scope, Span span) const {
+    bool check_scope(Scope* scope, Span span) const {
         if (scope == nullptr) {
-            throw LoweringFailure(span, "node has no checked semantic scope");
+            diagnostics.add_error(span, "node has no checked semantic scope");
+
+            return false;
         }
 
-        return scope;
+        return true;
     }
 
     HIRStatement* lower_statement(Statement& node) {
-        FullExpression expression(temporaries.current);
+        if (diagnostics.has_errors()) {
+            return nullptr;
+        }
+
+        FullExpression expression(temporaries.current, cleanup.scopes.size());
         StateGuard guard(temporaries.current, &expression);
         auto* statement = static_cast<HIRStatement*>(visit_statement(node));
+
+        if (diagnostics.has_errors()) {
+            return nullptr;
+        }
 
         if (expression.declarations.empty()) {
             return statement;
@@ -365,7 +415,7 @@ export class Lowerer : public Visitor<HIRNode*> {
     }
 
     HIRExpression* lower_condition(Expression& node) {
-        FullExpression expression(temporaries.current);
+        FullExpression expression(temporaries.current, cleanup.scopes.size());
         StateGuard guard(temporaries.current, &expression);
         auto* value = lower_expression(node);
 
@@ -405,6 +455,12 @@ export class Lowerer : public Visitor<HIRNode*> {
         } else if (const auto* function = resolved->as<FunctionType>(); function != nullptr) {
             std::vector<ParameterType> parameters;
             parameters.reserve(function->parameters.size());
+            std::vector<const Type*> failures;
+            failures.reserve(function->errors.size());
+
+            for (const auto* error : function->errors) {
+                failures.push_back(lower_type(error, span));
+            }
 
             for (const auto& parameter : function->parameters) {
                 parameters.emplace_back(parameter.name, lower_type(parameter.type, span));
@@ -412,7 +468,7 @@ export class Lowerer : public Visitor<HIRNode*> {
 
             lowered = sema.types.create<FunctionType>(function->name,
                 lower_type(function->return_type, span), std::move(parameters),
-                std::vector<GenericParameterType>(), function->variadic);
+                std::vector<GenericParameterType>(), function->variadic, std::move(failures));
         } else if (const auto* structure = resolved->as<StructType>(); structure != nullptr) {
             lowered = lower_struct_type(type, structure, span);
         } else if (const auto* enumeration = resolved->as<EnumType>(); enumeration != nullptr) {
@@ -466,10 +522,16 @@ export class Lowerer : public Visitor<HIRNode*> {
 
         const auto instance = specializations.lifecycle(*function, *structure, signature);
 
-        if (!instance.is_generated) {
+        if (!instance.has_value()) {
+            diagnostics.add_error(span, "lifecycle specialization requires concrete bindings");
+
+            return nullptr;
+        }
+
+        if (!instance->is_generated) {
             StateGuard function_guard(cleanup.scopes, std::vector<CleanupScope>());
 
-            if (auto* specialization = specialize(*definition, instance.name, arguments);
+            if (auto* specialization = specialize(*definition, instance->name, arguments);
                 specialization != nullptr) {
                 specializations.enqueue(specialization);
             }
@@ -793,7 +855,13 @@ export class Lowerer : public Visitor<HIRNode*> {
             : std::variant<const Node*, const Type*>(type);
         const auto instance = specializations.get_or_create(identity, type->name, bindings);
 
-        if (const auto existing = runtime_types.find(instance.name); existing != runtime_types.end()) {
+        if (!instance.has_value()) {
+            diagnostics.add_error(span, "generic specialization requires concrete bindings");
+
+            return nullptr;
+        }
+
+        if (const auto existing = runtime_types.find(instance->name); existing != runtime_types.end()) {
             return existing->second;
         }
 
@@ -807,11 +875,11 @@ export class Lowerer : public Visitor<HIRNode*> {
             arguments.emplace_back(name, bindings[index]);
         }
 
-        auto* structure = sema.types.create<StructType>(instance.name,
+        auto* structure = sema.types.create<StructType>(instance->name,
             std::vector<GenericParameterType>(), std::vector<FieldType>(), std::move(arguments),
             nullptr, std::vector<const InterfaceType*>(), std::vector<MethodType>(), type->definition);
 
-        reference_type(instance.name, structure);
+        reference_type(instance->name, structure);
         auto scope = resolver.create_substitution_scope();
 
         if (definition != nullptr) {
@@ -822,7 +890,7 @@ export class Lowerer : public Visitor<HIRNode*> {
             ? lower_type(type->base_type, span)->as<StructType>() : nullptr;
         structure->interfaces.reserve(type->interfaces.size());
 
-        for (const auto* interface : structure->interfaces) {
+        for (const auto* interface : type->interfaces) {
             const auto* lowered = lower_type(interface, span);
             structure->interfaces.push_back(lowered != nullptr ? lowered->as<InterfaceType>() : nullptr);
         }
@@ -868,11 +936,17 @@ export class Lowerer : public Visitor<HIRNode*> {
 
             const auto instance = specializations.get_or_create(method, name, bindings);
 
-            if (instance.is_generated) {
+            if (!instance.has_value()) {
+                diagnostics.add_error(method->span, "generic specialization requires concrete bindings");
+
+                return nullptr;
+            }
+
+            if (instance->is_generated) {
                 continue;
             }
 
-            auto* specialization = specialize(*method, instance.name, bindings);
+            auto* specialization = specialize(*method, instance->name, bindings);
 
             if (specialization != nullptr) {
                 specializations.enqueue(specialization);
@@ -891,12 +965,18 @@ export class Lowerer : public Visitor<HIRNode*> {
     HIRFunctionDeclaration* specialize(const FunctionDeclaration& declaration,
                                        const std::string& name,
                                        const std::vector<GenericBinding>& arguments) {
-        ScopeGuard function_scope(sema.env.current_scope, checked_scope(declaration.scope, declaration.span));
+        if (!check_scope(declaration.scope, declaration.span)) {
+            return nullptr;
+        }
+
+        ScopeGuard function_scope(sema.env.current_scope, declaration.scope);
         auto scope = resolver.create_substitution_scope();
         const auto* signature = declaration.type != nullptr ? declaration.type->as<FunctionType>() : nullptr;
 
         if (signature == nullptr) {
-            throw LoweringFailure(declaration.span, "function has no checked signature");
+            diagnostics.add_error(declaration.span, "function has no checked signature");
+
+            return nullptr;
         }
 
         const auto count = std::min(signature->generic_parameters.size(), arguments.size());
@@ -908,18 +988,22 @@ export class Lowerer : public Visitor<HIRNode*> {
         const auto* type = lower_function_type(declaration.type, declaration.span);
 
         if (type == nullptr) {
-            throw LoweringFailure(declaration.span, "specialization has no lowered signature");
+            diagnostics.add_error(declaration.span, "specialization has no lowered signature");
+
+            return nullptr;
         }
 
         if (!is_emittable_function_type(type)) {
-            throw LoweringFailure(declaration.span,
+            diagnostics.add_error(declaration.span,
                 "specialization has an unresolved signature: " + type->to_string());
+
+            return nullptr;
         }
 
-        auto* body = build_defaulted_constructor(declaration, type);
+        auto* body = build_body(declaration, type);
 
         if (body == nullptr) {
-            body = build_owned_body(declaration.prototype->parameters, type, *declaration.body);
+            return nullptr;
         }
 
         return program->nodes.create<HIRFunctionDeclaration>(declaration.span, declaration.visibility,
@@ -961,7 +1045,9 @@ export class Lowerer : public Visitor<HIRNode*> {
             const auto* structure = type != nullptr ? type->as<StructType>() : nullptr;
             const auto& values = std::get<std::vector<CompileTimeValue>>(value.payload);
             if (structure == nullptr || structure->fields.size() != values.size()) {
-                throw LoweringFailure(span, "constant struct requires concrete field types");
+                diagnostics.add_error(span, "constant struct requires concrete field types");
+
+                return nullptr;
             }
 
             std::vector<HIRStructLiteralField> fields;
@@ -969,8 +1055,10 @@ export class Lowerer : public Visitor<HIRNode*> {
             for (auto index = std::size_t{0}; index < values.size(); ++index) {
                 auto* expression = lower_compile_time_value(span, values[index]);
                 if (expression == nullptr) {
-                    throw LoweringFailure(
+                    diagnostics.add_error(
                         span, "constant struct field cannot be represented at runtime");
+
+                    return nullptr;
                 }
                 fields.emplace_back(structure->fields[index].name, expression);
             }
@@ -981,7 +1069,9 @@ export class Lowerer : public Visitor<HIRNode*> {
             const auto& elements = std::get<std::vector<CompileTimeValue>>(value.payload);
             const auto* array = type != nullptr ? type->as<ArrayType>() : nullptr;
             if (array == nullptr || array->element == nullptr) {
-                throw LoweringFailure(span, "constant array requires a concrete element type");
+                diagnostics.add_error(span, "constant array requires a concrete element type");
+
+                return nullptr;
             }
             if (!array->element->is<StringType>()) {
                 std::vector<HIRExpression*> expressions;
@@ -989,8 +1079,10 @@ export class Lowerer : public Visitor<HIRNode*> {
                 for (const auto& element : elements) {
                     auto* expression = lower_compile_time_value(span, element);
                     if (expression == nullptr) {
-                        throw LoweringFailure(
+                        diagnostics.add_error(
                             span, "constant array element cannot be represented at runtime");
+
+                        return nullptr;
                     }
                     expressions.push_back(expression);
                 }
@@ -1001,8 +1093,10 @@ export class Lowerer : public Visitor<HIRNode*> {
             strings.reserve(elements.size());
             for (const auto& element : elements) {
                 if (element.kind != CompileTimeValue::Kind::Type::String) {
-                    throw LoweringFailure(
+                    diagnostics.add_error(
                         span, "constant array element cannot be represented at runtime");
+
+                    return nullptr;
                 }
                 strings.push_back(std::get<std::string>(element.payload));
             }
@@ -1015,12 +1109,13 @@ export class Lowerer : public Visitor<HIRNode*> {
     }
 
     std::vector<HIRStructLiteralField>
-    lower_fields(std::vector<StructLiteralField*>& fields) {
+    lower_fields(std::vector<StructLiteralField*>& fields, std::vector<HIRStatement*>& transfers) {
         std::vector<HIRStructLiteralField> result;
         result.reserve(fields.size());
 
         for (auto* field : fields) {
-            result.emplace_back(field->name, lower_expression(*field->value));
+            result.emplace_back(field->name,
+                temporaries.capture(lower_expression(*field->value), field->span, &transfers));
         }
 
         return result;
@@ -1050,6 +1145,7 @@ export class Lowerer : public Visitor<HIRNode*> {
                                         const FunctionType* function_type, BlockStatement& body,
                                         std::size_t hidden_parameter_count = 0) {
         StateGuard function_guard(cleanup.scopes, std::vector<CleanupScope>());
+        StateGuard error_guard(temporaries.handlers, decltype(temporaries.handlers)());
         StateGuard expression_guard(temporaries.current, static_cast<FullExpression*>(nullptr));
         StateGuard tail_guard(consuming_block_tail, false);
         CleanupScopeGuard scope_guard(cleanup);
@@ -1062,9 +1158,9 @@ export class Lowerer : public Visitor<HIRNode*> {
             return nullptr;
         }
 
-        for (std::size_t i = 0; i < source_parameters.size(); ++i) {
-            auto* parameter = source_parameters[i];
-            const auto parameter_index = i + offset;
+        for (auto index = std::size_t{0}; index < source_parameters.size(); ++index) {
+            auto* parameter = source_parameters[index];
+            const auto parameter_index = index + offset;
             const auto* lowered_type =
                 function_type != nullptr && parameter_index < function_type->parameters.size()
                     ? function_type->parameters[parameter_index].type
@@ -1078,6 +1174,10 @@ export class Lowerer : public Visitor<HIRNode*> {
         }
 
         auto* lowered_body = static_cast<HIRBlockStatement*>(lower_statement(body));
+
+        if (lowered_body == nullptr) {
+            return nullptr;
+        }
         lowered_body->statements.insert(lowered_body->statements.begin(), parameter_flags.begin(),
                                         parameter_flags.end());
 
@@ -1089,6 +1189,26 @@ export class Lowerer : public Visitor<HIRNode*> {
         }
 
         return lowered_body;
+    }
+
+    HIRBlockStatement* build_body(const FunctionDeclaration& declaration, const FunctionType* type) {
+        auto* body = build_defaulted_constructor(declaration, type);
+
+        if (diagnostics.has_errors()) {
+            return nullptr;
+        }
+
+        if (body != nullptr) {
+            return body;
+        }
+
+        if (declaration.body == nullptr) {
+            diagnostics.add_error(declaration.span, "function has no checked body");
+
+            return nullptr;
+        }
+
+        return build_owned_body(declaration.prototype->parameters, type, *declaration.body);
     }
 
     HIRNode* lower_identifier(IdentifierExpression& node) {
@@ -1105,7 +1225,9 @@ export class Lowerer : public Visitor<HIRNode*> {
                 const auto* symbol = node.function_symbol;
 
                 if (symbol == nullptr) {
-                    throw LoweringFailure(node.span, "function value has no resolved semantic symbol");
+                    diagnostics.add_error(node.span, "function value has no resolved semantic symbol");
+
+                    return nullptr;
                 }
 
                 name = Mangler::function_name(symbol->base_name(), symbol, function_type);
@@ -1195,7 +1317,7 @@ export class Lowerer : public Visitor<HIRNode*> {
         : sema(sema), program(std::make_shared<HIRProgram>()),
           resolver(sema.types, sema.env, context.diagnostics),
           facades(sema.facades, resolver),
-          construction(*program, sema, resolver, names, specializations,
+          construction(context.diagnostics, *program, sema, resolver, names, specializations,
               [this](const Type* type, Span span, Operation::Type operation) -> const Type* {
                   return prepare_lifecycle(type, span, operation);
               }),
@@ -1257,8 +1379,10 @@ export class Lowerer : public Visitor<HIRNode*> {
             const auto binding = resolver.const_parameter(node.name, node.generic_declaration);
             if (binding.has_value()) {
                 if (!binding->value.has_value()) {
-                    throw LoweringFailure(
+                    diagnostics.add_error(
                         node.span, "runtime expression requires a concrete const generic argument");
+
+                    return nullptr;
                 }
                 return lower_compile_time_value(node.span, *binding->value);
             }
@@ -1351,7 +1475,9 @@ export class Lowerer : public Visitor<HIRNode*> {
         }
         if (node.coercion == Coercion::Type::CopyValue || node.coercion == Coercion::Type::MoveValue) {
             if (node.operation == nullptr) {
-                throw LoweringFailure(node.span, "construction has no resolved lifecycle plan");
+                diagnostics.add_error(node.span, "construction has no resolved lifecycle plan");
+
+                return nullptr;
             }
 
             return construction.construct(node.span, value, node.operation);
@@ -1367,7 +1493,9 @@ export class Lowerer : public Visitor<HIRNode*> {
 
         if (node.coercion == Coercion::Type::InterfaceValue &&
             node.implementations.size() != type->as<InterfaceType>()->methods.size()) {
-            throw LoweringFailure(node.span, "interface conversion is missing resolved implementations");
+            diagnostics.add_error(node.span, "interface conversion is missing resolved implementations");
+
+            return nullptr;
         }
 
         result->implementations.reserve(node.implementations.size());
@@ -1413,7 +1541,9 @@ export class Lowerer : public Visitor<HIRNode*> {
             }
 
             if (layout.state != TypeLayout::Result::State::Concrete) {
-                throw LoweringFailure(node.span, "sizeof requires a concrete sized type");
+                diagnostics.add_error(node.span, "sizeof requires a concrete sized type");
+
+                return nullptr;
             }
             const auto* type = lower_type(node.type, node.span);
 
@@ -1432,16 +1562,93 @@ export class Lowerer : public Visitor<HIRNode*> {
         return nullptr;
     }
 
-    HIRNode* visit(AssemblyExpression& node) override {
-        std::vector<HIRExpression*> arguments;
-        arguments.reserve(node.arguments.size());
+    HIRNode* visit(TryExpression& node) override {
+        return lower_expression(*node.value);
+    }
 
-        for (auto* argument : node.arguments) {
-            arguments.push_back(lower_expression(*argument));
+    HIRNode* visit(CatchExpression& node) override {
+        StateGuard tail_guard(consuming_block_tail, true);
+        std::vector<HIRCatchArm> arms;
+        arms.reserve(node.arms.size());
+        HIRExpression* value = nullptr;
+
+        {
+            StateGuard handler_guard(temporaries.handlers, temporaries.handlers);
+
+            for (const auto& arm : node.arms) {
+                arms.emplace_back(temporaries.protect(arm), arm.name,
+                    lower_type(arm.annotation->type, arm.span), nullptr);
+            }
+
+            value = lower_expression(*node.value);
         }
 
-        return program->nodes.create<HIRAssemblyExpression>(
-            node.span, node.assembly, std::move(arguments), lower_type(node.type, node.span));
+        for (auto index = std::size_t{0}; index < node.arms.size(); ++index) {
+            auto& source = node.arms[index];
+            auto& arm = arms[index];
+            if (!check_scope(source.scope, source.span)) {
+                return nullptr;
+            }
+
+            ScopeGuard scope(sema.env.current_scope, source.scope);
+            CleanupScopeGuard owned(cleanup);
+            std::vector<HIRStatement*> statements;
+            statements.reserve(4);
+
+            if (auto* flag = cleanup.register_value(arm.name, arm.name, source.span, arm.type); flag != nullptr) {
+                statements.push_back(flag);
+            }
+
+            auto* body = lower_statement(*source.body);
+
+            if (terminates(body)) {
+                statements.push_back(body);
+            } else {
+                const auto actions = cleanup.emit();
+                auto* block = body->as<HIRBlockStatement>();
+
+                if (block == nullptr) {
+                    block = program->nodes.create<HIRBlockStatement>(source.span,
+                        std::vector<HIRStatement*>{body});
+                }
+
+                auto* result = program->nodes.create<HIRBlockExpression>(source.span,
+                    block, lower_type(source.body->type, source.span));
+                auto* preserved = temporaries.finish(source.span, result, statements, actions);
+
+                if (preserved != nullptr) {
+                    statements.push_back(program->nodes.create<HIRExpressionStatement>(source.span, preserved));
+                }
+            }
+
+            arm.body = program->nodes.create<HIRBlockStatement>(source.span, std::move(statements));
+            arm.body->type = lower_type(source.body->type, source.span);
+        }
+
+        return program->nodes.create<HIRCatchExpression>(node.span, value,
+            std::move(arms), lower_type(node.type, node.span));
+    }
+
+    HIRNode* visit(ThrowExpression& node) override {
+        auto* value = lower_expression(*node.value);
+
+        const auto decisions = sema.errors.targets.find(&node);
+
+        if (decisions == sema.errors.targets.end() || decisions->second.size() != 1) {
+            diagnostics.add_error(node.span, "throw has no resolved error target");
+
+            return nullptr;
+        }
+
+        auto edge = temporaries.failure(lower_type(decisions->second.front().type, node.span),
+                                        decisions->second.front().handler, node.span, diagnostics);
+
+        if (!edge.has_value()) {
+            return nullptr;
+        }
+
+        return program->nodes.create<HIRThrowExpression>(
+            node.span, value, std::move(*edge), lower_type(node.type, node.span));
     }
 
     HIRNode* visit(CallExpression& node) override {
@@ -1709,11 +1916,15 @@ export class Lowerer : public Visitor<HIRNode*> {
                 return nullptr;
             }
 
-            auto fields = lower_fields(node.fields);
+            std::vector<HIRStatement*> transfers;
+            transfers.reserve(node.fields.size());
+            auto fields = lower_fields(node.fields, transfers);
 
-            return program->nodes.create<HIREnumVariantExpression>(
+            auto* value = program->nodes.create<HIREnumVariantExpression>(
                 node.span, enum_type->name, qualified->member, std::move(fields),
                 qualified->variant_type->index, type);
+
+            return temporaries.transfer(value, transfers);
         }
 
         const auto* struct_type = type->as<StructType>();
@@ -1721,10 +1932,14 @@ export class Lowerer : public Visitor<HIRNode*> {
             return nullptr;
         }
 
-        auto fields = lower_fields(node.fields);
+        std::vector<HIRStatement*> transfers;
+        transfers.reserve(node.fields.size());
+        auto fields = lower_fields(node.fields, transfers);
 
-        return program->nodes.create<HIRStructLiteralExpression>(
+        auto* value = program->nodes.create<HIRStructLiteralExpression>(
             node.span, struct_type->name, std::move(fields), type);
+
+        return temporaries.transfer(value, transfers);
     }
 
     HIRNode* visit(EnumVariantExpression& node) override {
@@ -1740,6 +1955,8 @@ export class Lowerer : public Visitor<HIRNode*> {
 
         std::vector<HIRStructLiteralField> fields;
         fields.reserve(node.fields.size());
+        std::vector<HIRStatement*> transfers;
+        transfers.reserve(node.fields.size());
 
         const auto* variant = enum_type->find_variant(node.variant_name);
 
@@ -1748,13 +1965,16 @@ export class Lowerer : public Visitor<HIRNode*> {
                 [](const auto* entry) -> const std::string& { return entry->name; });
 
             if (field != node.fields.end()) {
-                fields.emplace_back(declared.name, lower_expression(*(*field)->value));
+                fields.emplace_back(declared.name,
+                    temporaries.capture(lower_expression(*(*field)->value), (*field)->span, &transfers));
             }
         }
 
-        return program->nodes.create<HIREnumVariantExpression>(
+        auto* value = program->nodes.create<HIREnumVariantExpression>(
             node.span, enum_type->name, node.variant_name, std::move(fields),
             node.variant_type->index, type);
+
+        return temporaries.transfer(value, transfers);
     }
 
     HIRNode* visit(IfExpression& node) override {
@@ -1779,7 +1999,11 @@ export class Lowerer : public Visitor<HIRNode*> {
         arms.reserve(node.arms.size());
 
         for (auto* arm : node.arms) {
-            ScopeGuard scope(sema.env.current_scope, checked_scope(arm->scope, arm->span));
+            if (!check_scope(arm->scope, arm->span)) {
+                return nullptr;
+            }
+
+            ScopeGuard scope(sema.env.current_scope, arm->scope);
             std::vector<HIRWhenPattern> patterns;
             patterns.reserve(arm->patterns.size());
 
@@ -1801,7 +2025,9 @@ export class Lowerer : public Visitor<HIRNode*> {
                         }
 
                         if (declared == nullptr) {
-                            throw LoweringFailure(field->span, "enum pattern has no checked field");
+                            diagnostics.add_error(field->span, "enum pattern has no checked field");
+
+                            return nullptr;
                         }
 
                         fields.emplace_back(field->field_name, field->binding_name,
@@ -1841,7 +2067,11 @@ export class Lowerer : public Visitor<HIRNode*> {
     }
 
     HIRNode* visit(ForStatement& node) override {
-        ScopeGuard scope(sema.env.current_scope, checked_scope(node.scope, node.span));
+        if (!check_scope(node.scope, node.span)) {
+            return nullptr;
+        }
+
+        ScopeGuard scope(sema.env.current_scope, node.scope);
         std::vector<HIRStatement*> initializers;
         initializers.reserve(1);
 
@@ -1866,8 +2096,11 @@ export class Lowerer : public Visitor<HIRNode*> {
             return nullptr;
         }
 
-        ScopeGuard scope(sema.env.current_scope,
-            checked_scope(node.body->scope, node.span)->parent);
+        if (!check_scope(node.body->scope, node.span)) {
+            return nullptr;
+        }
+
+        ScopeGuard scope(sema.env.current_scope, node.body->scope->parent);
 
         auto* body = build_owned_body(node.parameters, type, *node.body);
 
@@ -1895,23 +2128,30 @@ export class Lowerer : public Visitor<HIRNode*> {
 
         std::vector<HIRExpression*> elements;
         elements.reserve(node.elements.size());
+        std::vector<HIRStatement*> transfers;
+        transfers.reserve(node.elements.size());
         for (auto* element : node.elements) {
             auto* lowered = lower_expression(*element);
             if (lowered == nullptr) {
                 return nullptr;
             }
 
-            elements.push_back(lowered);
+            elements.push_back(temporaries.capture(lowered, element->span, &transfers));
         }
 
-        return program->nodes.create<HIRArrayLiteralExpression>(node.span,
-                                                                        std::move(elements), type);
+        auto* value = program->nodes.create<HIRArrayLiteralExpression>(node.span, std::move(elements), type);
+
+        return temporaries.transfer(value, transfers);
     }
 
     HIRNode* visit(BlockStatement& node) override {
         const auto consumes_tail = consuming_block_tail;
         StateGuard tail_guard(consuming_block_tail, false);
-        ScopeGuard scope(sema.env.current_scope, checked_scope(node.scope, node.span));
+        if (!check_scope(node.scope, node.span)) {
+            return nullptr;
+        }
+
+        ScopeGuard scope(sema.env.current_scope, node.scope);
         CleanupScopeGuard cleanup_guard(cleanup);
 
         std::vector<HIRStatement*> body;
@@ -1919,6 +2159,10 @@ export class Lowerer : public Visitor<HIRNode*> {
         auto terminated = false;
 
         for (auto index = std::size_t{0}; index < node.statements.size(); ++index) {
+            if (diagnostics.has_errors()) {
+                return nullptr;
+            }
+
             auto* statement = node.statements[index];
             if (auto* lowered = lower_statement(*statement); lowered != nullptr) {
                 const auto* source_expression = statement->as<ExpressionStatement>();
@@ -1928,6 +2172,8 @@ export class Lowerer : public Visitor<HIRNode*> {
                      source_expression->expression->as<BlockExpression>() != nullptr ||
                      source_expression->expression->as<IfExpression>() != nullptr ||
                      source_expression->expression->as<WhenExpression>() != nullptr ||
+                     source_expression->expression->as<TryExpression>() != nullptr ||
+                     source_expression->expression->as<CatchExpression>() != nullptr ||
                      source_expression->expression->as<StructLiteralExpression>() != nullptr ||
                      source_expression->expression->as<EnumVariantExpression>() != nullptr ||
                      source_expression->expression->as<CoerceExpression>() != nullptr ||
@@ -1997,13 +2243,7 @@ export class Lowerer : public Visitor<HIRNode*> {
     HIRNode* visit(ReturnStatement& node) override {
         auto* value = node.value != nullptr ? lower_expression(*node.value) : nullptr;
 
-        std::vector<HIRStatement*> cleanup_statements;
-        cleanup_statements.reserve(8);
-        for (auto* expression = temporaries.current; expression != nullptr; expression = expression->parent) {
-            cleanup_statements.insert(cleanup_statements.end(), expression->drops.begin(), expression->drops.end());
-        }
-        auto scope_cleanup = cleanup.emit(Cleanup::Extent::Type::Function);
-        cleanup_statements.insert(cleanup_statements.end(), scope_cleanup.begin(), scope_cleanup.end());
+        auto cleanup_statements = temporaries.unwind(0);
         if (cleanup_statements.empty()) {
             return program->nodes.create<HIRReturnStatement>(node.span, value);
         }
@@ -2097,7 +2337,11 @@ export class Lowerer : public Visitor<HIRNode*> {
             return nullptr;
         }
 
-        ScopeGuard scope(sema.env.current_scope, checked_scope(node.scope, node.span));
+        if (!check_scope(node.scope, node.span)) {
+            return nullptr;
+        }
+
+        ScopeGuard scope(sema.env.current_scope, node.scope);
 
         auto variadic = node.prototype->is_variadic;
         const auto* return_type = lower_type(node.prototype->return_type->type, node.span);
@@ -2113,9 +2357,10 @@ export class Lowerer : public Visitor<HIRNode*> {
         auto mangled = Mangler::is_mangled(symbol);
 
 
-        auto* body = build_defaulted_constructor(node, type);
+        auto* body = build_body(node, type);
+
         if (body == nullptr) {
-            body = build_owned_body(node.prototype->parameters, type, *node.body);
+            return nullptr;
         }
 
         return program->nodes.create<HIRFunctionDeclaration>(
@@ -2207,7 +2452,9 @@ export class Lowerer : public Visitor<HIRNode*> {
                     const auto* symbol = declaration->function_symbol;
 
                     if (symbol == nullptr || symbol->signature() == nullptr) {
-                        throw LoweringFailure(declaration->span, "function has no checked signature");
+                        diagnostics.add_error(declaration->span, "function has no checked signature");
+
+                        return;
                     }
 
                     if (!symbol->signature()->generic_parameters.empty()) {
@@ -2219,11 +2466,16 @@ export class Lowerer : public Visitor<HIRNode*> {
     }
 
     std::shared_ptr<HIRProgram> lower_module(Program& program_node, Scope* module_scope,
-                                             const std::vector<const Program*>& all_programs) try {
+                                             const std::vector<const Program*>& all_programs) {
         ScopeGuard module_guard(sema.env.current_scope,
             module_scope != nullptr ? module_scope : sema.env.root_scope);
 
         register_generic_declarations(all_programs);
+
+        if (diagnostics.has_errors()) {
+            return nullptr;
+        }
+
         declare_types(program_node);
 
         if (module_scope != nullptr && module_scope->parent != nullptr &&
@@ -2243,6 +2495,10 @@ export class Lowerer : public Visitor<HIRNode*> {
         for (auto& statement : program_node.statements) {
             if (auto* lowered = lower_statement(*statement); lowered != nullptr) {
                 program->statements.push_back(lowered);
+            }
+
+            if (diagnostics.has_errors()) {
+                return nullptr;
             }
         }
 
@@ -2287,12 +2543,6 @@ export class Lowerer : public Visitor<HIRNode*> {
         }
 
         return diagnostics.has_errors() ? nullptr : program;
-    } catch (const LoweringFailure& failure) {
-        diagnostics.add_error(failure.span, failure.message);
-        return nullptr;
-    } catch (const std::runtime_error& failure) {
-        diagnostics.add_error(Span(), failure.what());
-        return nullptr;
     }
 
     std::shared_ptr<HIRProgram> lower(Program& program_node) {

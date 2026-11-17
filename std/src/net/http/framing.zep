@@ -1,13 +1,19 @@
 import std.core.option.Option
-import std.core.result.Result
+import std.core.error.Error
 import std.text.string.String
+import std.text.string.ParseError
 import std.text.view.StringView
 
-public enum HttpParseError {
-    Incomplete
-    Malformed
-    Unsupported
-    TooLarge
+public enum HttpParseFailure : i32 {
+    Incomplete = 0
+    Malformed = 1
+    Unsupported = 2
+    TooLarge = 3
+}
+
+public struct HttpParseError : Error {
+    public:
+        var reason: HttpParseFailure
 }
 
 public struct MessageFraming {
@@ -23,17 +29,18 @@ public struct MessageFraming {
             return Option::None
         }
 
-        static fn body_length(source: &StringView) -> Result<Option<i64>, HttpParseError> {
+        @throws(HttpParseError)
+        static fn body_length(source: &StringView) -> Option<i64> {
             var header_end = when (MessageFraming::header_end(source)) {
                 Option::Some { value } -> value,
-                Option::None -> { return Result::Error { error: when {
-                    (source.length() > 65536) -> HttpParseError::TooLarge,
-                    else -> HttpParseError::Incomplete,
-                } } },
+                Option::None -> throw HttpParseError { reason: when {
+                    (source.length() > 65536) -> HttpParseFailure::TooLarge,
+                    else -> HttpParseFailure::Incomplete,
+                } },
             }
 
             if (header_end > 65536) {
-                return Result::Error { error: HttpParseError::TooLarge }
+                throw HttpParseError { reason: HttpParseFailure::TooLarge }
             }
             var header = String(source.substring(0, header_end - 4).unwrap())
             var mut line_start = when (header.index_of("\r\n", 0)) {
@@ -47,37 +54,36 @@ public struct MessageFraming {
                 var line = header.substring(line_start, line_end).unwrap()
                 var normalized = line.to_lowercase()
                 if (normalized.starts_with("transfer-encoding:")) {
-                    return Result::Error { error: HttpParseError::Unsupported }
+                    throw HttpParseError { reason: HttpParseFailure::Unsupported }
                 }
                 if (normalized.starts_with("content-length:")) {
                     if (length.is_some()) {
-                        return Result::Error { error: HttpParseError::Malformed }
+                        throw HttpParseError { reason: HttpParseFailure::Malformed }
                     }
                     var trimmed = line.substring(15, line.length()).unwrap().trim()
                     for (var mut index: i64 = 0; index < trimmed.length(); index = index + 1) {
                         var character = trimmed.get(index).unwrap()
                         if (!Char::is_digit(character)) {
-                            return Result::Error { error: HttpParseError::Malformed }
+                            throw HttpParseError { reason: HttpParseFailure::Malformed }
                         }
                     }
-                    var parsed = when (trimmed.parse_i64()) {
-                        Result::Error { error } -> { return Result::Error { error: HttpParseError::Malformed } },
-                        Result::Ok { value } -> value,
+                    var parsed = trimmed.parse_i64() catch {
+                        error: ParseError -> throw HttpParseError { reason: HttpParseFailure::Malformed },
                     }
 
                     if (parsed < 0) {
-                        return Result::Error { error: HttpParseError::Malformed }
+                        throw HttpParseError { reason: HttpParseFailure::Malformed }
                     }
                     if (parsed > 8388608) {
-                        return Result::Error { error: HttpParseError::TooLarge }
+                        throw HttpParseError { reason: HttpParseFailure::TooLarge }
                     }
                     length = Option::Some { value: parsed }
                 }
                 if (!normalized.starts_with("content-length:") && normalized.index_of(":", 0).is_none()) {
-                    return Result::Error { error: HttpParseError::Malformed }
+                    throw HttpParseError { reason: HttpParseFailure::Malformed }
                 }
                 line_start = line_end + 2
             }
-            return Result::Ok { value: length }
+            return length
         }
 }

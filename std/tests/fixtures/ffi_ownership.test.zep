@@ -2,6 +2,8 @@ import std.ffi.pipe.Pipe
 import std.ffi.directory.DirectoryHandle
 import std.fs.File
 import std.fs.FileMode
+import std.fs.FileError
+import std.io.error.IoError
 import std.memory.Memory
 
 var mut pipes = 0
@@ -45,50 +47,55 @@ public fn close_directory(handle: *mut void) -> i32 {
     return 0
 }
 
+@throws(IoError)
 fn transfer() -> void {
-    var source = Pipe::open("ignored").unwrap()
+    var source = try Pipe::open("ignored")
     var moved = Memory::move(source)
     var descriptor = File(42)
     var adopted = Memory::move(descriptor)
-    var directory = DirectoryHandle::open("ignored").unwrap()
+    var directory = try DirectoryHandle::open("ignored")
     var retained = Memory::move(directory)
 }
 
+@throws(FileError)
 fn early_return() -> i32 {
-    var file = File::open("ignored", FileMode::Read).unwrap()
+    var file = try File::open("ignored", FileMode::Read)
 
     return 7
 }
 
 public fn main() -> i32 {
-    transfer()
+    return try {
+        transfer()
 
-    if (pipes != 1 || descriptors != 1 || directories != 1) {
-        return 1
-    }
-
-    if (early_return() != 7 || pipes != 1 || descriptors != 2) {
-        return 2
-    }
-
-    do {
-        var mut pipe = Pipe::open("ignored").unwrap()
-        failed = true
-
-        if (!pipe.close().is_error()) {
-            return 3
+        if (pipes != 1 || descriptors != 1 || directories != 1) {
+            return 1
         }
 
-        if (pipe.as_descriptor() != -1) {
-            return 4
+        if (early_return() != 7 || pipes != 1 || descriptors != 2) {
+            return 2
         }
 
-        if (pipe.close().is_error()) {
-            return 5
+        do {
+            var mut pipe = Pipe::open("ignored")
+            failed = true
+
+            try {
+                pipe.close()
+                return 3
+            } catch { error: IoError -> {}, }
+
+            if (pipe.as_descriptor() != -1) {
+                return 4
+            }
+
+            pipe.close()
+            0
         }
 
-        0
+        when (pipes) { 2 -> 0, else -> 6, }
+    } catch {
+        error: IoError -> 5,
+        error: FileError -> 7,
     }
-
-    return when (pipes) { 2 -> 0, else -> 6, }
 }

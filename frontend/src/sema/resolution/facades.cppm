@@ -18,7 +18,7 @@ export class Facades {
     FacadeRegistry& registry;
     TypeResolver& resolver;
 
-    const FacadeEntry* lookup(const Type* type) const {
+    const FacadeRegistry::Entry* lookup(const Type* type) const {
         if (const auto* entry = registry.find(type); entry != nullptr) {
             return entry;
         }
@@ -73,7 +73,7 @@ export class Facades {
                     ? parameter->declaration == candidate.declaration : parameter->name == candidate.name;
 
                 if (matches) {
-                    registry.add(FacadeEntry(&type, nullptr, index));
+                    registry.add(FacadeRegistry::Entry(&type, nullptr, index));
                     return;
                 }
             }
@@ -83,7 +83,7 @@ export class Facades {
         const auto* stored = resolver.resolve_type(field->type);
 
         if (resolved != nullptr && stored != nullptr && stored->accepts(resolved)) {
-            registry.add(FacadeEntry(&type, resolved));
+            registry.add(FacadeRegistry::Entry(&type, resolved));
         }
     }
 

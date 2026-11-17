@@ -1,8 +1,10 @@
 import std.net.http.HttpServer
-import std.memory.Memory
 import std.net.http.HttpClient
 import std.net.http.Request
 import std.net.http.Response
+import std.net.http.HttpError
+import std.net.http.HttpParseError
+import std.io.error.IoError
 import std.net.socket.TcpStream
 import std.net.socket.Ipv4Address
 
@@ -18,39 +20,51 @@ fn respond(request: *Request, response: *mut Response) -> void {
 }
 
 fn client(port: u16) -> i32 {
-    var connection = TcpStream::connect(Ipv4Address::localhost(), port)
-    if (connection.is_error()) { return 1 }
-    var mut stream = Memory::move(connection).unwrap()
-    var first: cstr = "GET / HTTP/1.1\r\nHost: loopback\r\nContent-Length: 4\r\n"
-    if (stream.file.write(first).is_error()) { return 2 }
-    usleep(20000 as u32)
-    if (stream.file.write("\r\nab", 4).is_error()) { return 3 }
-    usleep(20000 as u32)
-    if (stream.file.write("cd", 2).is_error()) { return 4 }
-    var mut buffer: u8[1024]
-    var received = stream.file.read(&mut buffer, 1024)
-    if (received.is_error() || received.unwrap() == 0) { return 5 }
-    stream.file.close()
-    var result = HttpClient::get(Ipv4Address::localhost(), "separate-host-header", port, "/")
-    if (result.is_error()) { return 6 }
-    var response = result.unwrap()
-    if (response.status != 200 || !response.body.equals("loopback")) { return 7 }
-    return 0
+    return try {
+        var mut stream = TcpStream::connect(Ipv4Address::localhost(), port)
+        var first: cstr = "GET / HTTP/1.1\r\nHost: loopback\r\nContent-Length: 4\r\n"
+        stream.file.write(first)
+        usleep(20000 as u32)
+        stream.file.write("\r\nab", 4)
+        usleep(20000 as u32)
+        stream.file.write("cd", 2)
+        var mut buffer: u8[1024]
+
+        if (stream.file.read(&mut buffer, 1024) == 0) { return 5 }
+
+        stream.file.close()
+        var response = HttpClient::get(Ipv4Address::localhost(), "separate-host-header", port, "/")
+
+        if (response.status != 200 || !response.body.equals("loopback")) { return 7 }
+
+        0
+    } catch {
+        error: IoError -> 1,
+        error: HttpError -> 6,
+        error: HttpParseError -> 8,
+    }
 }
 
 public fn main() -> i32 {
-    alarm(10 as u32)
-    var binding = HttpServer::bind(0 as u16)
-    if (binding.is_error()) { return 1 }
-    var mut server = Memory::move(binding).unwrap()
-    server.get("/", respond)
-    var port = server.local_port().unwrap()
-    var process = fork()
-    if (process < 0) { return 2 }
-    if (process == 0) { exit_child(client(port)) }
-    if (server.serve_one().is_error()) { return 3 }
-    if (server.serve_one().is_error()) { return 4 }
-    var mut status = 0
-    if (waitpid(process, &mut status, 0) != process || status != 0) { return 5 }
-    return 0
+    return try {
+        alarm(10 as u32)
+        var mut server = HttpServer::bind(0 as u16)
+        server.get("/", respond)
+        var port = server.local_port()
+        var process = fork()
+
+        if (process < 0) { return 2 }
+        if (process == 0) { exit_child(client(port)) }
+
+        server.serve_one()
+        server.serve_one()
+        var mut status = 0
+
+        if (waitpid(process, &mut status, 0) != process || status != 0) { return 5 }
+
+        0
+    } catch {
+        error: IoError -> 3,
+        error: HttpParseError -> 4,
+    }
 }
