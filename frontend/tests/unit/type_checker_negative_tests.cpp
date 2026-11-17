@@ -4,6 +4,12 @@
 
 import zep.frontend.test.harness;
 
+TEST(FrontendConstants, RejectsOverflowInOptionalGlobalConstantEvaluation) {
+    EXPECT_TRUE(assert_type_check_error("var value: i8 = (127 as i8) + (1 as i8)"));
+    EXPECT_TRUE(assert_type_check_error("var value = 1 / 0"));
+    EXPECT_TRUE(assert_type_check_error("enum E { Value { item: i32 } } fn same(left: E, right: E) -> boolean { return left == right }"));
+}
+
 TEST(FrontendLifecycle, RejectsInvalidPlacementAndDestruction) {
     EXPECT_TRUE(assert_type_check_error("fn clear(value: i32) -> void { value.~i32() }"));
     EXPECT_TRUE(assert_type_check_error("fn put(ptr: *i32) -> void { new (ptr) 42 }"));

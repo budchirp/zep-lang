@@ -287,7 +287,7 @@ TEST(HirBuilder, GeneratesModuleTeardownForOwnedGlobals) {
     HIRFunctionDeclaration* teardown = nullptr;
     for (auto* statement : program->statements) {
         auto* function = statement->as<HIRFunctionDeclaration>();
-        if (function != nullptr && function->is_global_destructor) {
+        if (function != nullptr && function->role == HIRFunctionDeclaration::Role::Type::GlobalDestructor) {
             teardown = function;
             break;
         }

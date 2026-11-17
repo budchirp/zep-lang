@@ -163,6 +163,9 @@ cd examples/pong
 Pong uses scoped `Window` and `Frame` owners for automatic cleanup, a color-backed palette enum,
 borrowed drawing arguments, and inferred std math calls.
 
+The [notes example](examples/notes/README.md) provides a separate HTTP server and CLI client with an
+in-memory database. It uses enum-based `handle` calls and an owned `Handler` implementation.
+
 Compile a single source file directly:
 
 ```bash
@@ -174,6 +177,10 @@ Launch the Language Server:
 ```bash
 cmake-build-debug/cli/zep lsp
 ```
+
+The VS Code/VSCodium extension uses `zep.server.path` for the executable and
+`zep.server.arguments` for its arguments (default: `["lsp"]`). After rebuilding Zep, run
+**Zep: Restart Language Server**. Changing either server setting also restarts it.
 
 ## CLI Commands
 

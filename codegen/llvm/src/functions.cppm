@@ -1,5 +1,6 @@
 module;
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <llvm/IR/Constant.h>
@@ -432,6 +433,13 @@ export class Functions : public HIRVisitor<llvm::Value*> {
         if (right_value == nullptr) {
             return nullptr;
         }
+
+        if (const auto* enumeration = node.left->type != nullptr ? node.left->type->as<EnumType>() : nullptr;
+            enumeration != nullptr && enumeration->backing_type == nullptr) {
+            left_value = enum_tag(left_value);
+            right_value = enum_tag(right_value);
+        }
+
         const auto is_float = left_value->getType()->isFloatingPointTy();
         const auto* integer_type = !is_float && node.left != nullptr && node.left->type != nullptr
                                        ? node.left->type->as<IntegerType>()
@@ -779,7 +787,23 @@ export class Functions : public HIRVisitor<llvm::Value*> {
 
     llvm::Value* visit(HIRVarDeclaration& node) override {
         if (node.is_global) {
-            return scope.lookup(node.name);
+            auto* storage = scope.lookup(node.name);
+
+            if (std::ranges::find(declarations.initializers, &node) != declarations.initializers.end()) {
+                auto* value = visit_expression(*node.initializer);
+
+                if (!builder.GetInsertBlock()->hasTerminator()) {
+                    if (value == nullptr || storage == nullptr) {
+                        diagnostics.add_error(node.span, "global initializer has no runtime value or storage");
+
+                        return nullptr;
+                    }
+
+                    places.store(value, storage);
+                }
+            }
+
+            return storage;
         }
 
         if (node.type->is<VoidType>()) {

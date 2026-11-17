@@ -815,7 +815,7 @@ export class Lowerer : public Visitor<HIRNode*> {
             return type;
         }
 
-        const auto* definition = specializations.get_struct(type->name);
+        const auto* definition = specializations.get_struct(type);
         std::vector<GenericBinding> bindings;
 
         if (const auto* named = source->as<NamedType>();
@@ -853,7 +853,7 @@ export class Lowerer : public Visitor<HIRNode*> {
 
         const auto identity = definition != nullptr ? std::variant<const Node*, const Type*>(definition)
             : std::variant<const Node*, const Type*>(type);
-        const auto instance = specializations.get_or_create(identity, type->name, bindings);
+        const auto instance = specializations.get_or_create(identity, Scope::qualified_name(*type), bindings);
 
         if (!instance.has_value()) {
             diagnostics.add_error(span, "generic specialization requires concrete bindings");
@@ -957,9 +957,7 @@ export class Lowerer : public Visitor<HIRNode*> {
     }
 
     std::string type_name(const NominalType& type) const {
-        const auto* symbol = sema.env.root_scope->lookup_type(type.name);
-
-        return Mangler::linker_name(type.name, symbol);
+        return Mangler::encode(&type);
     }
 
     HIRFunctionDeclaration* specialize(const FunctionDeclaration& declaration,
@@ -1267,12 +1265,13 @@ export class Lowerer : public Visitor<HIRNode*> {
         }
 
         const auto* lowered_type = lower_type(node.type, node.span);
-        if (!resolver.is_concrete(lowered_type)) {
+        const auto* nominal = lowered_type != nullptr ? lowered_type->as_nominal() : nullptr;
+
+        if (nominal == nullptr || !resolver.is_concrete(lowered_type)) {
             return;
         }
-        const auto* symbol = sema.env.current_scope->lookup_type(node.name);
 
-        reference_type(Mangler::linker_name(node.name, symbol), lowered_type);
+        reference_type(type_name(*nominal), lowered_type);
     }
 
     void declare_types(Program& ast_program) {
@@ -2274,6 +2273,10 @@ export class Lowerer : public Visitor<HIRNode*> {
             } else {
                 initializer = lower_expression(*node.initializer);
             }
+
+            if (sema.env.current_scope->is_global() && temporaries.current != nullptr) {
+                initializer = temporaries.complete(node.span, initializer, *temporaries.current);
+            }
         }
         const auto* source_type = node.type != nullptr     ? node.type
                                   : initializer != nullptr ? initializer->type
@@ -2353,7 +2356,7 @@ export class Lowerer : public Visitor<HIRNode*> {
         const auto* symbol = node.function_symbol;
         auto base_name = symbol != nullptr ? symbol->base_name() : node.prototype->name;
         auto name = Mangler::function_name(base_name, symbol, type);
-        auto linkage = Mangler::function_linkage(base_name, symbol);
+        auto linkage = Mangler::function_linkage(symbol);
         auto mangled = Mangler::is_mangled(symbol);
 
 
@@ -2438,7 +2441,7 @@ export class Lowerer : public Visitor<HIRNode*> {
 
                 if (auto* structure = statement->as<StructDeclaration>(); structure != nullptr) {
                     if (!structure->generic_parameters.empty()) {
-                        specializations.register_struct(structure->name, structure);
+                        specializations.register_struct(structure);
                     }
 
                     functions = structure->methods;
@@ -2502,7 +2505,19 @@ export class Lowerer : public Visitor<HIRNode*> {
             }
         }
 
+        std::vector<HIRStatement*> global_initialization;
+        global_initialization.reserve(program->statements.size());
+
+        for (auto* statement : program->statements) {
+            auto* variable = statement->as<HIRVarDeclaration>();
+
+            if (variable != nullptr && variable->is_global && variable->initializer != nullptr) {
+                global_initialization.push_back(variable);
+            }
+        }
+
         std::vector<HIRStatement*> global_destruction;
+        global_destruction.reserve(global_initialization.size());
         for (auto iterator = program->statements.rbegin(); iterator != program->statements.rend();
              ++iterator) {
             auto* statement = *iterator;
@@ -2518,20 +2533,29 @@ export class Lowerer : public Visitor<HIRNode*> {
                 sema.lifecycle.resolve(variable->type, Operation::Type::Destroy, resolver), global_destruction);
         }
 
-        if (!global_destruction.empty()) {
+        for (const auto role : {HIRFunctionDeclaration::Role::Type::GlobalInitializer,
+                                HIRFunctionDeclaration::Role::Type::GlobalDestructor}) {
+            auto& statements = role == HIRFunctionDeclaration::Role::Type::GlobalInitializer
+                ? global_initialization : global_destruction;
+
+            if (statements.empty()) {
+                continue;
+            }
+
             const auto* void_type = sema.primitives.entries.at("void");
             const auto* function_type = sema.types.create<FunctionType>(
                 std::string(), void_type, std::vector<ParameterType>(),
                 std::vector<GenericParameterType>(), false);
-            auto name = ".zep.global_dtor." +
+            auto name = std::string(role == HIRFunctionDeclaration::Role::Type::GlobalInitializer
+                ? ".zep.global_init." : ".zep.global_dtor.") +
                         (module_scope != nullptr ? module_scope->name : std::string("module"));
             auto* body = program->nodes.create<HIRBlockStatement>(
-                Span(), std::move(global_destruction));
-            auto* destructor = program->nodes.create<HIRFunctionDeclaration>(
+                Span(), std::move(statements));
+            auto* function = program->nodes.create<HIRFunctionDeclaration>(
                 Span(), Visibility::Type::Private, Linkage::Type::Internal, std::move(name),
                 void_type, body, false, function_type, false, Abi::Type::Language, nullptr);
-            destructor->is_global_destructor = true;
-            program->statements.push_back(destructor);
+            function->role = role;
+            program->statements.push_back(function);
         }
 
         drain_specializations();

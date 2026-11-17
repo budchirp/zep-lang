@@ -1,0 +1,7 @@
+{
+    "name": "notes_server",
+    "version": "0.1.0",
+    "libs": {
+        "std": { "version": "0.0.1", "path": "../../../std" }
+    }
+}

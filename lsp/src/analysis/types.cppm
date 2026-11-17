@@ -125,11 +125,12 @@ export class DocumentSymbol {
     AnalysisLocation location;
     Span selection;
     std::vector<DocumentSymbol> children;
+    std::string detail;
 
     DocumentSymbol(std::string name, CompletionKind::Type kind, AnalysisLocation location,
-                   Span selection, std::vector<DocumentSymbol> children = {})
+                   Span selection, std::vector<DocumentSymbol> children = {}, std::string detail = "")
         : name(std::move(name)), kind(kind), location(std::move(location)), selection(selection),
-          children(std::move(children)) {}
+          children(std::move(children)), detail(std::move(detail)) {}
 };
 
 export class SignatureParameter {

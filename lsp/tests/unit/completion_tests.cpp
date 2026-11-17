@@ -43,6 +43,35 @@ TEST(LspCompletion, CompletesCheckedErrorAttributesAndTypeLists) {
     }
 }
 
+TEST(LspCompletion, CompletesCatchTypesBindingsAndMembers) {
+    AnalysisHarness service(TestPaths::project_source_root() / "std");
+    const std::string source =
+        "import std.core.error.Error\n"
+        "struct Failure : Error { public: var code: i32 }\n"
+        "struct Fake {}\n"
+        "@throws(Failure) fn read() -> i32 { throw Failure { code: 7 } }\n";
+    const auto types = service.complete_cursor(source +
+        "fn main() -> i32 { return read() catch { error: Fa| -> 0, } }");
+
+    EXPECT_NE(find_completion(types, "Failure"), nullptr);
+    EXPECT_EQ(find_completion(types, "Fake"), nullptr);
+
+    const auto bindings = service.complete_cursor(source +
+        "fn main() -> i32 { return read() catch { error: Failure -> err|.code, } }");
+
+    EXPECT_NE(find_completion(bindings, "error"), nullptr);
+
+    const auto members = service.complete_cursor(source +
+        "fn main() -> i32 { return read() catch { error: Failure -> error.co|, } }");
+
+    EXPECT_NE(find_completion(members, "code"), nullptr);
+
+    const auto outside = service.complete_cursor(source +
+        "fn main() -> i32 { var value = read() catch { error: Failure -> 0, }; err|; return value }");
+
+    EXPECT_EQ(find_completion(outside, "error"), nullptr);
+}
+
 TEST(LspCompletion, CompletesUnfinishedCallsWithoutRepeatingPositionalArguments) {
     AnalysisHarness service;
     const auto items = service.complete_cursor(

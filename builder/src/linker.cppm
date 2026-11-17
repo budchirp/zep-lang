@@ -26,7 +26,7 @@ export class Linker {
               const std::vector<std::string>& linker_arguments,
               const std::filesystem::path& working_directory) {
         std::vector<std::string> arguments;
-        arguments.reserve(objects.size() + linker_arguments.size() + 7);
+        arguments.reserve(objects.size() + linker_arguments.size() + 5);
         arguments.push_back(compiler.string());
         arguments.push_back("-fuse-ld=lld");
         arguments.push_back("--target=" + target.triple);
@@ -36,7 +36,6 @@ export class Linker {
         }
 
         arguments.insert(arguments.end(), linker_arguments.begin(), linker_arguments.end());
-        arguments.push_back("-Wl,--allow-multiple-definition");
         arguments.push_back("-o");
         arguments.push_back(output.string());
 

@@ -612,9 +612,17 @@ export class FunctionDeclarationChecker {
         if (node.prototype->receiver_kind == FunctionPrototype::ReceiverKind::Type::Move) {
             attribute_infos.emplace_back(".move_receiver", std::vector<std::string>());
         }
+
+        auto* module = target_scope;
+
+        while (module != nullptr && module->kind != Scope::Kind::Type::Module) {
+            module = module->parent;
+        }
+
         auto* symbol = sema.env.symbols.create<FunctionSymbol>(
             node.prototype->name, node.span, node.visibility, Linkage::Type::Internal, type,
-            role, node.parent, std::move(attribute_infos), Abi::Type::Language, node.is_deleted);
+            role, node.parent, std::move(attribute_infos), Abi::Type::Language, node.is_deleted,
+            module != nullptr ? module->name : std::string());
 
         if (!type->errors.empty() &&
             (role == FunctionSymbol::Role(ConstructorKind::Type::Copy) ||

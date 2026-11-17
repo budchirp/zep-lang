@@ -181,6 +181,26 @@ TEST(FrontendParser, AstSnapshotRemainsStable) {
     EXPECT_TRUE(Snapshot::matches("fixtures/snapshots/simple_ast.txt", output));
 }
 
+TEST(FrontendParser, DumpsCheckedErrorsAndNullThroughSharedDispatch) {
+    FrontendHarness harness(R"zep(
+@throws(Failure) fn read() -> i32 { throw Failure {} }
+fn work() -> i32 {
+    var empty = null
+    return try { read() } catch { error: Failure -> 0, }
+}
+)zep");
+    ASSERT_TRUE(harness.parse_succeeded());
+
+    const auto output = capture_stdout([&] {
+        AstDumper dumper;
+        dumper.dump_program(harness.program);
+    });
+
+    for (const auto* node : {"TryExpression(", "CatchExpression(", "ThrowExpression(", "NullLiteral("}) {
+        EXPECT_NE(output.find(node), std::string::npos) << node;
+    }
+}
+
 TEST(FrontendParser, RecoversAfterMalformedExpressionsWithoutExceptions) {
     for (const auto* source : {
         "fn broken() -> void { var value = ; var next = 2 } fn recovered() -> void {}",

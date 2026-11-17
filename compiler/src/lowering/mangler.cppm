@@ -16,8 +16,14 @@ import zep.frontend.sema.declaration.attribute;
 import zep.frontend.sema.symbols;
 import zep.frontend.sema.types;
 import zep.frontend.sema.types.errors;
+import zep.frontend.sema.scopes.scope;
 export class Mangler {
   private:
+    static bool has_linker_name(const FunctionSymbol* symbol) {
+        return symbol != nullptr &&
+            (symbol->has_attribute("name") || symbol->has_attribute(".test_name"));
+    }
+
     static std::string encode_arguments(std::string result, const std::vector<GenericArgumentType>& arguments) {
         if (arguments.empty()) {
             return result;
@@ -91,7 +97,7 @@ export class Mangler {
             if (nominal == nullptr) {
                 return type->label;
             }
-            const auto& name = nominal->definition != nullptr ? nominal->definition->name : nominal->name;
+            const auto name = Scope::qualified_name(*nominal);
             return encode_arguments("S" + std::to_string(name.size()) + name, nominal->generic_arguments);
         }
         case Type::Kind::Type::Function: {
@@ -224,15 +230,14 @@ export class Mangler {
         return AttributeResolver::get_linker_name(original_name, symbol->attributes);
     }
 
-    static Linkage::Type function_linkage(const std::string& original_name,
-                                          const FunctionSymbol* symbol) {
-        auto name = linker_name(original_name, symbol);
-        auto has_custom_name = name != original_name;
-        auto mangled = is_mangled(symbol);
-        auto is_public = symbol != nullptr && symbol->visibility == Visibility::Type::Public;
+    static Linkage::Type function_linkage(const FunctionSymbol* symbol) {
+        if (!is_mangled(symbol) || has_linker_name(symbol) ||
+            (symbol != nullptr && symbol->visibility == Visibility::Type::Public)) {
+            return Linkage::Type::External;
+        }
 
-        return (!mangled || has_custom_name || is_public) ? Linkage::Type::External
-                                                          : Linkage::Type::Internal;
+        return symbol != nullptr && !symbol->module.empty()
+            ? Linkage::Type::Hidden : Linkage::Type::Internal;
     }
 
     static std::string function_name(const std::string& original_name, const FunctionSymbol* symbol,
@@ -240,7 +245,11 @@ export class Mangler {
         auto name = linker_name(original_name, symbol);
 
         if (function_type != nullptr && original_name != "main" &&
-            is_mangled(symbol) && name == original_name) {
+            is_mangled(symbol) && !has_linker_name(symbol)) {
+            if (symbol != nullptr && !symbol->module.empty()) {
+                name = std::to_string(symbol->module.size()) + "_" + symbol->module + "::" + name;
+            }
+
             name = mangle_parameters(name, function_type->parameters);
         }
 

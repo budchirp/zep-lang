@@ -54,7 +54,7 @@ export class Specializations {
     };
 
     std::unordered_map<SpecializationKey, std::string, SpecializationHash> specializations;
-    std::unordered_map<std::string, const StructDeclaration*> structs;
+    std::unordered_map<const NominalType*, const StructDeclaration*> structs;
     std::unordered_map<std::string, const FunctionDeclaration*> functions;
     std::unordered_map<const FunctionSymbol*, const FunctionDeclaration*> function_definitions;
     std::vector<HIRFunctionDeclaration*> pending;
@@ -75,8 +75,13 @@ export class Specializations {
         }
     }
 
-    void register_struct(const std::string& name, const StructDeclaration* statement) {
-        structs[name] = statement;
+    void register_struct(const StructDeclaration* statement) {
+        const auto* type = statement != nullptr && statement->type != nullptr
+            ? statement->type->as_nominal() : nullptr;
+
+        if (type != nullptr) {
+            structs[type->definition] = statement;
+        }
     }
 
     const FunctionDeclaration* get_function(const std::string& name) const {
@@ -89,8 +94,8 @@ export class Specializations {
         return iterator != function_definitions.end() ? iterator->second : nullptr;
     }
 
-    const StructDeclaration* get_struct(const std::string& name) const {
-        const auto iterator = structs.find(name);
+    const StructDeclaration* get_struct(const NominalType* type) const {
+        const auto iterator = structs.find(type != nullptr ? type->definition : nullptr);
         return iterator != structs.end() ? iterator->second : nullptr;
     }
 

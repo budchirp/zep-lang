@@ -11,24 +11,13 @@ public enum Method {
     Unknown
 
     public:
-        static fn parse(buffer: &StringView) -> Method {
-            return when {
-                buffer.starts_with("GET ") -> Method::Get,
-                buffer.starts_with("POST ") -> Method::Post,
-                buffer.starts_with("PUT ") -> Method::Put,
-                buffer.starts_with("DELETE ") -> Method::Delete,
-                else -> Method::Unknown,
-            }
-        }
-
-        fn matches(other: Method) -> boolean {
-            return (*self).value == other.value
-        }
-
-        fn path_start() -> i32 {
+        fn text() -> cstr {
             return when (*self) {
-                Method::Get -> 4, Method::Post -> 5, Method::Put -> 4, Method::Delete -> 7,
-                else -> 0,
+                Method::Get -> "GET",
+                Method::Post -> "POST",
+                Method::Put -> "PUT",
+                Method::Delete -> "DELETE",
+                Method::Unknown -> "",
             }
         }
 }
@@ -52,7 +41,10 @@ public enum Status : i32 {
         }
 }
 
-public type Handler = (*Request, *mut Response) -> void
+public interface Handler {
+    public:
+        fn handle(request: *Request, response: *mut Response) mut -> void
+}
 
 public struct Request {
     public:
@@ -68,20 +60,27 @@ public struct Response {
         var content_type: String
         var body: String
 
+        fn Response() -> Response {
+            return Response { status: Status::Ok, content_type: String("text/plain"), body: String() }
+        }
+
         fn status(code: Status) mut -> *mut Response {
             self->status = code
             return self
         }
 
         fn text(body: cstr) mut -> *mut Response {
-            content_type = String("text/plain")
-            self->body = String(body)
-            return self
+            return self->text(StringView::from_cstr(body))
         }
 
-        fn html(body: cstr) mut -> *mut Response {
-            content_type = String("text/html")
+        fn text(body: &String) mut -> *mut Response {
+            return self->text(body.as_view())
+        }
+
+        fn text(body: &StringView) mut -> *mut Response {
+            content_type = String("text/plain")
             self->body = String(body)
+
             return self
         }
 

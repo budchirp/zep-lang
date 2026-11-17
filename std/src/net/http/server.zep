@@ -20,10 +20,6 @@ struct Route {
         var path: String
         var handler: Handler
 
-        fn Route(method: Method, path: cstr, handler: Handler) -> Route {
-            return Route { method: method, path: String(path), handler: handler }
-        }
-
 }
 
 public struct HttpServer {
@@ -31,32 +27,33 @@ public struct HttpServer {
         var listener: TcpListener
         var routes: Vector<Route>
 
-        fn dispatch(request: *Request, response: *mut Response) -> void {
-            var mut method_seen = false
+        fn dispatch(request: *Request, response: *mut Response) mut -> void {
+            var mut path_seen = false
 
             for (var mut index: i64 = 0; index < routes.length(); index = index + 1) {
-                var route = routes.get(index).unwrap()
+                var route = routes.get_mut(index).unwrap()
+                var path = route->path.as_view()
 
-                if (route->path.equals(request->path.as_cstr())) {
-                    method_seen = true
+                if (when {
+                    path.ends_with("*") -> request->path.starts_with(
+                        path.substring(0, path.length() - 1).unwrap()),
+                    else -> request->path.equals(path),
+                }) {
+                    path_seen = true
 
-                    if (route->method.matches(request->method)) {
-                        route->handler(request, response)
+                    if (route->method == request->method) {
+                        route->handler.handle(request, response)
 
                         return
                     }
                 }
             }
 
-            if (method_seen) {
+            if (path_seen) {
                 response->status(Status::MethodNotAllowed)->text("method not allowed")
             } else {
                 response->status(Status::NotFound)->text("not found")
             }
-        }
-
-        fn add_route(method: Method, path: cstr, handler: Handler) mut -> void {
-            routes.push(Route(method, path, handler))
         }
 
     public:
@@ -70,26 +67,12 @@ public struct HttpServer {
             return try listener.local_port()
         }
 
-        fn get(path: cstr, handler: Handler) mut -> void {
-            self->add_route(Method::Get, path, handler)
-        }
-
-        fn post(path: cstr, handler: Handler) mut -> void {
-            self->add_route(Method::Post, path, handler)
-        }
-
-        fn put(path: cstr, handler: Handler) mut -> void {
-            self->add_route(Method::Put, path, handler)
-        }
-
-        fn remove(path: cstr, handler: Handler) mut -> void {
-            self->add_route(Method::Delete, path, handler)
+        fn handle(method: Method, path: cstr, handler: Handler) mut -> void {
+            routes.push(Route { method: method, path: String(path), handler: handler })
         }
 
         @throws(IoError, HttpParseError)
-        fn serve(on_start: () -> void) mut -> never {
-            on_start()
-
+        fn serve() mut -> never {
             while (true) {
                 try self->serve_one()
             }
@@ -131,7 +114,7 @@ public struct HttpServer {
             }
 
             var request = try RequestParser::parse(incoming)
-            var mut response = Response { status: Status::Ok, content_type: String(), body: String() }
+            var mut response = Response()
             self->dispatch(&request, &mut response)
 
             return try response.send_to(&mut stream)

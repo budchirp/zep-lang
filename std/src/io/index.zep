@@ -8,69 +8,60 @@ import std.io.error.IoCode
 import std.text.string.String
 import std.text.view.StringView
 
-@throws(FormatError, IoError)
-fn write(file: StandardFile, pattern: &StringView, arguments: &FormatArguments) -> i64 {
-    var text = try format(pattern, arguments)
-
-    return try StandardFile::write(file, text)
+fn write(file: StandardFile, value: &StringView) -> void {
+    StandardFile::write(file, value) catch { error: IoError -> 0 as i64, }
 }
 
-@throws(IoError)
-public fn print(value: &StringView) -> i64 {
-    return try StandardFile::write(StandardFile::Output, value)
+fn write(file: StandardFile, pattern: &StringView, arguments: &FormatArguments) -> void {
+    var text = format(pattern, arguments) catch { error: FormatError -> String(pattern), }
+
+    write(file, text.as_view())
 }
 
-@throws(IoError)
-public fn print(value: &String) -> i64 {
-    return try print(value.as_view())
+public fn print(value: &StringView) -> void {
+    write(StandardFile::Output, value)
 }
 
-@throws(IoError)
-public fn print(value: cstr) -> i64 {
-    return try print(StringView::from_cstr(value))
+public fn print(value: &String) -> void {
+    print(value.as_view())
 }
 
-@throws(FormatError, IoError)
-public fn print(pattern: &StringView, arguments: &FormatArguments) -> i64 {
-    return try write(StandardFile::Output, pattern, arguments)
+public fn print(value: cstr) -> void {
+    print(StringView::from_cstr(value))
 }
 
-@throws(FormatError, IoError)
-public fn print(pattern: &String, arguments: &FormatArguments) -> i64 {
-    return try print(pattern.as_view(), arguments)
+public fn print(pattern: &StringView, arguments: &FormatArguments) -> void {
+    write(StandardFile::Output, pattern, arguments)
 }
 
-@throws(FormatError, IoError)
-public fn print(pattern: cstr, arguments: &FormatArguments) -> i64 {
-    return try print(StringView::from_cstr(pattern), arguments)
+public fn print(pattern: &String, arguments: &FormatArguments) -> void {
+    print(pattern.as_view(), arguments)
 }
 
-@throws(IoError)
-public fn eprint(value: &StringView) -> i64 {
-    return try StandardFile::write(StandardFile::Error, value)
+public fn print(pattern: cstr, arguments: &FormatArguments) -> void {
+    print(StringView::from_cstr(pattern), arguments)
 }
 
-@throws(IoError)
-public fn eprint(value: &String) -> i64 {
-    return try eprint(value.as_view())
+public fn eprint(value: &StringView) -> void {
+    write(StandardFile::Error, value)
 }
 
-@throws(IoError)
-public fn eprint(value: cstr) -> i64 {
-    return try eprint(StringView::from_cstr(value))
+public fn eprint(value: &String) -> void {
+    eprint(value.as_view())
 }
 
-@throws(FormatError, IoError)
-public fn eprint(pattern: &StringView, arguments: &FormatArguments) -> i64 {
-    return try write(StandardFile::Error, pattern, arguments)
+public fn eprint(value: cstr) -> void {
+    eprint(StringView::from_cstr(value))
 }
 
-@throws(FormatError, IoError)
-public fn eprint(pattern: &String, arguments: &FormatArguments) -> i64 {
-    return try eprint(pattern.as_view(), arguments)
+public fn eprint(pattern: &StringView, arguments: &FormatArguments) -> void {
+    write(StandardFile::Error, pattern, arguments)
 }
 
-@throws(FormatError, IoError)
-public fn eprint(pattern: cstr, arguments: &FormatArguments) -> i64 {
-    return try eprint(StringView::from_cstr(pattern), arguments)
+public fn eprint(pattern: &String, arguments: &FormatArguments) -> void {
+    eprint(pattern.as_view(), arguments)
+}
+
+public fn eprint(pattern: cstr, arguments: &FormatArguments) -> void {
+    eprint(StringView::from_cstr(pattern), arguments)
 }

@@ -24,6 +24,12 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "commands": [
+      {
+        "command": "zep.restartServer",
+        "title": "Zep: Restart Language Server"
+      }
+    ],
     "languages": [
       {
         "id": "zep",

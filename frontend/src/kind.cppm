@@ -10,7 +10,7 @@ import zep.frontend.token;
 
 export class Linkage {
   public:
-    enum class Type : std::uint8_t { External, Internal, LinkOnceODR };
+    enum class Type : std::uint8_t { External, Internal, Hidden, LinkOnceODR };
 };
 
 export class Abi {

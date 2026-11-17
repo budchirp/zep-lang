@@ -30,6 +30,7 @@ export class Declarations {
     static llvm::GlobalValue::LinkageTypes llvm_linkage(Linkage::Type linkage) {
         switch (linkage) {
         case Linkage::Type::External:
+        case Linkage::Type::Hidden:
             return llvm::GlobalValue::ExternalLinkage;
         case Linkage::Type::Internal:
             return llvm::GlobalValue::InternalLinkage;
@@ -41,9 +42,11 @@ export class Declarations {
     }
 
   public:
+    std::vector<HIRVarDeclaration*> initializers;
+
     explicit Declarations(llvm::Module& module, Types& types,
                           ValueScope& scope)
-        : module(module), types(types), scope(scope) {}
+        : module(module), types(types), scope(scope), initializers() {}
 
     llvm::Function* declare_function(const std::string& name, const FunctionType* function_type,
                                      llvm::GlobalValue::LinkageTypes linkage,
@@ -74,7 +77,13 @@ export class Declarations {
 
     llvm::Function* declare_function(const HIRFunctionDeclaration& node) {
         const auto* function_type = node.type->as<FunctionType>();
-        return declare_function(node.name, function_type, llvm_linkage(node.linkage), node.abi);
+        auto* function = declare_function(node.name, function_type, llvm_linkage(node.linkage), node.abi);
+
+        if (function != nullptr && node.linkage == Linkage::Type::Hidden) {
+            function->setVisibility(llvm::GlobalValue::HiddenVisibility);
+        }
+
+        return function;
     }
 
     llvm::Function* find_function(const std::string& name) {
@@ -198,6 +207,7 @@ export class Declarations {
                 global->setInitializer(constant);
             } else {
                 global->setInitializer(llvm::Constant::getNullValue(type));
+                initializers.push_back(&node);
             }
         } else if (node.is_definition) {
             global->setInitializer(llvm::Constant::getNullValue(type));
@@ -207,6 +217,7 @@ export class Declarations {
     }
 
     void emit_declarations(const HIRProgram& program) {
+        initializers.reserve(program.statements.size());
 
         for (auto* statement : program.statements) {
             if (auto* function = statement->as<HIRFunctionDeclaration>(); function != nullptr) {

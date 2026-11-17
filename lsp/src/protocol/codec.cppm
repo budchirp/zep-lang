@@ -13,6 +13,7 @@ import zep.common.diagnostic.diagnostic;
 import zep.common.source.position;
 import zep.common.source.span;
 import zep.lsp.analysis.types;
+import zep.lsp.analysis.symbols;
 import zep.lsp.document;
 import zep.lsp.session;
 
@@ -72,13 +73,36 @@ export class ProtocolCodec {
         return 0;
     }
 
+    std::uint32_t symbol_kind(CompletionKind::Type kind) const {
+        switch (kind) {
+        case CompletionKind::Type::Module: return 2;
+        case CompletionKind::Type::Method: return 6;
+        case CompletionKind::Type::Field: return 8;
+        case CompletionKind::Type::Enum: return 10;
+        case CompletionKind::Type::Interface: return 11;
+        case CompletionKind::Type::Function: return 12;
+        case CompletionKind::Type::Variable: return 13;
+        case CompletionKind::Type::Constant: return 14;
+        case CompletionKind::Type::EnumMember: return 22;
+        case CompletionKind::Type::Struct: return 23;
+        case CompletionKind::Type::TypeParameter: return 26;
+        case CompletionKind::Type::Keyword: return 13;
+        }
+
+        return 13;
+    }
+
     nlohmann::json symbol(const Document& document, const DocumentSymbol& value) const {
         nlohmann::json result = {
             {"name", value.name},
-            {"kind", completion_kind(value.kind)},
-            {"range", range(document, value.location.span)},
+            {"kind", symbol_kind(value.kind)},
+            {"range", range(document, Symbols::range(value))},
             {"selectionRange", range(document, value.selection)},
         };
+
+        if (!value.detail.empty()) {
+            result["detail"] = value.detail;
+        }
 
         if (!value.children.empty()) {
             result["children"] = nlohmann::json::array();
@@ -226,7 +250,7 @@ export class ProtocolCodec {
         for (const auto& value : values) {
             result.push_back({
                 {"name", value.name},
-                {"kind", completion_kind(value.kind)},
+                {"kind", symbol_kind(value.kind)},
                 {"location", location(value.location)},
             });
         }

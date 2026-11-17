@@ -1372,164 +1372,61 @@ class Visitor : public ExpressionVisitor<T> {
     }
 
     T visit_node(Node& node) {
-        if (auto* test = node.as<TestDeclaration>(); test != nullptr) {
-            return visit(*test);
+        if (auto* expression = dynamic_cast<Expression*>(&node); expression != nullptr) {
+            return visit_expression(*expression);
         }
 
-        if (auto* type_expression = node.as<TypeExpression>(); type_expression != nullptr) {
-            return visit(*type_expression);
+        if (auto* statement = dynamic_cast<Statement*>(&node); statement != nullptr) {
+            return visit_statement(*statement);
         }
+
+        if (auto* attribute = node.as<Attribute>(); attribute != nullptr) {
+            return visit(*attribute);
+        }
+
         if (auto* generic_parameter = node.as<GenericParameter>(); generic_parameter != nullptr) {
             return visit(*generic_parameter);
         }
+
         if (auto* generic_argument = node.as<GenericArgument>(); generic_argument != nullptr) {
             return visit(*generic_argument);
         }
+
         if (auto* parameter = node.as<Parameter>(); parameter != nullptr) {
             return visit(*parameter);
         }
+
         if (auto* argument = node.as<Argument>(); argument != nullptr) {
             return visit(*argument);
         }
+
         if (auto* prototype = node.as<FunctionPrototype>(); prototype != nullptr) {
             return visit(*prototype);
         }
+
         if (auto* field = node.as<Field>(); field != nullptr) {
             return visit(*field);
         }
+
         if (auto* enum_variant = node.as<EnumVariant>(); enum_variant != nullptr) {
             return visit(*enum_variant);
         }
+
         if (auto* struct_literal_field = node.as<StructLiteralField>();
             struct_literal_field != nullptr) {
             return visit(*struct_literal_field);
         }
+
         if (auto* when_pattern_field = node.as<WhenPatternField>(); when_pattern_field != nullptr) {
             return visit(*when_pattern_field);
         }
+
         if (auto* when_pattern = node.as<WhenPattern>(); when_pattern != nullptr) {
             return visit(*when_pattern);
         }
+
         if (auto* when_arm = node.as<WhenArm>(); when_arm != nullptr) {
             return visit(*when_arm);
-        }
-
-        if (auto* number_literal = node.as<NumberLiteral>(); number_literal != nullptr) {
-            return visit(*number_literal);
-        }
-        if (auto* float_literal = node.as<FloatLiteral>(); float_literal != nullptr) {
-            return visit(*float_literal);
-        }
-        if (auto* string_literal = node.as<StringLiteral>(); string_literal != nullptr) {
-            return visit(*string_literal);
-        }
-        if (auto* char_literal = node.as<CharLiteral>(); char_literal != nullptr) {
-            return visit(*char_literal);
-        }
-        if (auto* boolean_literal = node.as<BooleanLiteral>(); boolean_literal != nullptr) {
-            return visit(*boolean_literal);
-        }
-        if (auto* identifier = node.as<IdentifierExpression>(); identifier != nullptr) {
-            return visit(*identifier);
-        }
-        if (auto* binary = node.as<BinaryExpression>(); binary != nullptr) {
-            return visit(*binary);
-        }
-        if (auto* unary = node.as<UnaryExpression>(); unary != nullptr) {
-            return visit(*unary);
-        }
-        if (auto* coerce = node.as<CoerceExpression>(); coerce != nullptr) {
-            return visit(*coerce);
-        }
-        if (auto* call = node.as<CallExpression>(); call != nullptr) {
-            return visit(*call);
-        }
-        if (auto* index = node.as<IndexExpression>(); index != nullptr) {
-            return visit(*index);
-        }
-        if (auto* member = node.as<MemberExpression>(); member != nullptr) {
-            return visit(*member);
-        }
-        if (auto* qualified_access = node.as<QualifiedAccessExpression>();
-            qualified_access != nullptr) {
-            return visit(*qualified_access);
-        }
-        if (auto* assign = node.as<AssignExpression>(); assign != nullptr) {
-            return visit(*assign);
-        }
-        if (auto* struct_literal = node.as<StructLiteralExpression>(); struct_literal != nullptr) {
-            return visit(*struct_literal);
-        }
-        if (auto* enum_variant = node.as<EnumVariantExpression>(); enum_variant != nullptr) {
-            return visit(*enum_variant);
-        }
-        if (auto* if_expression = node.as<IfExpression>(); if_expression != nullptr) {
-            return visit(*if_expression);
-        }
-        if (auto* when_expression = node.as<WhenExpression>(); when_expression != nullptr) {
-            return visit(*when_expression);
-        }
-        if (auto* closure = node.as<ClosureExpression>(); closure != nullptr) {
-            return visit(*closure);
-        }
-        if (auto* block = node.as<BlockExpression>(); block != nullptr) {
-            return visit(*block);
-        }
-        if (auto* builtin_call = node.as<BuiltinCall>(); builtin_call != nullptr) {
-            return visit(*builtin_call);
-        }
-        if (auto* allocation = node.as<NewExpression>(); allocation != nullptr) {
-            return visit(*allocation);
-        }
-        if (auto* block = node.as<BlockStatement>(); block != nullptr) {
-            return visit(*block);
-        }
-        if (auto* expression_statement = node.as<ExpressionStatement>();
-            expression_statement != nullptr) {
-            return visit(*expression_statement);
-        }
-        if (auto* return_statement = node.as<ReturnStatement>(); return_statement != nullptr) {
-            return visit(*return_statement);
-        }
-        if (auto* while_statement = node.as<WhileStatement>(); while_statement != nullptr) {
-            return visit(*while_statement);
-        }
-        if (auto* for_statement = node.as<ForStatement>(); for_statement != nullptr) {
-            return visit(*for_statement);
-        }
-        if (auto* defer_statement = node.as<DeferStatement>(); defer_statement != nullptr) {
-            return visit(*defer_statement);
-        }
-        if (auto* interface_declaration = node.as<InterfaceDeclaration>();
-            interface_declaration != nullptr) {
-            return visit(*interface_declaration);
-        }
-        if (auto* struct_declaration = node.as<StructDeclaration>();
-            struct_declaration != nullptr) {
-            return visit(*struct_declaration);
-        }
-        if (auto* enum_declaration = node.as<EnumDeclaration>(); enum_declaration != nullptr) {
-            return visit(*enum_declaration);
-        }
-        if (auto* var_declaration = node.as<VarDeclaration>(); var_declaration != nullptr) {
-            return visit(*var_declaration);
-        }
-        if (auto* function_declaration = node.as<FunctionDeclaration>();
-            function_declaration != nullptr) {
-            return visit(*function_declaration);
-        }
-        if (auto* extern_function = node.as<ExternFunctionDeclaration>();
-            extern_function != nullptr) {
-            return visit(*extern_function);
-        }
-        if (auto* extern_var = node.as<ExternVarDeclaration>(); extern_var != nullptr) {
-            return visit(*extern_var);
-        }
-        if (auto* import = node.as<ImportStatement>(); import != nullptr) {
-            return visit(*import);
-        }
-        if (auto* type_alias = node.as<TypeAliasDeclaration>(); type_alias != nullptr) {
-            return visit(*type_alias);
         }
 
         return T();

@@ -220,6 +220,22 @@ TEST(LspIntegration, FullClientServerLifecycle) {
         });
         ASSERT_NE(response, messages.end());
         EXPECT_TRUE(response->contains("result")) << response->dump();
+
+        if (identifier == 8) {
+            for (const auto& symbol : (*response)["result"]) {
+                const auto& full = symbol["range"];
+                const auto& selected = symbol["selectionRange"];
+
+                EXPECT_EQ(symbol["kind"], 12);
+                EXPECT_EQ(full["start"]["line"], selected["start"]["line"]);
+                EXPECT_LE(full["start"]["character"].get<int>(),
+                          selected["start"]["character"].get<int>());
+                EXPECT_GE(std::pair(full["end"]["line"].get<int>(),
+                                    full["end"]["character"].get<int>()),
+                          std::pair(selected["end"]["line"].get<int>(),
+                                    selected["end"]["character"].get<int>()));
+            }
+        }
     }
 
     auto shutdown_response = std::ranges::find_if(messages, [](const nlohmann::json& message) {

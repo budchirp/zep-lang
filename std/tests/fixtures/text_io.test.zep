@@ -59,14 +59,23 @@ public fn main() -> i32 {
             return 1
         }
 
-        if (print("{literal}") != 9 || print(formatted) != 4 || eprint(pattern) != 5 ||
-            StandardFile::write(StandardFile::Output, String("ok")) != 2) {
+        print("{literal}")
+        print(formatted)
+        eprint(pattern)
+
+        if (StandardFile::write(StandardFile::Output, String("ok")) != 2) {
             return 2
         }
 
         if (calls != 12 || length != 20 || received[9] != 'a' || received[10] != 0 as char ||
             received[11] != 'X' || received[17] != 'b' || received[19] != 'k') {
             return 3
+        }
+
+        print("{", arguments)
+
+        if (length != 21 || received[20] != '{') {
+            return 15
         }
 
         var escaped = String("{{{}}}")
@@ -125,6 +134,10 @@ public fn main() -> i32 {
         file.close()
         File::remove(path.as_cstr())
         stopped = true
+
+        print("ignored output failure")
+        eprint("ignored error output failure")
+        print("{}", arguments)
 
         try {
             StandardFile::write(StandardFile::Output, "x")

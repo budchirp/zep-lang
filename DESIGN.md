@@ -1097,6 +1097,37 @@ LLVM place emission owns address calculation and entry-block allocation. Value c
 scalar casts and C ABI representation changes. Calls, aggregate initialization, and control
 flow receive their dependencies explicitly and reuse the HIR visitor for recursive expression emission.
 
+### Standard output and HTTP
+
+`std.io.print` and `std.io.eprint` return `void` and perform best-effort output without checked errors.
+Malformed formatted output falls back to the original pattern. Call `std.io.format` explicitly when
+format errors must be handled, and use `StandardFile::write` when delivery failures must be reported.
+Allocation failure retains the standard allocation policy.
+
+HTTP routing uses `HttpServer.handle(Method, path, Handler)`. Handlers are borrowed interface values;
+their owners must outlive the server. A terminal `*` matches a path prefix, and routes are considered
+in registration order. `HttpClient` owns its host and content-type settings and exposes enum-based
+`handle` overloads for empty, C-string, owned-string, and string-view bodies.
+
+Nonempty array literals infer their fixed extent and element type from the first element when no
+target type is available. Remaining elements use ordinary contextual conversion and ownership rules.
+Empty arrays require a target type. Payload-free enum equality compares tags; payload enum and
+aggregate equality require explicit field or pattern comparisons.
+
+Global initializers may execute ordinary nonthrowing operations or locally handled checked errors.
+Static constants remain static data. Runtime initialization follows module dependency order and
+declaration order within each module; global destruction reverses those orders using existing RAII
+plans. Global initializer functions share normal HIR and LLVM function emission.
+
+Language callable names include their declaring module identity. Private language functions use
+hidden linkage so imported generic bodies can call the original helper definition. Explicit linker
+names and C declarations retain their requested spellings; duplicate definitions are linker errors.
+Nominal type encodings use one shared qualified declaration name, including for nested generic
+arguments and checked-error identities. Generic struct bodies are registered by declaration identity.
+
+Generic AST visits delegate to the expression and statement dispatchers. Metadata nodes retain a
+single metadata dispatch path, shared by dumping and LSP indexing.
+
 ### Language Server Protocol
 
 The LSP is split into analysis, core, protocol, and handler modules. Documents apply incremental
@@ -1109,3 +1140,14 @@ overlays; it does not reimplement the compiler pipeline.
 Completion supports local and inherited instance members, static access through `Type::member`, and
 named call arguments. Named-argument entries insert the full `parameter: ` form and exclude arguments
 already supplied at the call site.
+
+Checked-error editing includes throwable-type completion in `@throws(...)` and typed catch headers,
+handler-local bindings in completion and navigation, and declared error sets in signature help.
+Handler scopes end with their arms. Protected expressions use the normal semantic analysis results.
+
+Document outlines derive name selections from lexer tokens and include declared members and complete
+nominal bodies. Protocol encoding guarantees that each symbol contains its selection and children,
+and uses LSP symbol kinds independently of completion kinds.
+
+The editor extension reads `zep.server.path` and `zep.server.arguments`. Changing either setting
+restarts the server. The `Zep: Restart Language Server` command reloads a rebuilt server manually.

@@ -50,12 +50,7 @@ export class ErrorSet {
             return type->to_string();
         }
 
-        auto result = nominal->definition->name;
-
-        for (const auto* scope = Scope::members(nominal->definition); scope != nullptr;
-             scope = scope->parent) {
-            result = std::to_string(scope->name.size()) + ":" + scope->name + "/" + result;
-        }
+        auto result = Scope::qualified_name(*nominal);
 
         for (const auto& argument : nominal->generic_arguments) {
             auto value = key(argument.type);

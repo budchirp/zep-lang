@@ -4,6 +4,51 @@
 import zep.test.support;
 import zep.cli.test.support;
 
+TEST(CliZep, InitializesGlobalOwnersInDependencyOrderAndDestroysInReverse) {
+    CliTestHarness harness("cli_global_startup", ZEP_ZEP_EXECUTABLE);
+    write_project_config(harness, "global_startup");
+    harness.workspace.write("src/owner.zep", R"zep(
+import std.text.String
+extern fn putchar(value: i32) -> i32
+public struct Owner {
+    public:
+        var text: String
+        var value: i32
+        fn Owner(value: i32) -> Owner {
+            putchar(value)
+            return Owner { text: String("owned"), value: value }
+        }
+        fn ~Owner() -> void { putchar(value + 32) }
+}
+var first = Owner(65)
+public fn ready() -> boolean { return first.text.equals("owned") }
+)zep");
+    harness.workspace.write("src/main.zep", R"zep(
+import owner.Owner
+import owner.ready
+import std.text.String
+import std.core.error.Error
+extern fn putchar(value: i32) -> i32
+struct Failure : Error {}
+@throws(Failure) fn unavailable() -> i32 { throw Failure {} }
+var second = Owner(66)
+var third = Owner(67)
+var fallback = unavailable() catch { error: Failure -> 42, }
+var names = [String("one"), String("two")]
+public fn main() -> i32 {
+    if (!ready() || !second.text.equals("owned") || !third.text.equals("owned")) { return 1 }
+    if (fallback != 42 || !names[0].equals("one") || !names[1].equals("two")) { return 2 }
+    putchar(77)
+    return 0
+}
+)zep");
+
+    const auto result = build_and_run(harness, "global_startup", "2");
+
+    EXPECT_TRUE(result.succeeded()) << result.stderr_text;
+    EXPECT_EQ(result.stdout_text, "ABCMcba");
+}
+
 TEST(CliZep, PreservesPrivateModuleGlobalsAcrossImportedCalls) {
     CliTestHarness harness("cli_module_globals", ZEP_ZEP_EXECUTABLE);
     write_project_config(harness, "module_globals");

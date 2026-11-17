@@ -606,6 +606,11 @@ export class HIRVarDeclaration : public HIRStatement {
 
 export class HIRFunctionDeclaration : public HIRStatement {
   public:
+    class Role {
+      public:
+        enum class Type : std::uint8_t { Function, GlobalInitializer, GlobalDestructor };
+    };
+
     static constexpr HIRNodeKind::Type static_kind = HIRNodeKind::Type::FunctionDeclaration;
 
     Visibility::Type visibility;
@@ -617,7 +622,7 @@ export class HIRFunctionDeclaration : public HIRStatement {
     Linkage::Type linkage;
     bool is_mangled;
     Abi::Type abi;
-    bool is_global_destructor = false;
+    Role::Type role = Role::Type::Function;
 
     HIRFunctionDeclaration(Span span, Visibility::Type visibility, Linkage::Type linkage,
                            std::string name, const Type* return_type, HIRBlockStatement* body,

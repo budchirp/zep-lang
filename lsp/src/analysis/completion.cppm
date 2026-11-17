@@ -6,6 +6,7 @@ module;
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -407,6 +408,57 @@ export class Completer {
                 }
             }
         }
+
+        Lexer protected_tokens(before_cursor);
+        std::vector<std::tuple<Token::Type, std::size_t, std::size_t>> frames;
+        frames.reserve(8);
+        auto previous = Token::Type::Eof;
+        auto parentheses = std::size_t{0};
+
+        while (true) {
+            const auto token = protected_tokens.next_token();
+
+            if (token.type == Token::Type::Eof) {
+                break;
+            }
+
+            if (token.type == Token::Type::LeftParen) {
+                ++parentheses;
+            } else if (token.type == Token::Type::RightParen && parentheses > 0) {
+                --parentheses;
+            } else if (token.type == Token::Type::LeftBrace) {
+                frames.emplace_back(previous, parentheses, 0);
+            } else if (token.type == Token::Type::RightBrace && !frames.empty()) {
+                frames.pop_back();
+            } else if (!frames.empty()) {
+                auto& [owner, depth, arrow] = frames.back();
+
+                if (owner == Token::Type::Catch && depth == parentheses) {
+                    if (token.type == Token::Type::Arrow) {
+                        arrow = protected_tokens.take_checkpoint().byte_position;
+                    } else if (token.type == Token::Type::Comma) {
+                        arrow = 0;
+                    }
+                }
+            }
+
+            previous = token.type;
+        }
+
+        if (!frames.empty()) {
+            const auto& [owner, depth, arrow] = frames.back();
+
+            if (owner == Token::Type::Catch) {
+                result.is_field_list = false;
+
+                if (arrow == 0 && result.type_only) {
+                    result.callee = "@catch";
+                } else if (arrow != 0 && result.type_start <= arrow) {
+                    result.type_only = false;
+                }
+            }
+        }
+
         auto cursor_offset = line_start + cursor_column;
         auto nested_parentheses = std::size_t{0};
         auto open_parenthesis = std::string_view::npos;
@@ -1224,12 +1276,16 @@ export class Completer {
         }
 
         if (context.type_only) {
-            if (context.callee == "@throws" && context.generic.empty()) {
+            if ((context.callee == "@throws" || context.callee == "@catch") && context.generic.empty()) {
                 if (scope != nullptr && sema != nullptr && sema->errors.throwable != nullptr) {
                     std::erase_if(items, [scope, sema](const Completion& item) {
                         const auto* symbol = scope->lookup_type(item.label);
                         const auto* structure = symbol != nullptr && symbol->type != nullptr
                             ? symbol->type->as<StructType>() : nullptr;
+
+                        if (symbol != nullptr && symbol->type != nullptr && symbol->type->is<NamedType>()) {
+                            return false;
+                        }
 
                         return structure == nullptr || !structure->implements(sema->errors.throwable);
                     });

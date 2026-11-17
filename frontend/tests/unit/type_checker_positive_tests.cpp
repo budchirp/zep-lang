@@ -6,6 +6,20 @@ import zep.frontend.test.harness;
 import zep.frontend.node;
 import zep.frontend.sema.symbols;
 
+TEST(FrontendInference, InfersArrayElementsAndNestedExtents) {
+    EXPECT_TRUE(assert_type_check_ok(R"zep(
+struct Item { public: var value: i32 }
+fn main() -> i32 {
+    var numbers = [1, 2, 3]
+    var nested = [[1, 2], [3, 4]]
+    var records = [Item { value: 5 }, Item { value: 6 }]
+    return numbers[0] + nested[1][0] + records[1].value
+}
+)zep"));
+    EXPECT_TRUE(assert_type_check_error("fn main() -> void { var values = [] }"));
+    EXPECT_TRUE(assert_type_check_error("fn main() -> void { var values = [1, true] }"));
+}
+
 TEST(FrontendTests, ChecksBodiesAndModulePrivateAccess) {
     EXPECT_TRUE(assert_type_check_ok(R"zep(
 fn answer() -> i32 { return 42 }

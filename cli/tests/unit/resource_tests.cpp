@@ -38,6 +38,28 @@ TEST(CliHttp, HandlesFragmentedInputAndMultipleConnections) {
     EXPECT_TRUE(result.succeeded()) << result.stderr_text;
 }
 
+TEST(CliHttp, ChecksNotesStorageApiAndClientCommands) {
+    for (const auto* project : {"server", "client"}) {
+        SCOPED_TRACE(project);
+        CliTestHarness harness(std::string("notes_") + project, ZEP_ZEP_EXECUTABLE);
+        write_project_config(harness, std::string("notes_") + project);
+        const auto root = TestPaths::project_source_root() / "examples/notes" / project;
+
+        for (const auto* directory : {"src", "tests"}) {
+            for (const auto& entry : std::filesystem::directory_iterator(root / directory)) {
+                if (entry.is_regular_file()) {
+                    harness.workspace.write(std::filesystem::path(directory) / entry.path().filename(),
+                                            TextFile::read(entry.path()));
+                }
+            }
+        }
+
+        const auto result = harness.run({"test", "-O", "2"});
+
+        ASSERT_TRUE(result.succeeded()) << result.stderr_text;
+    }
+}
+
 TEST(CliIo, HandlesBinaryTextAndInterruptedPartialWrites) {
     CliTestHarness harness("cli_text_io", ZEP_ZEP_EXECUTABLE);
     write_runtime_fixture(harness, "std/tests/fixtures/text_io.test.zep");

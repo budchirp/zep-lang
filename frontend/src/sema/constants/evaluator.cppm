@@ -28,6 +28,7 @@ export class EvaluationPolicy {
     enum class Type : std::uint8_t {
         Required,
         Probe,
+        Initializer,
         Dependent,
     };
 };
@@ -58,7 +59,12 @@ export class Evaluator : public ExpressionVisitor<std::optional<CompileTimeValue
     bool dependent;
 
     Diagnostics& output() {
-        return policy == EvaluationPolicy::Type::Probe ? probe_diagnostics : diagnostics;
+        return policy == EvaluationPolicy::Type::Probe || policy == EvaluationPolicy::Type::Initializer
+            ? probe_diagnostics : diagnostics;
+    }
+
+    Diagnostics& arithmetic() {
+        return policy == EvaluationPolicy::Type::Initializer ? diagnostics : output();
     }
 
     std::optional<CompileTimeValue> evaluate_value(Expression& node) {
@@ -105,7 +111,7 @@ export class Evaluator : public ExpressionVisitor<std::optional<CompileTimeValue
         }
 
         const auto value = static_cast<__int128>(magnitude);
-        return ConstantMath::integer(output(), negative ? -value : value, type,
+        return ConstantMath::integer(arithmetic(), negative ? -value : value, type,
                                                  node.span);
     }
 
@@ -199,7 +205,7 @@ export class Evaluator : public ExpressionVisitor<std::optional<CompileTimeValue
             if (!value.has_value()) {
                 return std::nullopt;
             }
-            return ConstantMath::cast(output(), *value, node.right->type, node.span);
+            return ConstantMath::cast(arithmetic(), *value, node.right->type, node.span);
         }
 
         auto left = evaluate_value(*node.left);
@@ -242,7 +248,7 @@ export class Evaluator : public ExpressionVisitor<std::optional<CompileTimeValue
                                     node.op == Operator::Equals ? equal : !equal);
         }
 
-        return ConstantMath::binary(output(), node.op, left_value, right_value, node.type, node.span);
+        return ConstantMath::binary(arithmetic(), node.op, left_value, right_value, node.type, node.span);
     }
 
     std::optional<CompileTimeValue> visit(UnaryExpression& node) override {
@@ -274,7 +280,7 @@ export class Evaluator : public ExpressionVisitor<std::optional<CompileTimeValue
                     resolved.kind == CompileTimeValue::Kind::Type::SignedInteger
                         ? static_cast<__int128>(std::get<std::int64_t>(resolved.payload))
                         : static_cast<__int128>(std::get<std::uint64_t>(resolved.payload));
-                return ConstantMath::integer(output(), -numeric, node.type,
+                return ConstantMath::integer(arithmetic(), -numeric, node.type,
                                              node.span, IntegerUse::Type::Arithmetic);
             }
             break;
@@ -308,7 +314,7 @@ export class Evaluator : public ExpressionVisitor<std::optional<CompileTimeValue
         }
 
         if (node.type != nullptr && node.type->is_scalar()) {
-            return ConstantMath::cast(output(), *value, node.type, node.span);
+            return ConstantMath::cast(arithmetic(), *value, node.type, node.span);
         }
 
         value->type = node.type;
@@ -357,7 +363,7 @@ export class Evaluator : public ExpressionVisitor<std::optional<CompileTimeValue
             }
 
             return ConstantMath::integer(
-                output(), static_cast<__int128>(layout.size), node.type, node.span);
+                arithmetic(), static_cast<__int128>(layout.size), node.type, node.span);
         }
 
         if (node.name == "length" && node.arguments.size() == 1) {
@@ -373,7 +379,7 @@ export class Evaluator : public ExpressionVisitor<std::optional<CompileTimeValue
             if (array_type != nullptr &&
                 std::holds_alternative<ConcreteArrayExtent>(array_type->extent)) {
                 return ConstantMath::integer(
-                    output(),
+                    arithmetic(),
                     static_cast<__int128>(
                         std::get<ConcreteArrayExtent>(array_type->extent).value),
                     node.type, node.span);
@@ -391,7 +397,7 @@ export class Evaluator : public ExpressionVisitor<std::optional<CompileTimeValue
                     length.has_value() ? length->try_as_unsigned_integer() : std::nullopt;
                 if (size.has_value()) {
                     return ConstantMath::integer(
-                        output(), static_cast<__int128>(*size), node.type, node.span);
+                        arithmetic(), static_cast<__int128>(*size), node.type, node.span);
                 }
 
                 dependent = result.state == EvaluationResult::State::Dependent;

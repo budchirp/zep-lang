@@ -24,14 +24,24 @@ public struct RequestParser {
                 throw HttpParseError { reason: HttpParseFailure::Unsupported }
             }
 
-            var method = Method::parse(source)
+            var start = when (source.index_of(" ", 0)) {
+                Option::Some { value } -> value,
+                Option::None -> throw HttpParseError { reason: HttpParseFailure::Malformed },
+            }
+            var name = source.substring(0, start).unwrap()
+            var method = when {
+                name.equals(Method::Get.text()) -> Method::Get,
+                name.equals(Method::Post.text()) -> Method::Post,
+                name.equals(Method::Put.text()) -> Method::Put,
+                name.equals(Method::Delete.text()) -> Method::Delete,
+                else -> Method::Unknown,
+            }
 
             if (method.value == Method::Unknown.value) {
                 throw HttpParseError { reason: HttpParseFailure::Unsupported }
             }
 
-            var start = method.path_start() as i64
-            var mut end = start
+            var mut end = start + 1
             var bytes = source.as_ptr()
 
             while (end < body_start && bytes[end] != ' ') {
@@ -42,7 +52,7 @@ public struct RequestParser {
                 end = end + 1
             }
 
-            if (end == start || end >= body_start || bytes[start] != '/') {
+            if (end == start + 1 || end >= body_start || bytes[start + 1] != '/') {
                 throw HttpParseError { reason: HttpParseFailure::Malformed }
             }
 
@@ -59,7 +69,7 @@ public struct RequestParser {
 
             return Request {
                 method: method,
-                path: String(source.substring(start, end).unwrap()),
+                path: String(source.substring(start + 1, end).unwrap()),
                 body: String(source.substring(body_start, source.length()).unwrap())
             }
         }

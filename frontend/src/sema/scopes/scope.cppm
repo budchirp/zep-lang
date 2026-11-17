@@ -73,6 +73,16 @@ export class Scope {
             ? static_cast<Scope*>(nominal->definition->member_scope) : nullptr;
     }
 
+    static std::string qualified_name(const NominalType& type) {
+        auto result = type.definition->name;
+
+        for (const auto* scope = members(type.definition); scope != nullptr; scope = scope->parent) {
+            result = std::to_string(scope->name.size()) + ":" + scope->name + "/" + result;
+        }
+
+        return result;
+    }
+
     bool define_type(const std::string& key, TypeSymbol* symbol) {
         return types.emplace(key, symbol).second;
     }

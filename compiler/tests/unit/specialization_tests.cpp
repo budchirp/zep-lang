@@ -9,6 +9,7 @@ import zep.compiler.lowering.mangler;
 import zep.compiler.lowering.specialization;
 import zep.frontend.test.harness;
 import zep.frontend.node.program;
+import zep.frontend.sema.scopes.scope;
 
 class MonomorphizerTest : public testing::Test {
   protected:
@@ -74,6 +75,19 @@ TEST_F(MonomorphizerTest, EncodesNamedTypes) {
     EXPECT_EQ(Mangler::encode(&option), "N6Option");
 }
 
+TEST_F(MonomorphizerTest, QualifiesSameNamedNominalArgumentsByDeclaringScope) {
+    auto* first_scope = sema.env.scopes.create<Scope>(Scope::Kind::Type::Module, "package:first", sema.env.root_scope);
+    auto* second_scope = sema.env.scopes.create<Scope>(Scope::Kind::Type::Module, "package:second", sema.env.root_scope);
+    auto* first = sema.types.create<StructType>("Tag", std::vector<GenericParameterType>(), std::vector<FieldType>());
+    auto* second = sema.types.create<StructType>("Tag", std::vector<GenericParameterType>(), std::vector<FieldType>());
+    first->member_scope = sema.env.scopes.create<Scope>(Scope::Kind::Type::Struct, "Tag", first_scope);
+    second->member_scope = sema.env.scopes.create<Scope>(Scope::Kind::Type::Struct, "Tag", second_scope);
+
+    EXPECT_NE(Mangler::encode(first), Mangler::encode(second));
+    EXPECT_NE(Mangler::mangle("measure", {TypeBinding(first)}),
+              Mangler::mangle("measure", {TypeBinding(second)}));
+}
+
 TEST_F(MonomorphizerTest, ManglesEmptyAndBoundParameters) {
     EXPECT_EQ(Mangler::mangle("main", {}), "main");
     EXPECT_EQ(Mangler::mangle_parameters("main", {}), "main");
@@ -114,7 +128,7 @@ TEST_F(MonomorphizerTest, CacheRegistersAndRetrievesGenericFunctions) {
     cache.register_function("generic", declaration);
 
     EXPECT_EQ(cache.get_function("generic"), declaration);
-    EXPECT_EQ(cache.get_struct("generic"), nullptr);
+    EXPECT_EQ(cache.get_struct(nullptr), nullptr);
 }
 
 TEST_F(MonomorphizerTest, ConstBindingsDistinguishPayloadsAndTypes) {

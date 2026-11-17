@@ -292,13 +292,11 @@ fn main() -> void { var value: Other<i64> = Box { value: 1 } }
                   "type mismatch in variable declaration"), std::string::npos);
 }
 
-TEST(FrontendGlobals, RejectsRuntimeGlobalInitializers) {
+TEST(FrontendGlobals, AcceptsRuntimeGlobalInitializers) {
     FrontendHarness harness(R"zep(
 fn create() -> i32 { return 1 }
 var value = create()
 )zep");
-    EXPECT_FALSE(harness.type_check_succeeded());
-    ASSERT_EQ(harness.context.diagnostics.entries.size(), 1U);
-    EXPECT_EQ(harness.context.diagnostics.entries.front().message,
-              "function calls are not allowed in constant expressions");
+    EXPECT_TRUE(harness.type_check_succeeded());
+    EXPECT_TRUE(harness.context.diagnostics.entries.empty());
 }

@@ -1,6 +1,5 @@
 import std.core.error.Error
 import std.io.error.IoError
-import std.memory.Memory
 import std.text.string.String
 import std.text.view.StringView
 import std.net.socket.stream.TcpStream
@@ -8,6 +7,7 @@ import std.net.socket.address.Ipv4Address
 import std.net.http.framing.MessageFraming
 import std.net.http.framing.HttpParseError
 import std.net.http.framing.HttpParseFailure
+import std.net.http.types.Method
 
 public enum HttpOperation : i32 {
     Connect = 0
@@ -26,42 +26,61 @@ public struct HttpResponse {
         var status: i32
         var body: String
 
-        fn HttpResponse(status: i32, body: String) -> HttpResponse {
-            return HttpResponse { status: status, body: Memory::move(body) }
-        }
-
         fn is_success() -> boolean {
             return status >= 200 && status < 300
         }
 }
 
 public struct HttpClient {
+    private:
+        var address: Ipv4Address
+        var host: String
+        var port: u16
+
     public:
+        var content_type: String
+
+        fn HttpClient(address: Ipv4Address, host: cstr, port: u16) -> HttpClient {
+            return HttpClient {
+                address: address,
+                host: String(host),
+                port: port,
+                content_type: String("text/plain"),
+            }
+        }
+
         @throws(HttpError, HttpParseError)
-        static fn request(address: Ipv4Address, method: cstr, host: cstr, port: u16, path: cstr,
-                         body: cstr, content_type: cstr) -> HttpResponse {
+        fn handle(method: Method, path: cstr, body: &StringView) -> HttpResponse {
+            if (method == Method::Unknown) {
+                throw HttpParseError { reason: HttpParseFailure::Unsupported }
+            }
+
+            var target = StringView::from_cstr(path)
+
+            if (!target.starts_with("/") || target.contains(' ') || target.contains('\r') ||
+                target.contains('\n') || host.is_empty() || host.as_view().contains('\r') ||
+                host.as_view().contains('\n') || content_type.as_view().contains('\r') ||
+                content_type.as_view().contains('\n')) {
+                throw HttpParseError { reason: HttpParseFailure::Malformed }
+            }
+
             var stream = TcpStream::connect(address, port) catch {
                 error: IoError -> throw HttpError { operation: HttpOperation::Connect, error: error },
             }
 
-            var mut request = String(method)
+            var mut request = String(method.text())
             request.append(" ")
             request.append(path)
             request.append(" HTTP/1.1\r\nHost: ")
             request.append(host)
             request.append("\r\nConnection: close\r\n")
 
-            var body_length = body.length()
-            if (body_length > 0) {
-                request.append("Content-Type: ")
-                request.append(content_type)
-                request.append("\r\nContent-Length: ")
-                request.append(String::from(body_length))
-                request.append("\r\n\r\n")
-                request.append(body)
-            } else {
-                request.append("\r\n")
-            }
+            request.append("Content-Type: ")
+            request.append(content_type)
+            request.append("\r\nContent-Length: ")
+            request.append(String::from(body.length()))
+            request.append("\r\n\r\n")
+            request.append(body)
 
             stream.file.write(request) catch {
                 error: IoError -> throw HttpError { operation: HttpOperation::Send, error: error },
@@ -113,29 +132,24 @@ public struct HttpClient {
                 throw HttpParseError { reason: HttpParseFailure::Malformed }
             }
 
-            return HttpResponse(status,
-                String(StringView((&bytes[body_start]) as cstr, response_length - body_start)))
+            return HttpResponse {
+                status: status,
+                body: String(StringView((&bytes[body_start]) as cstr, response_length - body_start)),
+            }
         }
 
         @throws(HttpError, HttpParseError)
-        static fn get(address: Ipv4Address, host: cstr, port: u16, path: cstr) -> HttpResponse {
-            return try HttpClient::request(address, "GET", host, port, path, "", "")
+        fn handle(method: Method, path: cstr) -> HttpResponse {
+            return try self->handle(method, path, StringView("", 0))
         }
 
         @throws(HttpError, HttpParseError)
-        static fn post(address: Ipv4Address, host: cstr, port: u16, path: cstr,
-                       body: cstr, content_type: cstr) -> HttpResponse {
-            return try HttpClient::request(address, "POST", host, port, path, body, content_type)
+        fn handle(method: Method, path: cstr, body: cstr) -> HttpResponse {
+            return try self->handle(method, path, StringView::from_cstr(body))
         }
 
         @throws(HttpError, HttpParseError)
-        static fn put(address: Ipv4Address, host: cstr, port: u16, path: cstr,
-                      body: cstr, content_type: cstr) -> HttpResponse {
-            return try HttpClient::request(address, "PUT", host, port, path, body, content_type)
-        }
-
-        @throws(HttpError, HttpParseError)
-        static fn remove(address: Ipv4Address, host: cstr, port: u16, path: cstr) -> HttpResponse {
-            return try HttpClient::request(address, "DELETE", host, port, path, "", "")
+        fn handle(method: Method, path: cstr, body: &String) -> HttpResponse {
+            return try self->handle(method, path, body.as_view())
         }
 }

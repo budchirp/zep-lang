@@ -11,24 +11,17 @@ import std.io.FormatArguments
 import std.io.format
 import std.io.eprint
 import std.io.print
-import std.io.FormatError
-import std.io.IoError
 
 public fn main() -> i32 {
-    return try {
-        var mut arguments = FormatArguments()
-        arguments.add(7)
-        print("stdout {}", arguments)
+    var mut arguments = FormatArguments()
+    arguments.add(7)
+    print("stdout {}", arguments)
 
-        arguments.clear()
-        arguments.add(false)
-        eprint("stderr {}", arguments)
+    arguments.clear()
+    arguments.add(false)
+    eprint("stderr {}", arguments)
 
-        0
-    } catch {
-        error: FormatError -> 1,
-        error: IoError -> 2,
-    }
+    return 0
 }
 )zep");
 

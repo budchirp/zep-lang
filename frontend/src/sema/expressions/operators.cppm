@@ -1,5 +1,6 @@
 module;
 
+#include <algorithm>
 #include <string>
 
 export module zep.frontend.sema.expression.operator_checker;
@@ -127,6 +128,22 @@ export class OperatorChecker {
         case Operator::Equals:
         case Operator::NotEquals:
             if (!require_compatible(node, left_type, right_type, "comparison")) {
+                return;
+            }
+
+            if (const auto* enumeration = left_type->as<EnumType>(); enumeration != nullptr) {
+                if (!enumeration->fields.empty() || std::ranges::any_of(enumeration->variants,
+                    [](const auto& variant) { return !variant.fields.empty(); })) {
+                    context.diagnostics.add_error(node.span,
+                        "payload enums require explicit field or pattern comparisons");
+
+                    return;
+                }
+            } else if (left_type->is<StructType>() || left_type->is<ArrayType>() ||
+                       left_type->is<InterfaceType>()) {
+                context.diagnostics.add_error(node.span,
+                    "equality is not defined for '" + left_type->to_string() + "'");
+
                 return;
             }
 

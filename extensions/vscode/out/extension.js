@@ -38,17 +38,33 @@ exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const node_1 = require("vscode-languageclient/node");
 let client;
-async function activate() {
-    const config = vscode.workspace.getConfiguration("zep.server");
-    client = new node_1.LanguageClient("zep", "Zep", {
-        command: config.get("path", "zep"),
-        args: config.get("args", ["lsp"]),
-    }, {
-        documentSelector: [{ language: "zep", scheme: "file" }],
+let pending = Promise.resolve();
+function restart() {
+    pending = pending.catch(() => { }).then(async () => {
+        await client?.dispose();
+        const config = vscode.workspace.getConfiguration("zep.server");
+        client = new node_1.LanguageClient("zep", "Zep", {
+            command: config.get("path", "zep"),
+            args: config.get("arguments", ["lsp"]),
+        }, {
+            documentSelector: [{ language: "zep", scheme: "file" }],
+        });
+        await client.start();
     });
-    await client.start();
+    return pending;
+}
+async function activate(context) {
+    context.subscriptions.push(vscode.commands.registerCommand("zep.restartServer", restart), vscode.workspace.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration("zep.server")) {
+            void restart().catch(error => {
+                void vscode.window.showErrorMessage(`Zep language server restart failed: ${error}`);
+            });
+        }
+    }));
+    await restart();
 }
 async function deactivate() {
+    await pending.catch(() => { });
     await client?.dispose();
 }
 //# sourceMappingURL=extension.js.map

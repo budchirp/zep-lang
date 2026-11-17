@@ -32,6 +32,27 @@ TEST_F(LspProtocolTest, ConvertsRangesToUtf16Positions) {
     EXPECT_EQ(range["end"]["character"], 3);
 }
 
+TEST_F(LspProtocolTest, ContainsSymbolSelectionsAndUsesSymbolKinds) {
+    Document document("file:///test.zep", 1, "struct Point {\n var x: i32\n}\n");
+    DocumentSymbol field("x", CompletionKind::Type::Field,
+        AnalysisLocation("/test.zep", Span(Position(2, 2), Position(2, 5))),
+        Span(Position(2, 6), Position(2, 7)));
+    DocumentSymbol structure("Point", CompletionKind::Type::Struct,
+        AnalysisLocation("/test.zep", Span(Position(1, 1), Position(1, 7))),
+        Span(Position(1, 8), Position(1, 13)), {field});
+    const auto result = protocol.document_symbols(document, {structure});
+    const auto& symbol = result[0];
+    const auto& child = symbol["children"][0];
+
+    EXPECT_EQ(symbol["kind"], 23);
+    EXPECT_EQ(child["kind"], 8);
+    EXPECT_EQ(symbol["range"]["end"]["line"], 1);
+    EXPECT_GE(symbol["range"]["end"]["character"].get<int>(),
+              child["range"]["end"]["character"].get<int>());
+    EXPECT_GE(child["range"]["end"]["character"].get<int>(),
+              child["selectionRange"]["end"]["character"].get<int>());
+}
+
 TEST_F(LspProtocolTest, ConvertsCompletions) {
     Document document("file:///test.zep", 1, "ru");
     auto result = protocol.completions(

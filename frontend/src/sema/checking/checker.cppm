@@ -1206,9 +1206,9 @@ export class SemanticChecker : public Visitor<void> {
 
         if (node.initializer != nullptr &&
             (sema.env.current_scope->is_global() ||
-             sema.env.current_scope->kind == Scope::Kind::Type::Module) &&
-            find_attribute(node.attributes, "section") == nullptr) {
-            auto evaluator = create_evaluator();
+             sema.env.current_scope->kind == Scope::Kind::Type::Module)) {
+            Evaluator evaluator(context.diagnostics, &sema.env, &resolver.substitutions,
+                                EvaluationPolicy::Type::Initializer);
             node.initializer->compile_time_value = evaluator.evaluate(*node.initializer).value;
         }
 
@@ -1466,8 +1466,26 @@ export class SemanticChecker : public Visitor<void> {
     void visit(ArrayLiteralExpression& node) override {
         const auto* array_type =
             target_type != nullptr ? resolver.resolve_type(target_type)->as<ArrayType>() : nullptr;
+        const auto inferred = target_type == nullptr;
+
+        if (inferred && !node.elements.empty()) {
+            visit_expression(*node.elements.front());
+            const auto* element_type = resolver.resolve_type(node.elements.front()->type);
+
+            if (element_type == nullptr || element_type->is<VoidType>() || element_type->is<NeverType>()) {
+                context.diagnostics.add_error(node.span, "array elements must have a concrete value type");
+
+                return;
+            }
+
+            array_type = sema.types.create<ArrayType>(element_type,
+                ConcreteArrayExtent(node.elements.size()));
+        }
+
         if (array_type == nullptr) {
-            context.diagnostics.add_error(node.span, "array literal requires an array target type");
+            context.diagnostics.add_error(node.span, inferred
+                ? "empty array literal requires an array target type"
+                : "array literal requires an array target type");
             return;
         }
 
@@ -1485,13 +1503,25 @@ export class SemanticChecker : public Visitor<void> {
             return;
         }
 
-        for (auto*& element : node.elements) {
+        for (auto index = std::size_t{0}; index < node.elements.size(); ++index) {
+            auto*& element = node.elements[index];
             StateGuard target_guard(target_type, array_type->element);
-            visit_expression(*element);
+
+            if (!inferred || index != 0) {
+                visit_expression(*element);
+            }
+
+            if (element->type == nullptr || !compatibility.accepts(array_type->element, element->type)) {
+                context.diagnostics.add_error(element->span, "array element does not match its element type");
+
+                return;
+            }
+
+            element = sema.binding.convert(element, array_type->element, resolver);
             element = sema.binding.construct(element, array_type->element, resolver, context.diagnostics);
         }
 
-        node.type = target_type;
+        node.type = array_type;
     }
 
     explicit SemanticChecker(Context& context, SemaContext& sema,

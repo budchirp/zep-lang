@@ -6,6 +6,7 @@ module;
 #include <map>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -22,6 +23,7 @@ import zep.frontend.sema.scopes.scope;
 import zep.frontend.token;
 import zep.frontend.token.keywords;
 import zep.lsp.analysis.types;
+import zep.lsp.analysis.symbols;
 
 class RawToken {
   public:
@@ -37,9 +39,37 @@ class RawToken {
 };
 
 class AstTokenCollector : public Visitor<void> {
+  private:
+    const std::vector<Token>& lexemes;
+    Node* current;
+
+    void add_symbol(Node& node, SemanticKind::Type kind,
+                    std::uint32_t modifiers = SemanticModifier::Declaration) {
+        const auto selected = Symbols::selection(node, lexemes);
+
+        if (selected.start.line == 0 || selected.start.line != selected.end.line) {
+            return;
+        }
+
+        add_token(static_cast<std::uint32_t>(selected.start.line - 1),
+                  static_cast<std::uint32_t>(selected.start.column - 1),
+                  static_cast<std::uint32_t>(selected.end.column - selected.start.column),
+                  kind, modifiers);
+    }
+
   public:
     std::vector<RawToken> tokens;
     std::vector<Node*> nodes;
+    std::vector<CatchArm*> bindings;
+    std::unordered_map<Node*, Span> ranges;
+
+    explicit AstTokenCollector(const std::vector<Token>& lexemes)
+        : lexemes(lexemes), current(nullptr), tokens(), nodes(), bindings(), ranges() {
+        tokens.reserve(256);
+        nodes.reserve(256);
+        bindings.reserve(8);
+        ranges.reserve(256);
+    }
 
     void add_token(std::uint32_t line, std::uint32_t character, std::uint32_t length,
                    SemanticKind::Type kind, std::uint32_t modifiers = 0) {
@@ -48,8 +78,20 @@ class AstTokenCollector : public Visitor<void> {
 
     void visit_child(Node* child) {
         if (child != nullptr) {
-            nodes.push_back(child);
-            visit_node(*child);
+            auto* parent = current;
+            current = child;
+
+            if (ranges.emplace(child, child->span).second) {
+                nodes.push_back(child);
+
+                visit_node(*child);
+            }
+
+            current = parent;
+
+            if (parent != nullptr) {
+                ranges.at(parent) = Symbols::cover(ranges.at(parent), ranges.at(child));
+            }
         }
     }
 
@@ -58,11 +100,26 @@ class AstTokenCollector : public Visitor<void> {
             visit_child(error);
         }
 
-        if (node.span.start.line > 0 && node.type != nullptr) {
+        visit_child(node.element);
+        visit_child(node.return_type);
+
+        for (auto* parameter : node.parameters) {
+            visit_child(parameter);
+        }
+
+        for (auto* argument : node.generic_arguments) {
+            visit_child(argument);
+        }
+
+        for (auto* size : node.array_sizes) {
+            visit_child(size);
+        }
+
+        if (node.span.start.line > 0 && node.type != nullptr && node.span.start.line == node.span.end.line) {
             auto line = static_cast<std::uint32_t>(node.span.start.line - 1);
             auto character = static_cast<std::uint32_t>(node.span.start.column - 1);
             auto length =
-                static_cast<std::uint32_t>(node.span.end.column - node.span.start.column + 1);
+                static_cast<std::uint32_t>(node.span.end.column - node.span.start.column);
             add_token(line, character, length, SemanticKind::Type::Type);
         }
     }
@@ -81,13 +138,8 @@ class AstTokenCollector : public Visitor<void> {
     }
 
     void visit(Parameter& node) override {
-        if (node.span.start.line > 0 && !node.name.empty()) {
-            auto line = static_cast<std::uint32_t>(node.span.start.line - 1);
-            auto character = static_cast<std::uint32_t>(node.span.start.column - 1);
-            auto length = static_cast<std::uint32_t>(node.name.length());
-            add_token(line, character, length, SemanticKind::Type::Parameter,
-                      SemanticModifier::Declaration);
-        }
+        add_symbol(node, SemanticKind::Type::Parameter);
+
         visit_child(node.type);
     }
 
@@ -98,19 +150,18 @@ class AstTokenCollector : public Visitor<void> {
     }
 
     void visit(FunctionDeclaration& node) override {
-        if (node.prototype != nullptr && node.prototype->span.start.line > 0) {
-            auto line = static_cast<std::uint32_t>(node.prototype->span.start.line - 1);
-            auto character = static_cast<std::uint32_t>(node.prototype->span.start.column - 1);
-            auto length = static_cast<std::uint32_t>(node.prototype->name.length());
-            add_token(line, character, length, SemanticKind::Type::Function,
-                      SemanticModifier::Declaration | SemanticModifier::Definition);
-        }
+        add_symbol(node, SemanticKind::Type::Function,
+                    SemanticModifier::Declaration | SemanticModifier::Definition);
 
         visit_child(node.prototype);
         visit_child(node.body);
     }
 
     void visit(FunctionPrototype& node) override {
+        for (auto* parameter : node.generic_parameters) {
+            visit_child(parameter);
+        }
+
         for (auto* error : node.errors) {
             visit_child(error);
         }
@@ -122,25 +173,15 @@ class AstTokenCollector : public Visitor<void> {
     }
 
     void visit(Field& node) override {
-        if (node.span.start.line > 0 && !node.name.empty()) {
-            auto line = static_cast<std::uint32_t>(node.span.start.line - 1);
-            auto character = static_cast<std::uint32_t>(node.span.start.column - 1);
-            auto length = static_cast<std::uint32_t>(node.name.length());
-            add_token(line, character, length, SemanticKind::Type::Property,
-                      SemanticModifier::Declaration);
-        }
+        add_symbol(node, SemanticKind::Type::Property);
+
         visit_child(node.type);
         visit_child(node.default_value);
     }
 
     void visit(EnumVariant& node) override {
-        if (node.span.start.line > 0 && !node.name.empty()) {
-            auto line = static_cast<std::uint32_t>(node.span.start.line - 1);
-            auto character = static_cast<std::uint32_t>(node.span.start.column - 1);
-            auto length = static_cast<std::uint32_t>(node.name.length());
-            add_token(line, character, length, SemanticKind::Type::EnumMember,
-                      SemanticModifier::Declaration);
-        }
+        add_symbol(node, SemanticKind::Type::EnumMember);
+
         for (auto* field : node.fields) {
             visit_child(field);
         }
@@ -193,16 +234,15 @@ class AstTokenCollector : public Visitor<void> {
     void visit(CoerceExpression& node) override { visit_child(node.value); }
 
     void visit(CallExpression& node) override {
+        visit_child(node.callee);
+
         if (auto* id = node.callee->as<IdentifierExpression>(); id != nullptr) {
-            nodes.push_back(id);
             if (id->span.start.line > 0 && !id->name.empty()) {
                 auto line = static_cast<std::uint32_t>(id->span.start.line - 1);
                 auto character = static_cast<std::uint32_t>(id->span.start.column - 1);
                 auto length = static_cast<std::uint32_t>(id->name.length());
                 add_token(line, character, length, SemanticKind::Type::Function);
             }
-        } else {
-            visit_child(node.callee);
         }
 
         for (auto* argument : node.arguments) {
@@ -217,13 +257,8 @@ class AstTokenCollector : public Visitor<void> {
 
     void visit(MemberExpression& node) override {
         visit_child(node.value);
-        if (node.span.start.line > 0 && !node.member.empty()) {
-            auto line = static_cast<std::uint32_t>(node.span.end.line - 1);
-            auto character =
-                static_cast<std::uint32_t>(node.span.end.column - node.member.length());
-            auto length = static_cast<std::uint32_t>(node.member.length());
-            add_token(line, character, length, SemanticKind::Type::Property);
-        }
+
+        add_symbol(node, SemanticKind::Type::Property, SemanticModifier::None);
     }
 
     void visit(QualifiedAccessExpression&) override {}
@@ -241,6 +276,7 @@ class AstTokenCollector : public Visitor<void> {
         visit_child(node.value);
 
         for (auto& arm : node.arms) {
+            bindings.push_back(&arm);
             if (arm.span.start.line > 0) {
                 add_token(static_cast<std::uint32_t>(arm.span.start.line - 1),
                     static_cast<std::uint32_t>(arm.span.start.column - 1),
@@ -329,35 +365,50 @@ class AstTokenCollector : public Visitor<void> {
     void visit(DeferStatement& node) override { visit_child(node.body); }
 
     void visit(InterfaceDeclaration& node) override {
+        add_symbol(node, SemanticKind::Type::Interface);
+
+        for (auto* parent : node.inheritance) {
+            visit_child(parent);
+        }
+
         for (auto* method : node.methods) {
+            add_symbol(*method, SemanticKind::Type::Method);
             visit_child(method);
         }
     }
 
     void visit(StructDeclaration& node) override {
-        if (node.span.start.line > 0 && !node.name.empty()) {
-            auto line = static_cast<std::uint32_t>(node.span.start.line - 1);
-            auto character = static_cast<std::uint32_t>(node.span.start.column - 1) + 7U;
-            auto length = static_cast<std::uint32_t>(node.name.length());
-            add_token(line, character, length, SemanticKind::Type::Struct,
-                      SemanticModifier::Declaration);
+        add_symbol(node, SemanticKind::Type::Struct);
+
+        for (auto* parent : node.inheritance) {
+            visit_child(parent);
         }
+
         for (auto* field : node.fields) {
             visit_child(field);
         }
         for (auto* method : node.methods) {
             visit_child(method);
         }
+
+        for (auto* structure : node.structs) {
+            visit_child(structure);
+        }
+
+        for (auto* enumeration : node.enums) {
+            visit_child(enumeration);
+        }
     }
 
     void visit(EnumDeclaration& node) override {
-        if (node.span.start.line > 0 && !node.name.empty()) {
-            auto line = static_cast<std::uint32_t>(node.span.start.line - 1);
-            auto character = static_cast<std::uint32_t>(node.span.start.column - 1) + 5U;
-            auto length = static_cast<std::uint32_t>(node.name.length());
-            add_token(line, character, length, SemanticKind::Type::Enum,
-                      SemanticModifier::Declaration);
+        add_symbol(node, SemanticKind::Type::Enum);
+
+        visit_child(node.backing_type);
+
+        for (auto* parent : node.inheritance) {
+            visit_child(parent);
         }
+
         for (auto* field : node.fields) {
             visit_child(field);
         }
@@ -365,28 +416,38 @@ class AstTokenCollector : public Visitor<void> {
         for (auto* variant : node.variants) {
             visit_child(variant);
         }
+
+        for (auto* method : node.methods) {
+            visit_child(method);
+        }
     }
 
     void visit(VarDeclaration& node) override {
-        if (node.span.start.line > 0 && !node.name.empty()) {
-            auto prefix_len = (node.storage_kind == StorageKind::Type::VarMut) ? 8U : 4U;
-            auto line = static_cast<std::uint32_t>(node.span.start.line - 1);
-            auto character = static_cast<std::uint32_t>(node.span.start.column - 1) + prefix_len;
-            auto length = static_cast<std::uint32_t>(node.name.length());
-            add_token(line, character, length, SemanticKind::Type::Variable,
-                      SemanticModifier::Declaration);
-        }
+        add_symbol(node, SemanticKind::Type::Variable);
+
         visit_child(node.annotation);
         visit_child(node.initializer);
     }
 
-    void visit(ExternFunctionDeclaration& node) override { visit_child(node.prototype); }
+    void visit(ExternFunctionDeclaration& node) override {
+        add_symbol(node, SemanticKind::Type::Function);
 
-    void visit(ExternVarDeclaration& node) override { visit_child(node.annotation); }
+        visit_child(node.prototype);
+    }
+
+    void visit(ExternVarDeclaration& node) override {
+        add_symbol(node, SemanticKind::Type::Variable);
+
+        visit_child(node.annotation);
+    }
 
     void visit(ImportStatement&) override {}
 
-    void visit(TypeAliasDeclaration& node) override { visit_child(node.target); }
+    void visit(TypeAliasDeclaration& node) override {
+        add_symbol(node, SemanticKind::Type::Type);
+
+        visit_child(node.target);
+    }
 };
 
 export class SyntaxIndex {
@@ -395,29 +456,42 @@ export class SyntaxIndex {
     std::vector<SemanticToken> semantic_tokens;
 
   public:
+    std::vector<Token> lexemes;
+    std::unordered_map<Node*, Span> ranges;
+    std::vector<CatchArm*> bindings;
+
     SyntaxIndex(std::string_view content, const Program* program) {
+        Lexer lexer(content);
+        lexemes.reserve(256);
+
+        while (true) {
+            const auto token = lexer.next_token();
+
+            if (token.type == Token::Type::Eof) {
+                break;
+            }
+
+            lexemes.push_back(token);
+        }
+
         std::vector<RawToken> tokens;
         tokens.reserve(256);
 
         std::map<std::pair<std::uint32_t, std::uint32_t>, RawToken> semantic_map;
         if (program != nullptr) {
-            AstTokenCollector collector;
+            AstTokenCollector collector(lexemes);
             for (auto* statement : program->statements) {
                 collector.visit_child(statement);
             }
             indexed_nodes = std::move(collector.nodes);
+            ranges = std::move(collector.ranges);
+            bindings = std::move(collector.bindings);
             for (auto& token : collector.tokens) {
                 semantic_map.emplace(std::make_pair(token.line, token.character), token);
             }
         }
 
-        Lexer lexer(content);
-        while (true) {
-            auto token = lexer.next_token();
-            if (token.type == Token::Type::Eof) {
-                break;
-            }
-
+        for (const auto& token : lexemes) {
             if (token.span.start.line == 0) {
                 continue;
             }
@@ -432,11 +506,13 @@ export class SyntaxIndex {
 
             if (token.type == Token::Type::Identifier) {
                 auto key = std::make_pair(line, character);
-                if (auto it = semantic_map.find(key); it != semantic_map.end()) {
-                    tokens.push_back(it->second);
-                } else if (token.value == "move" || token.value == "default" || token.value == "delete" ||
-                           token.value == "operator" || token.value == "out" || token.value == "inout" ||
-                           token.value == "clobber" || token.value == "options") {
+
+                if (token.value == "throws" && lexemes.size() > 1 &&
+                    lexemes[lexemes.size() - 2].type == Token::Type::At) {
+                    tokens.emplace_back(line, character, length, SemanticKind::Type::Modifier);
+                } else if (auto it = semantic_map.find(key); it != semantic_map.end()) {
+                    tokens.emplace_back(line, character, length, it->second.kind, it->second.modifiers);
+                } else if (token.value == "move" || token.value == "default" || token.value == "operator") {
                     tokens.emplace_back(line, character, length, SemanticKind::Type::Keyword);
                 } else {
                     tokens.emplace_back(line, character, length, SemanticKind::Type::Variable);
@@ -454,6 +530,9 @@ export class SyntaxIndex {
             case Token::Type::Import:
             case Token::Type::Interface:
             case Token::Type::Return:
+            case Token::Type::Try:
+            case Token::Type::Catch:
+            case Token::Type::Throw:
             case Token::Type::If:
             case Token::Type::Else:
             case Token::Type::When:
@@ -517,6 +596,30 @@ export class SyntaxIndex {
             }
         }
 
+        for (auto* node : indexed_nodes) {
+            const auto* call = node->as<CallExpression>();
+
+            if (call == nullptr) {
+                continue;
+            }
+
+            auto depth = std::size_t{0};
+
+            for (const auto& token : lexemes) {
+                if (std::pair(token.span.start.line, token.span.start.column) <
+                    std::pair(call->callee->span.end.line, call->callee->span.end.column)) {
+                    continue;
+                }
+
+                if (token.type == Token::Type::LeftParen) {
+                    ++depth;
+                } else if (token.type == Token::Type::RightParen && depth > 0 && --depth == 0) {
+                    ranges.at(node) = Symbols::cover(ranges.at(node), token.span);
+                    break;
+                }
+            }
+        }
+
         std::ranges::sort(tokens, [](const RawToken& a, const RawToken& b) {
             if (a.line != b.line) {
                 return a.line < b.line;
@@ -547,13 +650,17 @@ export class SyntaxIndex {
     Node* node(Position position) const {
         Node* result = nullptr;
         for (auto* node : indexed_nodes) {
-            if (!node->span.contains(position)) {
+            const auto extent = range(*node);
+
+            if (!extent.contains(position)) {
                 continue;
             }
 
             if (result == nullptr ||
-                (node->span.start.line >= result->span.start.line &&
-                 node->span.end.line <= result->span.end.line)) {
+                (std::pair(extent.start.line, extent.start.column) >=
+                    std::pair(range(*result).start.line, range(*result).start.column) &&
+                 std::pair(extent.end.line, extent.end.column) <=
+                    std::pair(range(*result).end.line, range(*result).end.column))) {
                 result = node;
             }
         }
@@ -567,7 +674,7 @@ export class SyntaxIndex {
 
         for (auto* node : indexed_nodes) {
             if (auto* block = node->as<BlockStatement>();
-                block != nullptr && block->scope != nullptr && block->span.contains(position)) {
+                block != nullptr && block->scope != nullptr && range(*block).contains(position)) {
                 auto starts_after_latest = block->span.start.line > latest.line ||
                                            (block->span.start.line == latest.line &&
                                             block->span.start.column >= latest.column);
@@ -579,7 +686,7 @@ export class SyntaxIndex {
             }
 
             auto* expression = dynamic_cast<Expression*>(node);
-            if (expression == nullptr || expression->scope == nullptr) {
+            if (expression == nullptr || expression->scope == nullptr || !range(*expression).contains(position)) {
                 continue;
             }
 
@@ -596,6 +703,26 @@ export class SyntaxIndex {
         }
 
         return result;
+    }
+
+    Span range(Node& node) const {
+        const auto found = ranges.find(&node);
+
+        return found != ranges.end() ? found->second : node.span;
+    }
+
+    Span selection(Node& node) const {
+        return Symbols::selection(node, lexemes);
+    }
+
+    const CatchArm* binding(Position position) const {
+        for (const auto* arm : bindings) {
+            if (arm->span.contains(position)) {
+                return arm;
+            }
+        }
+
+        return nullptr;
     }
 
     const std::vector<Node*>& nodes() const { return indexed_nodes; }

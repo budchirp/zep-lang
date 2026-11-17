@@ -20,6 +20,7 @@ import zep.compiler;
 import zep.lsp.analysis.completion;
 import zep.lsp.analysis.catalog;
 import zep.lsp.analysis.index;
+import zep.lsp.analysis.symbols;
 import zep.lsp.analysis.types;
 import zep.compiler.unit;
 import zep.frontend.node;
@@ -169,46 +170,6 @@ export class Analysis {
                 node->as<Field>() != nullptr || node->as<EnumVariant>() != nullptr);
     }
 
-    static Span selection(Node* node) {
-        if (auto* variable = node->as<VarDeclaration>(); variable != nullptr) {
-            auto prefix_length = variable->storage_kind == StorageKind::Type::VarMut ? 8U : 4U;
-            auto start = Position(variable->span.start.line,
-                                  variable->span.start.column + prefix_length);
-            return Span(start, Position(start.line, start.column + variable->name.length() - 1));
-        }
-        if (auto* function = node->as<FunctionDeclaration>();
-            function != nullptr && function->prototype != nullptr) {
-            auto start = function->prototype->span.start;
-            return Span(start,
-                        Position(start.line, start.column + function->prototype->name.length() - 1));
-        }
-        if (auto* structure = node->as<StructDeclaration>(); structure != nullptr) {
-            auto start = Position(structure->span.start.line, structure->span.start.column + 7U);
-            return Span(start, Position(start.line, start.column + structure->name.length() - 1));
-        }
-        if (auto* enumeration = node->as<EnumDeclaration>(); enumeration != nullptr) {
-            auto start = Position(enumeration->span.start.line, enumeration->span.start.column + 5U);
-            return Span(start, Position(start.line, start.column + enumeration->name.length() - 1));
-        }
-        if (auto* interface = node->as<InterfaceDeclaration>(); interface != nullptr) {
-            auto start = Position(interface->span.start.line, interface->span.start.column + 10U);
-            return Span(start, Position(start.line, start.column + interface->name.length() - 1));
-        }
-        if (auto* alias = node->as<TypeAliasDeclaration>(); alias != nullptr) {
-            auto start = Position(alias->span.start.line, alias->span.start.column + 5U);
-            return Span(start, Position(start.line, start.column + alias->name.length() - 1));
-        }
-        if (auto* member = node->as<MemberExpression>(); member != nullptr) {
-            auto start = Position(member->span.end.line,
-                                  member->span.end.column - member->member.length() + 1);
-            return Span(start, member->span.end);
-        }
-        if (auto* call = node->as<CallExpression>(); call != nullptr) {
-            return call->callee->span;
-        }
-        return node->span;
-    }
-
     const IndexedModule* current_index() const {
         for (const auto& index : indexes) {
             std::error_code error_code;
@@ -223,6 +184,10 @@ export class Analysis {
         const auto* index = current_index();
         if (index == nullptr) {
             return nullptr;
+        }
+
+        if (const auto* binding = index->syntax.binding(position); binding != nullptr) {
+            return binding->symbol;
         }
 
         auto* node = index->syntax.node(position);
@@ -405,8 +370,14 @@ export class Analysis {
         if (index == nullptr) {
             return std::nullopt;
         }
+
+        if (const auto* binding = index->syntax.binding(position);
+            binding != nullptr && binding->symbol != nullptr) {
+            return Hover("var " + binding->name + ": " + binding->symbol->type->to_string(), binding->span);
+        }
+
         for (auto* node : index->syntax.nodes()) {
-            if (is_declaration(node) && selection(node).contains(position)) {
+            if (is_declaration(node) && index->syntax.selection(*node).contains(position)) {
                 if (auto result = describe(node, scope()); result.has_value()) {
                     return result;
                 }
@@ -454,9 +425,15 @@ export class Analysis {
         }
 
         for (const auto& index : indexes) {
+            for (const auto* binding : index.syntax.bindings) {
+                if (binding->symbol == symbol_identity) {
+                    return AnalysisLocation(index.path, binding->span);
+                }
+            }
+
             for (auto* node : index.syntax.nodes()) {
                 if (is_declaration(node) && identity(node) == symbol_identity) {
-                    return AnalysisLocation(index.path, selection(node));
+                    return AnalysisLocation(index.path, index.syntax.selection(*node));
                 }
             }
         }
@@ -472,11 +449,19 @@ export class Analysis {
         }
 
         for (const auto& index : indexes) {
+            if (include_declaration) {
+                for (const auto* binding : index.syntax.bindings) {
+                    if (binding->symbol == symbol_identity) {
+                        result.emplace_back(index.path, binding->span);
+                    }
+                }
+            }
+
             for (auto* node : index.syntax.nodes()) {
                 if (identity(node) != symbol_identity || (!include_declaration && is_declaration(node))) {
                     continue;
                 }
-                result.emplace_back(index.path, selection(node));
+                result.emplace_back(index.path, index.syntax.selection(*node));
             }
         }
         if (include_declaration) {
@@ -497,11 +482,18 @@ export class Analysis {
 
         for (auto* node : index->syntax.nodes()) {
             if (identity(node) == symbol_identity) {
-                result.emplace_back(selection(node), is_declaration(node)
+                result.emplace_back(index->syntax.selection(*node), is_declaration(node)
                                                           ? DocumentHighlight::Kind::Type::Write
                                                           : DocumentHighlight::Kind::Type::Read);
             }
         }
+
+        for (const auto* binding : index->syntax.bindings) {
+            if (binding->symbol == symbol_identity) {
+                result.emplace_back(binding->span, DocumentHighlight::Kind::Type::Write);
+            }
+        }
+
         if (auto declaration = field_definition(symbol_identity);
             declaration.has_value() && declaration->path == index->path) {
             result.emplace_back(declaration->span, DocumentHighlight::Kind::Type::Write);
@@ -510,55 +502,13 @@ export class Analysis {
     }
 
     std::vector<DocumentSymbol> document_symbols() const {
-        std::vector<DocumentSymbol> result;
-        if (program() == nullptr) {
-            return result;
+        const auto* index = current_index();
+
+        if (program() == nullptr || index == nullptr) {
+            return {};
         }
 
-        result.reserve(program()->statements.size());
-        for (auto* statement : program()->statements) {
-            if (auto* test = statement->as<TestDeclaration>(); test != nullptr) {
-                result.emplace_back(test->name, CompletionKind::Type::Function,
-                                    AnalysisLocation(analyzed_path, test->span), test->name_span);
-            } else if (auto* function = statement->as<FunctionDeclaration>();
-                function != nullptr && function->prototype != nullptr) {
-                result.emplace_back(function->prototype->name, CompletionKind::Type::Function,
-                                    AnalysisLocation(analyzed_path, function->span),
-                                    selection(function));
-            } else if (auto* structure = statement->as<StructDeclaration>(); structure != nullptr) {
-                std::vector<DocumentSymbol> children;
-                children.reserve(structure->fields.size() + structure->methods.size());
-                for (auto* field : structure->fields) {
-                    children.emplace_back(field->name, CompletionKind::Type::Field,
-                                          AnalysisLocation(analyzed_path, field->span), field->span);
-                }
-                for (auto* method : structure->methods) {
-                    children.emplace_back(method->prototype->name, CompletionKind::Type::Method,
-                                          AnalysisLocation(analyzed_path, method->span),
-                                          selection(method));
-                }
-                result.emplace_back(structure->name, CompletionKind::Type::Struct,
-                                    AnalysisLocation(analyzed_path, structure->span),
-                                    selection(structure), std::move(children));
-            } else if (auto* enumeration = statement->as<EnumDeclaration>(); enumeration != nullptr) {
-                result.emplace_back(enumeration->name, CompletionKind::Type::Enum,
-                                    AnalysisLocation(analyzed_path, enumeration->span),
-                                    selection(enumeration));
-            } else if (auto* interface = statement->as<InterfaceDeclaration>();
-                       interface != nullptr) {
-                result.emplace_back(interface->name, CompletionKind::Type::Interface,
-                                    AnalysisLocation(analyzed_path, interface->span),
-                                    selection(interface));
-            } else if (auto* alias = statement->as<TypeAliasDeclaration>(); alias != nullptr) {
-                result.emplace_back(alias->name, CompletionKind::Type::TypeParameter,
-                                    AnalysisLocation(analyzed_path, alias->span), selection(alias));
-            } else if (auto* variable = statement->as<VarDeclaration>(); variable != nullptr) {
-                result.emplace_back(variable->name, CompletionKind::Type::Variable,
-                                    AnalysisLocation(analyzed_path, variable->span),
-                                    selection(variable));
-            }
-        }
-        return result;
+        return Symbols::documents(*program(), analyzed_path, index->syntax.lexemes, index->syntax.ranges);
     }
 
     std::optional<SignatureHelp> signature(Position position) const {
@@ -570,7 +520,7 @@ export class Analysis {
         CallExpression* selected = nullptr;
         for (auto* node : index->syntax.nodes()) {
             auto* call = node->as<CallExpression>();
-            if (call != nullptr && call->span.contains(position) &&
+            if (call != nullptr && index->syntax.range(*call).contains(position) &&
                 (selected == nullptr || call->span.start.line >= selected->span.start.line)) {
                 selected = call;
             }
@@ -588,7 +538,7 @@ export class Analysis {
             function_type = indirect->function_type;
         } else if (const auto* interface = selected->resolved_target->as<InterfaceCallTarget>();
                    interface != nullptr) {
-            function_type = interface->method_symbol->signature();
+            function_type = interface->signature;
         }
         if (function_type == nullptr) {
             return std::nullopt;
@@ -614,6 +564,6 @@ export class Analysis {
         std::vector<Signature> signatures;
         signatures.emplace_back(function_type->to_string(), std::move(parameters));
         return SignatureHelp(std::move(signatures), 0,
-                             std::min(active_parameter, function_type->parameters.size() - 1));
+            function_type->parameters.empty() ? 0 : std::min(active_parameter, function_type->parameters.size() - 1));
     }
 };

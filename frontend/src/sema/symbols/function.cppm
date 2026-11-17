@@ -37,15 +37,17 @@ export class FunctionSymbol final : public Symbol {
     const Linkage::Type linkage;
     const Role role;
     const std::string parent;
+    const std::string module;
     const Abi::Type abi;
     const bool is_deleted;
 
     FunctionSymbol(std::string name, Span span, Visibility::Type visibility, Linkage::Type linkage,
                    const Type* type, Role role = Role(CallableKind::Type::Function),
                    std::string parent = {}, std::vector<AttributeInfo> attributes = {},
-                   Abi::Type abi = Abi::Type::Language, bool is_deleted = false)
+                   Abi::Type abi = Abi::Type::Language, bool is_deleted = false, std::string module = {})
         : Symbol(static_kind, std::move(name), span, visibility, type, std::move(attributes)),
-          linkage(linkage), role(role), parent(std::move(parent)), abi(abi), is_deleted(is_deleted) {}
+          linkage(linkage), role(role), parent(std::move(parent)), module(std::move(module)),
+          abi(abi), is_deleted(is_deleted) {}
 
     template <typename Kind>
     bool has_role(Kind kind) const {

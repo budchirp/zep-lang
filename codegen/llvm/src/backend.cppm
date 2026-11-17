@@ -83,14 +83,20 @@ export class LLVMBackend : public Backend {
         for (auto* statement : program.statements) {
             auto* function = statement->as<HIRFunctionDeclaration>();
 
-            if (function == nullptr || !function->is_global_destructor) {
+            if (function == nullptr || function->role == HIRFunctionDeclaration::Role::Type::Function) {
                 continue;
             }
 
-            auto* destructor = context.module->getFunction(function->name);
+            auto* lowered = context.module->getFunction(function->name);
 
-            if (destructor != nullptr) {
-                llvm::appendToGlobalDtors(*context.module, destructor, 65535);
+            if (lowered == nullptr) {
+                continue;
+            }
+
+            if (function->role == HIRFunctionDeclaration::Role::Type::GlobalDestructor) {
+                llvm::appendToGlobalDtors(*context.module, lowered, 65535);
+            } else if (!declarations.initializers.empty()) {
+                llvm::appendToGlobalCtors(*context.module, lowered, 65535);
             }
         }
 
