@@ -4,7 +4,7 @@
 import zep.codegen.llvm.backend;
 import zep.codegen.api;
 import zep.common.target;
-import zep.hir.program;
+import zep.lowerer.nodes;
 import zep.test.support;
 
 static void BM_emit_empty_object(benchmark::State& state) {

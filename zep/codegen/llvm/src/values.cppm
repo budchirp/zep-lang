@@ -12,7 +12,7 @@ export module zep.codegen.llvm.values;
 
 import zep.frontend.kind;
 import zep.frontend.sema.types;
-import zep.hir.node;
+import zep.lowerer.nodes;
 import zep.codegen.llvm.types;
 
 export class ValueScope {

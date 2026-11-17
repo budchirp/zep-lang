@@ -19,7 +19,7 @@ import zep.common.diagnostic.collection;
 import zep.common.source.span;
 import zep.frontend.sema.types;
 import zep.frontend.sema.types.errors;
-import zep.hir.node;
+import zep.lowerer.nodes;
 import zep.codegen.llvm.types;
 import zep.codegen.llvm.values;
 

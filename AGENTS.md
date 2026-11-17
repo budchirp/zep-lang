@@ -38,11 +38,14 @@ for notes client/server. Pong builds from `examples/pong/` with
 
 ## Architecture
 
-- Compiler components and CMake live in `zep/`; std, examples, extensions, and MDX docs stay at root.
+- Compiler components and CMake live in `zep/`; std, examples, and extensions stay at root.
+- VitePress lives in `web/`, with Markdown pages in `web/docs/`. Run `npm run build` from `web/`.
 - C++ production implementations belong inside classes in `.cppm` modules.
 - Keep component-local `src/` and `tests/`; CMake discovers sources from each `src/` directory.
 - Keep semantic decisions in frontend checking/resolution and consume them during HIR lowering.
 - Keep LLVM isolated in `zep/codegen/llvm/`; retain public compiler/codegen module namespaces.
+- Build driver code belongs to compiler. HIR definitions and lowering live in `zep/lowerer/`
+  and use `zep.lowerer` modules.
 - Keep scope/environment management separate from symbol definitions.
 - Give each policy one implementation. Prefer cohesive modules over tiny forwarding classes.
 - Use diagnostics and Logger for compiler failures, not C++ throws for source/pipeline errors.
@@ -50,7 +53,7 @@ for notes client/server. Pong builds from `examples/pong/` with
 - Put Zep tests in `.test.zep` files and std tests in `std/tests/`.
 
 Pipeline: `Source → Lexer → Parser → AST → SemanticChecker → Lowerer → HIR → Codegen → LLVM IR`.
-See [architecture](docs/architecture.mdx) and [language documentation](docs/index.mdx).
+See [architecture](web/docs/architecture.md) and [language documentation](web/docs/index.md).
 
 ## Naming and style
 

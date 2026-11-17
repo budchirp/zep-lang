@@ -7,7 +7,7 @@ import zep.common.target;
 import zep.test.support;
 import zep.workspace.manifest;
 import zep.workspace.project;
-import zep.workspace.package.graph;
+import zep.workspace.package;
 import zep.common.source;
 
 TEST(WorkspaceManifest, AppliesCurrentDefaults) {

@@ -14,7 +14,7 @@ export module zep.codegen.llvm.types;
 import zep.frontend.sema.types;
 import zep.frontend.sema.symbols;
 import zep.frontend.kind;
-import zep.hir.program;
+import zep.lowerer.nodes;
 
 export class Types {
   private:

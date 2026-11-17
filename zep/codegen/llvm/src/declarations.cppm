@@ -18,8 +18,7 @@ import zep.frontend.sema.symbols;
 import zep.frontend.kind;
 import zep.codegen.llvm.types;
 import zep.codegen.llvm.values;
-import zep.hir.node;
-import zep.hir.program;
+import zep.lowerer.nodes;
 
 export class Declarations {
   private:

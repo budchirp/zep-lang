@@ -8,9 +8,8 @@ module;
 export module zep.compiler.test.harness;
 
 import zep.frontend.test.harness;
-import zep.compiler.lowering;
-import zep.hir.program;
-import zep.hir.node;
+import zep.lowerer;
+import zep.lowerer.nodes;
 
 export class HirHarness {
   public:

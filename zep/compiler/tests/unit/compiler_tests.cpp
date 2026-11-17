@@ -10,7 +10,6 @@ import zep.common.diagnostic.collection;
 import zep.test.support;
 import zep.workspace.manifest;
 import zep.workspace.module_path;
-import zep.workspace.package.graph;
 import zep.workspace.package;
 
 namespace {

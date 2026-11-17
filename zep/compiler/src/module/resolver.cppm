@@ -9,7 +9,6 @@ export module zep.compiler.resolver;
 
 import zep.workspace.module_path;
 import zep.workspace.package;
-import zep.workspace.package.graph;
 
 export class ResolvedModule {
   public:

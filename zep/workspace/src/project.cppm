@@ -13,7 +13,6 @@ import zep.common.diagnostic.collection;
 import zep.workspace.manifest;
 import zep.workspace.module_path;
 import zep.workspace.package;
-import zep.workspace.package.graph;
 import zep.workspace.toolchain;
 import zep.common.paths;
 

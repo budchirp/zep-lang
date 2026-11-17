@@ -5,11 +5,30 @@ regressions, documentation, and repository consumer migration when it changes pu
 
 ## Active cleanup
 
+### Documentation website
+
+- [x] Move documentation into `web/docs/` and convert plain MDX pages to VitePress Markdown.
+- [x] Add VitePress navigation, local search, shared Zep highlighting, and npm commands.
+- [x] Update repository links/guides and validate the production site and preview.
+  VitePress 2 alpha is pinned with a lockfile; the dependency audit reports zero vulnerabilities.
+  Browser checks cover search results and navigation; highlighting shares the editor grammar.
+
+### Compiler component consolidation
+
+- [x] Merge driver sources/tests into compiler and remove the separate `zep_build` target.
+- [x] Merge HIR into the standalone `lowerer/` component and backend-neutral `zep_lowerer` target.
+- [x] Use `zep.lowerer` modules and remove the obsolete HIR/compiler-lowering module paths.
+- [x] Combine package definitions with their graph and HIR program definitions with HIR nodes.
+- [x] Migrate imports without compatibility wrappers; update structure documentation.
+- [x] Validate configure/build, affected tests, the full suite, and dependency boundaries.
+  All 344 tests pass, including 20 lowerer and 27 compiler tests. The LSP test executable links
+  without LLVM; all 128 production modules resolve without cycles or obsolete module imports.
+
 ### Repository structure and documentation
 
 - [x] Move compiler components and build configuration into `zep/`; keep std at the repository root.
 - [x] Separate compiler/repository paths and migrate installation, fixtures, examples, and tooling.
-- [x] Replace the design document with focused MDX documentation and rewrite repository guides.
+- [x] Replace the design document with focused language documentation and rewrite repository guides.
 - [x] Add root Makefile targets for builds, tests, and compiler/std installation; remove scripts.
 - [x] Remove CLI installation; use `~/.local/share/zep/{bin,libs}` through Make/CMake.
 - [x] Use `nproc` with memory-bounded compilation and lightweight default debug symbols.
@@ -94,7 +113,8 @@ Update this checklist whenever a cleanup stage is implemented or validated.
 
 - A fresh `make` build succeeds under `zep/`; `make test` passes all 344 CTests, including 65 LSP
   cases, callback optimization sweeps, and removal of the CLI install command.
-- All 16 MDX pages compile; documentation links/anchors resolve. The editor extension compiles.
+- All 16 VitePress pages build and load in preview; links resolve and browser search/navigation
+  work. Zep highlighting reuses the extension grammar. The npm audit reports zero vulnerabilities.
 - Make propagates build/test failures, rejects empty tests, and works from another directory.
 - Fresh CMake defaults to `~/.local/share/zep`. Full, compiler-only, std-only, custom-prefix, and
   staged installs pass. An installed compiler builds/runs using its sibling `libs/` without relying
@@ -103,8 +123,8 @@ Update this checklist whenever a cleanup stage is implemented or validated.
 - Hello runs, all five notes tests pass, and Pong starts/shuts down normally under GDB.
   Live notes CRUD, stable IDs, validation, binary bodies, 404s, and 405s pass using temporary copies
   on port 18081, preserving an existing server on port 8080.
-- The import audit covers 130 production modules/partitions without missing imports, cycles, or
-  duplicate declarations. Tracked snapshots and old root build caches remain unchanged.
+- The import audit covers 128 production modules/partitions without missing imports, cycles, or
+  duplicate declarations. Tracked snapshots remain unchanged; the LSP links without LLVM.
 
 ## Compiler correctness
 

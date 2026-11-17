@@ -38,8 +38,10 @@ Use `make install-zep` or `make install-std` separately, or set `PREFIX` for ano
 
 ## Explore
 
-- [Language documentation](docs/index.mdx)
+- [Language documentation](web/docs/index.md)
 - [Notes HTTP client/server example](examples/notes/README.md)
-- [Building and running examples](docs/getting_started.mdx)
+- [Building and running examples](web/docs/getting_started.md)
 - [Contributing](CONTRIBUTING.md)
 - [Priorities](zep/TODO.md)
+
+Run the documentation site with `cd web && npm ci && npm run dev`.

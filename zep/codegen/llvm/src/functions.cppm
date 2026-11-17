@@ -23,8 +23,7 @@ import zep.codegen.llvm.values;
 import zep.codegen.llvm.control_flow;
 import zep.common.diagnostic.collection;
 
-import zep.hir.node;
-import zep.hir.program;
+import zep.lowerer.nodes;
 import zep.frontend.sema.types;
 import zep.frontend.node;
 import zep.frontend.kind;

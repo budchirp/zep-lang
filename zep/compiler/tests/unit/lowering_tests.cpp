@@ -5,9 +5,8 @@
 
 import zep.frontend.test.harness;
 import zep.frontend.node;
-import zep.compiler.lowering;
-import zep.hir.node;
-import zep.hir.program;
+import zep.lowerer;
+import zep.lowerer.nodes;
 import zep.frontend.kind;
 import zep.compiler.test.harness;
 

@@ -16,8 +16,8 @@ import zep.common.diagnostic.collection;
 import zep.common.target;
 import zep.frontend.sema.context;
 import zep.frontend.node.program;
-import zep.compiler.lowering;
-import zep.hir.program;
+import zep.lowerer;
+import zep.lowerer.nodes;
 import zep.workspace.module_path;
 import zep.workspace.package;
 

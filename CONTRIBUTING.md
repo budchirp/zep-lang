@@ -33,9 +33,9 @@ Use fresh build trees after moving sources. Do not relocate old CMake caches.
 - `zep/`: compiler components, CMake helpers, and active TODO.
 - `std/`: standard library and its `.test.zep` tests.
 - `examples/` and `extensions/`: sample applications and editor integration.
-- `docs/`: concise, framework-neutral MDX documentation for the future website.
+- `web/docs/`: concise Markdown documentation built with VitePress.
 
-See [architecture](docs/architecture.mdx) for component responsibilities and
+See [architecture](web/docs/architecture.md) for component responsibilities and
 [AGENTS.md](AGENTS.md) for code standards. Keep public module namespaces unchanged.
 
 ## Tests
@@ -60,7 +60,18 @@ cmake --build zep/cmake-build-debug --parallel "$(nproc)" --target zep_fuzz_smok
 
 Keep each behavior in its owning subsystem, share policy, and avoid compatibility aliases.
 Add focused regressions, run affected tests and the full suite, and use GDB or LLDB for runtime
-failures. Update relevant MDX documentation and `zep/TODO.md` alongside implementation.
+failures. Update relevant documentation and `zep/TODO.md` alongside implementation.
 
 Use `make install` for compiler/std installation, defaulting to `~/.local/share/zep/{bin,libs}`.
 Use `PREFIX` or `DESTDIR` for custom or staged installation. Compiler C++ libraries are not installed.
+
+## Documentation website
+
+```sh
+cd web
+npm ci
+npm run dev
+npm run build
+```
+
+Keep pages in `web/docs/`. The production build checks internal links and generates the local search index.

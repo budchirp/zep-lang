@@ -21,8 +21,7 @@ import zep.common.target;
 import zep.common.diagnostic.collection;
 import zep.frontend.sema.symbols;
 import zep.frontend.sema.types;
-import zep.hir.node;
-import zep.hir.program;
+import zep.lowerer.nodes;
 
 export class LLVMBackend : public Backend {
   public:

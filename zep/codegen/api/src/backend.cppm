@@ -7,7 +7,7 @@ module;
 export module zep.codegen.api;
 
 export import zep.codegen.options;
-export import zep.hir.program;
+export import zep.lowerer.nodes;
 
 export class Backend {
   public:

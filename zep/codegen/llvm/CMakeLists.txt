@@ -5,7 +5,7 @@ include_directories(${LLVM_INCLUDE_DIRS})
 link_directories(${LLVM_LIBRARY_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 
-zep_add_module(zep_codegen_llvm DEPENDS zep_codegen_api zep_hir)
+zep_add_module(zep_codegen_llvm DEPENDS zep_codegen_api)
 target_link_libraries(zep_codegen_llvm PUBLIC LLVM)
 
 if(BUILD_TESTING)

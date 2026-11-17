@@ -14,7 +14,7 @@ export module zep.codegen.llvm.calls;
 import zep.frontend.kind;
 import zep.frontend.sema.types;
 import zep.frontend.sema.symbols;
-import zep.hir.node;
+import zep.lowerer.nodes;
 import zep.codegen.llvm.types;
 import zep.codegen.llvm.declarations;
 import zep.codegen.llvm.values;
